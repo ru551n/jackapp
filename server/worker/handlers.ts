@@ -1,6 +1,7 @@
 import type { Logger } from 'pino'
 import type { AiServices } from '../ai'
 import type { CoreEnv } from '../config/env'
+import { pathPlanHandler } from '../adaptive/paths'
 import { curriculumJobHandlers } from '../curriculum/service'
 import type { Db } from '../db/client'
 import { defineJobHandler, type JobHandler } from '../jobs/runtime'
@@ -20,5 +21,6 @@ export function jobHandlers(deps: HandlerDeps): JobHandler[] {
     defineJobHandler('curriculum.sync', async (_job, tools) => {
       await curriculumJobHandlers['curriculum.sync'](tools.db, tools.log)
     }),
+    pathPlanHandler(deps),
   ]
 }

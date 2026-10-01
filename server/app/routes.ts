@@ -1,4 +1,5 @@
 import type { RouteModule } from './context'
+import { adaptiveRoutes } from '../adaptive/routes'
 import { systemStatusRoutes } from '../ai/routes'
 import { assetRoutes } from '../assets/routes'
 import { curriculumRoutes } from '../curriculum/routes'
@@ -12,4 +13,5 @@ export const ROUTE_MODULES: RouteModule[] = [
   learnerRoutes,
   jobRoutes,
   curriculumRoutes,
+  adaptiveRoutes,
 ]
