@@ -160,7 +160,7 @@ const Rc6 = make('Rc6, ett ellok', (m) => (
       <line x1="190" y1="42" x2="210" y2="42" />
       <line x1="190" y1="48" x2="210" y2="48" />
     </g>
-    <Wheels xs={[66, 90, 114, 186, 210, 234]} r={6} />
+    <Wheels xs={[70, 100, 200, 230]} r={6} />
   </>
 ))
 
@@ -183,20 +183,11 @@ const Iore = make('Malmlok IORE', (m) => (
   </>
 ))
 
-// C20: blue metro train, three cars with light doors.
+// C20: silver (stainless steel) metro train with a blue stripe, three cars with light doors.
 const C20 = make('Tunnelbanetåg C20', (m) => (
   <>
-    <rect
-      x="8"
-      y="30"
-      width="284"
-      height="52"
-      rx="14"
-      fill={fill(m, 'var(--tint-blue)')}
-      stroke={edge(m)}
-      strokeWidth="1.5"
-    />
-    <rect x="8" y="66" width="284" height="6" fill={fill(m, 'var(--paper)')} />
+    <rect x="8" y="30" width="284" height="52" rx="14" fill={fill(m, '#c9d1d9')} stroke={edge(m)} strokeWidth="1.5" />
+    <rect x="8" y="66" width="284" height="8" fill={fill(m, 'var(--tint-blue)')} />
     {range(40, 40, 6).map((x) => (
       <rect key={x} x={x} y="38" width="12" height="28" rx="2" fill={fill(m, 'var(--paper)')} />
     ))}

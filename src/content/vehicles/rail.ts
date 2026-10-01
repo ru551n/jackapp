@@ -2,7 +2,7 @@ import type { Vehicle } from '../../core/types'
 
 // Trains (stationen), metro (tunnelbanan) and trams (sparvagnen). Only verified figures are stored;
 // anything not confirmed in a source is omitted. Unlock order is ascending per area.
-const wiki = (lang: 'sv' | 'en', page: string) => `https://${lang}.wikipedia.org/wiki/${page}`
+const wiki = (lang: 'sv' | 'en' | 'de', page: string) => `https://${lang}.wikipedia.org/wiki/${page}`
 
 export const RAIL_VEHICLES: Vehicle[] = [
   {
@@ -32,9 +32,10 @@ export const RAIL_VEHICLES: Vehicle[] = [
       'Regina är ett tåg som bland annat SJ och Mälartåg kör med.',
       'Det har en rund och mjuk nos.',
       'Tåget har flera vagnar som sitter ihop.',
+      'Några byggdes i Tyskland.',
     ],
     specs: { firstYear: 2000 },
-    sources: [wiki('en', 'Bombardier_Regina')],
+    sources: [wiki('en', 'Bombardier_Regina'), wiki('sv', 'Regina_(tåg)')],
     unlock: { area: 'stationen', missions: 1 },
   },
   {
@@ -42,15 +43,16 @@ export const RAIL_VEHICLES: Vehicle[] = [
     name: 'SL pendeltåg X60',
     shortName: 'Pendeltåget',
     category: 'train',
-    country: 'Sverige',
+    country: 'Tyskland',
     swedish: true,
     facts: [
       'Pendeltåget X60 kör i Stockholm.',
       'Det är ett långt tåg med sex vagnar som sitter ihop.',
       'Det började köra år 2005.',
+      'Byggd i Tyskland, kör i Stockholm.',
     ],
     specs: { firstYear: 2005, lengthM: 107 },
-    sources: [wiki('en', 'SL_X60')],
+    sources: [wiki('en', 'SL_X60'), wiki('sv', 'SL_X60')],
     unlock: { area: 'stationen', missions: 2 },
   },
   {
@@ -64,9 +66,10 @@ export const RAIL_VEHICLES: Vehicle[] = [
       'Öresundståget kör mellan Sverige och Danmark.',
       'Det åker över Öresundsbron.',
       'Det kan köra 180 kilometer i timmen.',
+      'Några byggdes i Tyskland.',
     ],
     specs: { firstYear: 2000, topSpeedKmh: 180, lengthM: 79 },
-    sources: [wiki('en', 'Øresundståg')],
+    sources: [wiki('en', 'Øresundståg'), wiki('sv', 'Öresundståg')],
     unlock: { area: 'stationen', missions: 3 },
   },
   {
@@ -90,15 +93,16 @@ export const RAIL_VEHICLES: Vehicle[] = [
     name: 'Malmlok IORE',
     shortName: 'Malmloket',
     category: 'train',
-    country: 'Sverige',
+    country: 'Tyskland',
     swedish: true,
     facts: [
       'Malmloket IORE är extra starkt.',
       'Två lok sitter ihop och drar många tunga vagnar med järnmalm.',
       'De kör i norra Sverige, mellan Kiruna och Narvik.',
+      'Byggd i Tyskland, kör i Sverige.',
     ],
-    specs: { firstYear: 2000, topSpeedKmh: 80, lengthM: 45.8 },
-    sources: [wiki('sv', 'IORE')],
+    specs: { firstYear: 2001, topSpeedKmh: 80, lengthM: 45.8 },
+    sources: [wiki('sv', 'IORE'), wiki('en', 'IORE'), wiki('de', 'IORE')],
     unlock: { area: 'stationen', missions: 5 },
   },
   {
@@ -110,11 +114,11 @@ export const RAIL_VEHICLES: Vehicle[] = [
     swedish: true,
     facts: [
       'C20 är ett tunnelbanetåg i Stockholm.',
-      'Det är blått och har tre vagnar som sitter ihop.',
+      'Det är silvrigt med blå ränder och har tre vagnar som sitter ihop.',
       'Det började köra år 1998.',
     ],
     specs: { firstYear: 1998, topSpeedKmh: 80, lengthM: 46.5 },
-    sources: [wiki('en', 'SL_C20')],
+    sources: [wiki('en', 'SL_C20'), wiki('sv', 'SL_C20')],
     unlock: { area: 'tunnelbanan', missions: 1 },
   },
   {
@@ -122,15 +126,16 @@ export const RAIL_VEHICLES: Vehicle[] = [
     name: 'Tunnelbanetåg C30',
     shortName: 'C30',
     category: 'metro',
-    country: 'Sverige',
+    country: 'Tyskland',
     swedish: true,
     facts: [
       'C30 är ett nyare tunnelbanetåg i Stockholm.',
       'Det började köra år 2020 på röda linjen.',
       'Det kör 80 kilometer i timmen.',
+      'Byggd i Tyskland, kör i Stockholm.',
     ],
     specs: { firstYear: 2020, topSpeedKmh: 80 },
-    sources: [wiki('en', 'SL_C30')],
+    sources: [wiki('en', 'SL_C30'), wiki('sv', 'SL_C30')],
     unlock: { area: 'tunnelbanan', missions: 2 },
   },
   {
@@ -138,12 +143,13 @@ export const RAIL_VEHICLES: Vehicle[] = [
     name: 'Spårvagn M32',
     shortName: 'M32',
     category: 'tram',
-    country: 'Sverige',
+    country: 'Italien',
     swedish: true,
     facts: [
       'M32 är en spårvagn i Göteborg.',
       'Golvet är lågt, så det är lätt att kliva på.',
       'Spårvagnen tar ström från en ledning ovanför.',
+      'Byggd i Italien, kör i Göteborg.',
     ],
     specs: { firstYear: 2006, lengthM: 29.35 },
     sources: [wiki('sv', 'M32_(spårvagn)')],
@@ -154,12 +160,13 @@ export const RAIL_VEHICLES: Vehicle[] = [
     name: 'Spårvagn M33',
     shortName: 'M33',
     category: 'tram',
-    country: 'Sverige',
+    country: 'Tyskland och Österrike',
     swedish: true,
     facts: [
       'M33 är en av Göteborgs nyaste spårvagnar.',
       'Den är lång och nästan hela golvet är lågt.',
       'Den började köra år 2020.',
+      'Byggd i Tyskland och Österrike, kör i Göteborg.',
     ],
     specs: { firstYear: 2020, topSpeedKmh: 70, lengthM: 33 },
     sources: [wiki('sv', 'M33_(spårvagn)')],
