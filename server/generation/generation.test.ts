@@ -12,7 +12,7 @@ import { FetchError, type Fetcher } from '../research/fetch'
 import type { ChatRequest } from '../ai/types'
 import { syncBundledCurriculum } from '../curriculum/service'
 import type { Db } from '../db/client'
-import { artifactVersions, learners } from '../db/schema'
+import { artifactVersions, learners, studySets } from '../db/schema'
 import { claim, JobFailure, type JobHandler, type JobTools } from '../jobs'
 import { asAdult, createTestApp, seedLearner } from '../test/helpers'
 import { blueprint, generateArtifact } from './engine'
@@ -394,6 +394,19 @@ describe('generation engine', () => {
 })
 
 describe('strict mode and the validation-failure path', () => {
+  it('fails at once (no retries) when the study set failed processing', async () => {
+    const t = await setup()
+    const { ai } = scriptedAi(t.db, {})
+    await t.db.insert(studySets).values({ id: SET_ID, learnerId: t.learnerId, title: 'X', status: 'failed' })
+    await post(t, `/learners/${t.learnerId}/generate`, { type: 'exercises', sourceMode: 'strict', studySetId: SET_ID })
+    const { error } = await runNext(
+      t.db,
+      generationJobHandlers({ ai, loadMaterial: async () => undefined }),
+      'artifact.generate',
+    )
+    expect(error).toMatchObject({ code: 'material_failed', retryable: false })
+  })
+
   const loadMaterial = vi.fn(async () => material)
 
   it('rejects items without upload sources, regenerates them once and then passes', async () => {

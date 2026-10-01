@@ -200,6 +200,8 @@ function unitDims(unit: string): string[] {
 function unitIssues(item: Extract<Item, { kind: 'numeric' }>): ValidationIssue[] {
   if (!item.unit?.trim()) return []
   const dims = unitDims(item.unit)
+  // A count noun from the story ("Hur många säten…?" with unit "säten") is not a measurement unit.
+  if (!dims.length && normalize(item.prompt).includes(normalize(item.unit).trim())) return []
   if (!dims.length)
     return [warn('math.unit_unknown', `Enheten ${q(item.unit)} känns inte igen; kontrollera den.`, item.id)]
   const inPrompt = [...normalize(item.prompt).matchAll(/\d\s*([\p{L}°²%][\p{L}°²%/\d]*)/gu)].flatMap((m) =>

@@ -11,7 +11,7 @@ import {
 import { AiError, type AiServices } from '../ai'
 import { subjectsFor } from '../curriculum/service'
 import type { Db } from '../db/client'
-import { learners } from '../db/schema'
+import { learners, studySets } from '../db/schema'
 import { defineJobHandler, registerJobPayload, type JobHandler, type JobTools } from '../jobs'
 import {
   defaultMaterialLoader,
@@ -92,8 +92,13 @@ async function profileOf(db: Db, learnerId: string, tools: JobTools): Promise<Le
 async function material(deps: GenerationDeps, db: Db, r: ResolvedRequest, tools: JobTools) {
   if (!r.studySetId) return undefined
   const m = await (deps.loadMaterial ?? defaultMaterialLoader)(db, r.studySetId)
-  if (!m) tools.fail('material_unavailable', 'Studiematerialet är inte färdigbehandlat ännu.', true)
-  return m
+  if (m) return m
+  // Only a set that is still being processed is worth retrying for.
+  const [set] = await db.select({ status: studySets.status }).from(studySets).where(eq(studySets.id, r.studySetId))
+  if (!set) tools.fail('not_found', 'Studiematerialet finns inte längre.', false)
+  if (set.status === 'failed')
+    tools.fail('material_failed', 'Studiematerialet kunde inte bearbetas. Försök bearbeta det igen först.', false)
+  tools.fail('material_unavailable', 'Studiematerialet är inte färdigbehandlat ännu.', true)
 }
 
 /**

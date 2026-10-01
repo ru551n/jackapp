@@ -195,6 +195,16 @@ describe('math', () => {
       ['math.unit_mismatch'],
     ],
     ['unit unknown', num({ unit: 'blorp' }), ['math.unit_unknown']],
+    [
+      'count noun from the story is not an unknown unit',
+      num({
+        prompt: 'Ett tåg har 4 vagnar med 6 säten i varje. Hur många säten?',
+        check: '4*6',
+        answer: 24,
+        unit: 'säten',
+      }),
+      [],
+    ],
   ])('%s', (_n, i, want) => expect(codes(math(i, ctx()))).toEqual(want))
 
   it('mismatch message shows the computed value in Swedish format', () => {
