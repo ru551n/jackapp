@@ -1,5 +1,5 @@
 import type { Choice, Generator, SpriteId } from '../../core/types'
-import { wrongIds } from '../helpers'
+import { choiceCount, wrongIds } from '../helpers'
 
 export type Kind = 'tåg' | 'spårvagn' | 'tunnelbana' | 'passagerarflygplan' | 'stridsflygplan'
 export const KIND_SPRITE: Record<Kind, SpriteId> = {
@@ -32,14 +32,15 @@ export const oddOneOut: Generator = {
   id: 'logic.category.oddOneOut',
   skill: 'logic.category',
   levels: [1, 5],
-  generate({ rng, level }) {
+  generate({ rng, level, support }) {
+    const extra = support === 'extra'
     const [same, odd]: Kind[] =
-      level <= 2
+      level <= 2 || extra
         ? [rng.pick(RAIL_KINDS), rng.pick(AIR_KINDS)]
         : level === 3
           ? rng.shuffle(RAIL_KINDS)
           : rng.shuffle(ALL)
-    const kinds = rng.shuffle([same, same, same, odd])
+    const kinds = rng.shuffle(extra ? [same, same, odd] : [same, same, same, odd])
     const choices = kinds.map((k, i) => pic(`${k}:${i}`, k))
     const answer = choices[kinds.indexOf(odd)].id
     return {
@@ -50,8 +51,15 @@ export const oddOneOut: Generator = {
       prompt: 'Vilken hör inte hit?',
       task: { kind: 'choice', choices, answer },
       hints: [
-        { text: 'Tre är likadana. Vilken är annorlunda?' },
-        { text: 'Tre är likadana. Hitta den andra.', eliminate: wrongIds(choices, answer, 1) },
+        {
+          text:
+            isRail(same) === isRail(odd)
+              ? `Leta efter ${SINGULAR[odd]}.`
+              : isRail(odd)
+                ? 'Leta efter något som går på spår.'
+                : 'Leta efter något som flyger.',
+        },
+        { text: 'De andra är likadana. Hitta den som är annorlunda.', eliminate: wrongIds(choices, answer, 1) },
       ],
       success: `Ja! Det är ${SINGULAR[odd]}.`,
     }
@@ -63,10 +71,10 @@ export const railOrAir: Generator = {
   id: 'logic.category.railOrAir',
   skill: 'logic.category',
   levels: [1, 3],
-  generate({ rng, level }) {
+  generate({ rng, level, support }) {
     const air = rng.next() < 0.5
     const kinds = air ? [rng.pick(AIR_KINDS), ...rng.shuffle(RAIL_KINDS)] : [rng.pick(RAIL_KINDS), ...AIR_KINDS]
-    const n = level === 1 ? 2 : 3
+    const n = Math.min(3, choiceCount(level, support))
     const picked = [kinds[0], ...rng.shuffle(kinds.slice(1)).slice(0, n - 1)]
     const choices = rng.shuffle(picked).map((k) => pic(k, k))
     const answer = picked[0]
@@ -91,10 +99,12 @@ export const nameTheKind: Generator = {
   id: 'logic.category.nameTheKind',
   skill: 'logic.category',
   levels: [2, 5],
-  generate({ rng, level }) {
+  generate({ rng, level, support }) {
     const kind = rng.pick(ALL)
-    const n = Math.max(2, level)
-    const others = rng.shuffle(ALL.filter((k) => k !== kind)).slice(0, n - 1)
+    const n = choiceCount(level, support)
+    // Extra support: one clear contrast, rail vs air.
+    const pool = ALL.filter((k) => k !== kind && (support !== 'extra' || isRail(k) !== isRail(kind)))
+    const others = rng.shuffle(pool).slice(0, n - 1)
     const choices = rng.shuffle([kind, ...others]).map((k) => ({ id: k, label: k }))
     return {
       id: `logic.category.nameTheKind:${kind}:${n}`,

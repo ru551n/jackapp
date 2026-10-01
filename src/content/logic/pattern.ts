@@ -10,7 +10,7 @@ import type {
   SpriteId,
   Tint,
 } from '../../core/types'
-import { TINT_NAMES, wrongIds } from '../helpers'
+import { TINT_NAMES, choiceCount, wrongIds } from '../helpers'
 
 const TINTS: Tint[] = ['red', 'blue', 'green', 'yellow']
 
@@ -19,14 +19,17 @@ export const tramColourPattern: Generator = {
   id: 'logic.pattern.tramColours',
   skill: 'logic.pattern',
   levels: [1, 5],
-  generate({ rng, level }) {
-    const unitLen = level <= 2 ? 2 : 3
+  generate({ rng, level, support }) {
+    const extra = support === 'extra'
+    const unitLen = level <= 2 || extra ? 2 : 3
     const unit = rng.shuffle(TINTS).slice(0, unitLen)
-    const shown = level <= 1 ? 4 : unitLen * 2
+    const shown = level <= 1 || extra ? 4 : unitLen * 2
     const seq = Array.from({ length: shown + 1 }, (_, i) => unit[i % unitLen])
     const answer = seq[shown]
-    const items: SceneItem[] = seq.slice(0, shown).map((tint) => ({ sprite: 'tram', tint }))
-    const others = rng.shuffle(TINTS.filter((t) => t !== answer)).slice(0, 2)
+    const grouped = (xs: SceneItem[]) => xs.map((it, i) => ({ ...it, group: Math.floor(i / unitLen) }))
+    const plain: SceneItem[] = seq.slice(0, shown).map((tint) => ({ sprite: 'tram', tint }))
+    const items = extra ? grouped(plain) : plain
+    const others = rng.shuffle(TINTS.filter((t) => t !== answer)).slice(0, choiceCount(level, support) - 1)
     const choices = rng.shuffle([answer, ...others]).map((tint) => ({
       id: tint,
       visual: { kind: 'row' as const, items: [{ sprite: 'tram' as const, tint }] },
@@ -49,10 +52,13 @@ export const tramColourPattern: Generator = {
       task: { kind: 'choice', choices, answer },
       hints: [
         {
-          text: 'Titta på färgerna. De kommer i samma ordning igen.',
-          scene: { kind: 'row', items: items.map((it, i) => ({ ...it, group: Math.floor(i / unitLen) })) },
+          text: `Titta på grupperna. Det som upprepas är ${unit.map((t) => TINT_NAMES[t].indef).join(', ')}.`,
+          scene: { kind: 'row', items: grouped(plain) },
         },
-        { text: `Nästa spårvagn är ${TINT_NAMES[answer].indef}.`, eliminate: [others[0]] },
+        {
+          text: `Nästa spårvagn är ${TINT_NAMES[answer].indef}.`,
+          eliminate: others.length > 1 ? [others[0]] : undefined,
+        },
       ],
       success: `Ja! Den ${TINT_NAMES[answer].def} spårvagnen kommer sen.`,
     }
@@ -65,7 +71,7 @@ type Sym = { sprite: SpriteId; tint?: Tint }
 const SPRITE_NAME: Partial<Record<SpriteId, { a: string; def: string }>> = {
   tram: { a: 'en spårvagn', def: 'spårvagnen' },
   metroCar: { a: 'en tunnelbanevagn', def: 'tunnelbanevagnen' },
-  locomotive: { a: 'ett lok', def: 'loket' },
+  locomotive: { a: 'ett tåg', def: 'tåget' },
   carriage: { a: 'en tågvagn', def: 'tågvagnen' },
 }
 const RAIL: SpriteId[] = ['tram', 'metroCar', 'locomotive', 'carriage']
@@ -78,12 +84,13 @@ const symA = (s: Sym) => {
 
 function buildPattern(
   idBase: string,
-  { rng, level }: Pick<GenContext, 'rng' | 'level'>,
+  { rng, level, support }: GenContext,
   pool: Sym[],
   shapes: string[],
   mid: boolean,
 ): Question {
-  const shape = rng.pick(shapes)
+  const extra = support === 'extra'
+  const shape = extra ? 'AB' : rng.pick(shapes)
   const letters = [...new Set(shape)]
   const unit = rng.shuffle(pool).slice(0, letters.length)
   const sym = (ch: string) => unit[letters.indexOf(ch)]
@@ -106,7 +113,7 @@ function buildPattern(
       ],
     }
   }
-  const wrong = rng.shuffle(pool.filter((p) => symKey(p) !== symKey(answer))).slice(0, level <= 1 ? 1 : 2)
+  const wrong = rng.shuffle(pool.filter((p) => symKey(p) !== symKey(answer))).slice(0, choiceCount(level, support) - 1)
   const choices: Choice[] = rng.shuffle([answer, ...wrong]).map((s) => ({
     id: symKey(s),
     visual: { kind: 'row', items: [{ ...s }] },
@@ -119,10 +126,13 @@ function buildPattern(
     level,
     theme: 'tram',
     prompt: mid ? 'Vad saknas i raden?' : 'Vad kommer sen?',
-    scene: build(false),
+    scene: build(extra),
     task: { kind: 'choice', choices, answer: ans },
     hints: [
-      { text: 'Titta på raden. Samma vagnar kommer igen och igen.', scene: build(true) },
+      {
+        text: `Titta på grupperna. Det som upprepas är ${unit.map(symName).join(', ')}.`,
+        scene: build(true),
+      },
       { text: `Det är ${symA(answer)}.`, eliminate: wrongIds(choices, ans, 1).slice(0, 1) },
     ],
     success: `Ja! Det är ${symA(answer)}.`,

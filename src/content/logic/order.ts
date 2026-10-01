@@ -2,7 +2,7 @@ import type { Choice, Generator, Scene } from '../../core/types'
 import { numberWord } from '../../core/swedish'
 import { wrongIds } from '../helpers'
 
-const count = (level: number) => (level <= 2 ? 3 : level <= 4 ? 4 : 5)
+const count = (level: number, extra = false) => Math.max(2, (level <= 2 ? 3 : level <= 4 ? 4 : 5) - (extra ? 1 : 0))
 
 /** Göteborg tram stops (names verified to exist). The map order is made up per question: the task is to read it. */
 export const TRAM_STOPS = [
@@ -18,6 +18,10 @@ export const TRAM_STOPS = [
   'Vasaplatsen',
 ]
 
+/** Short, familiar stops for the youngest levels. */
+export const SHORT_STOPS = ['Valand', 'Chalmers', 'Domkyrkan', 'Korsvägen', 'Järntorget']
+const stopPool = (level: number) => (level <= 2 ? SHORT_STOPS : TRAM_STOPS)
+
 export function routeScene(stops: string[]): Scene {
   const scenes: Scene[] = []
   stops.forEach((text, i) => {
@@ -32,8 +36,9 @@ export const trainLengthOrder: Generator = {
   id: 'logic.order.trainLength',
   skill: 'logic.order',
   levels: [1, 5],
-  generate({ rng, level }) {
-    const lens = rng.shuffle([1, 2, 3, 4, 5]).slice(0, count(level))
+  generate({ rng, level, support }) {
+    const extra = support === 'extra'
+    const lens = rng.shuffle([1, 2, 3, 4, 5]).slice(0, count(level, extra))
     const shortFirst = level < 4 || rng.next() < 0.5
     const items: Choice[] = lens.map((n) => ({
       id: `n${n}`,
@@ -47,10 +52,16 @@ export const trainLengthOrder: Generator = {
       skill: 'logic.order',
       level,
       theme: 'train',
-      prompt: shortFirst ? 'Tryck på tågen. Kortaste först.' : 'Tryck på tågen. Längsta först.',
+      prompt:
+        (shortFirst ? 'Det kortaste tåget först.' : 'Det längsta tåget först.') +
+        (extra ? ` Det har ${numberWord(first, 'en')} ${first === 1 ? 'vagn' : 'vagnar'}.` : ''),
       task: { kind: 'order', items, answer: sorted.map((n) => `n${n}`) },
       hints: [
-        { text: 'Räkna vagnarna i varje tåg.' },
+        {
+          text: shortFirst
+            ? 'Börja med det kortaste tåget. Räkna vagnarna.'
+            : 'Börja med det längsta tåget. Räkna vagnarna.',
+        },
         { text: `Först kommer tåget med ${numberWord(first, 'en')} ${first === 1 ? 'vagn' : 'vagnar'}.` },
       ],
       success: shortFirst ? 'Ja! Från kortaste till längsta tåget.' : 'Ja! Från längsta till kortaste tåget.',
@@ -63,18 +74,22 @@ export const tramStopsOrder: Generator = {
   id: 'logic.order.tramStops',
   skill: 'logic.order',
   levels: [1, 5],
-  generate({ rng, level }) {
-    const stops = rng.shuffle(TRAM_STOPS).slice(0, count(level))
+  generate({ rng, level, support }) {
+    const extra = support === 'extra'
+    const stops = rng.shuffle(stopPool(level)).slice(0, count(level, extra))
     const items: Choice[] = rng.shuffle(stops).map((s) => ({ id: s, label: s }))
     return {
       id: `logic.order.tramStops:${stops.join('>')}`,
       skill: 'logic.order',
       level,
       theme: 'tram',
-      prompt: 'Titta på kartan. Tryck på hållplatserna i samma ordning.',
+      prompt: 'Tryck på hållplatserna i ordning, från vänster till höger.' + (extra ? ` Börja med ${stops[0]}.` : ''),
       scene: routeScene(stops),
       task: { kind: 'order', items, answer: stops },
-      hints: [{ text: 'Börja längst till vänster på kartan. Följ pilarna.' }, { text: `Först kommer ${stops[0]}.` }],
+      hints: [
+        { text: `Börja längst till vänster på kartan: ${stops[0]}. Följ pilarna.` },
+        { text: `Sedan kommer ${stops[1]}.` },
+      ],
       success: 'Ja! Du läste kartan rätt.',
     }
   },
@@ -85,8 +100,8 @@ export const carriageNumberOrder: Generator = {
   id: 'logic.order.carriageNumbers',
   skill: 'logic.order',
   levels: [1, 5],
-  generate({ rng, level }) {
-    const n = count(level)
+  generate({ rng, level, support }) {
+    const n = count(level, support === 'extra')
     const up = level < 4 || rng.next() < 0.5
     const nums = Array.from({ length: n }, (_, i) => i + 1)
     const items: Choice[] = rng.shuffle(nums).map((k) => ({
@@ -117,8 +132,8 @@ export const tramRouteQuestion: Generator = {
   id: 'logic.order.tramRoute',
   skill: 'logic.order',
   levels: [2, 5],
-  generate({ rng, level }) {
-    const stops = rng.shuffle(TRAM_STOPS).slice(0, level <= 2 ? 4 : 5)
+  generate({ rng, level, support }) {
+    const stops = rng.shuffle(stopPool(level)).slice(0, support === 'extra' ? 3 : level <= 2 ? 4 : 5)
     const mode = level <= 3 ? 'after' : rng.pick(['after', 'before'] as const)
     const i = mode === 'after' ? rng.int(0, stops.length - 2) : rng.int(1, stops.length - 1)
     const ref = stops[i]
@@ -133,7 +148,9 @@ export const tramRouteQuestion: Generator = {
       scene: routeScene(stops),
       task: { kind: 'choice', choices, answer },
       hints: [
-        { text: `Leta upp ${ref} på kartan. Pilarna visar vägen.` },
+        {
+          text: `Leta upp ${ref} på kartan. Titta på rutan ${mode === 'after' ? 'till höger' : 'till vänster'} om den.`,
+        },
         { text: `Det är ${answer}.`, eliminate: wrongIds(choices, answer, 1) },
       ],
       success: `Ja! ${answer} kommer ${mode === 'after' ? 'efter' : 'före'} ${ref}.`,
