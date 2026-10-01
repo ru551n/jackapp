@@ -6,6 +6,19 @@ import { useResource, type Attribution } from './api'
 import { DIFFICULTY, ITEM_KIND } from './labels'
 import s from './adult.module.css'
 
+/** " · <link>" for a source or licence URL, nothing when absent. */
+export function ExtLink({ href, children }: { href?: string; children: string }) {
+  if (!href) return null
+  return (
+    <>
+      {' · '}
+      <a href={href} target="_blank" rel="noreferrer">
+        {children}
+      </a>
+    </>
+  )
+}
+
 export function Figure({ media }: { media: MediaRef }) {
   const a = useResource<Attribution>(`/assets/${media.assetId}/attribution`)
   return (
@@ -13,8 +26,10 @@ export function Figure({ media }: { media: MediaRef }) {
       <img src={`${API_PREFIX}/assets/${media.assetId}`} alt={media.alt} />
       <figcaption className={s.muted}>
         {media.generated && 'AI-genererad bild. '}
-        {a.data?.attributionRequired && a.data.attribution}
-        {!media.generated && !a.data?.attributionRequired && `Licens: ${media.license.license}`}
+        {/* Credit is shown for every licence, also CC0/PD (courtesy; docs/platform/research-and-licensing.md). */}
+        {a.data?.attribution ?? (!media.generated && `Licens: ${media.license.license}`)}
+        <ExtLink href={a.data?.sourceUrl ?? media.license.sourceUrl}>källa</ExtLink>
+        <ExtLink href={a.data?.licenseUrl ?? media.license.licenseUrl}>licens</ExtLink>
       </figcaption>
     </figure>
   )
@@ -32,6 +47,7 @@ function Answer({ item }: { item: Item }) {
             <li key={c.id}>
               {c.text}
               {mark(right.includes(c.id))}
+              {c.media && <Figure media={c.media} />}
             </li>
           ))}
         </ul>
@@ -245,7 +261,7 @@ export function ItemView({
   const [editing, setEditing] = useState(false)
   const [confirm, setConfirm] = useState(false)
   return (
-    <li className={s.item}>
+    <li className={s.item} id={`item-${item.id}`}>
       <div className={s.cardHead}>
         <h4>
           {n}. {ITEM_KIND[item.kind]}

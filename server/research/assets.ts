@@ -73,10 +73,8 @@ export async function searchCandidates(input: FindImagesInput, opts: AssetOption
   ])
   const a = c.status === 'fulfilled' ? c.value : []
   const b = o.status === 'fulfilled' ? o.value : []
-  // Interleave, Commons first (richer, curated metadata).
-  return Array.from({ length: Math.max(a.length, b.length) }, (_, i) => [a[i], b[i]])
-    .flat()
-    .filter((x): x is Candidate => !!x)
+  // Commons first (curated licence metadata), Openverse only fills up.
+  return [...a, ...b]
 }
 
 /**

@@ -190,10 +190,11 @@ describe('findLicensedImages', () => {
       { query: 'Saab Gripen', count: 3 },
       { fetcher: spy, dataDir, env: {} },
     )
+    // Commons first; Openverse only fills up.
     expect(refs.map((r) => [r.alt, r.license.license])).toEqual([
-      ['Volvo PV444 a1', 'CC-BY-SA-2.0'],
       ['A Gripen fighter in flight & banking', 'CC-BY-SA-4.0'],
-      ['Volvo PV444 a2', 'CC0-1.0'],
+      ['Gripen NASA', 'PD'],
+      ['Volvo PV444 a1', 'CC-BY-SA-2.0'],
     ])
     expect(refs.every((r) => r.license.autoUsable && !r.generated && r.license.attribution)).toBe(true)
     expect(apiUrls.find((u) => u.includes('commons'))).toContain('filetype%3Abitmap')

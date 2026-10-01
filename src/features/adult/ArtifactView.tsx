@@ -1,9 +1,9 @@
 import { useCallback, useState } from 'react'
 import { Link, useParams } from 'react-router'
-import type { Artifact, AssetLicense, JobStatus, SourceRef } from '../../../shared/contracts'
+import type { Artifact, AssetLicense, Item, JobStatus, MediaRef, SourceRef } from '../../../shared/contracts'
 import { Button } from '../../ui/Button'
 import { adultApi, errorText, paths, useResource, type ArtifactResponse, type VersionEntry } from './api'
-import { ItemView } from './ItemView'
+import { ExtLink, ItemView } from './ItemView'
 import { JobProgress } from './JobProgress'
 import { useLearner } from './context'
 import { APPROVAL, ARTIFACT_TYPE, formatDate, SOURCE_MODE, TRANSFORMS } from './labels'
@@ -42,6 +42,12 @@ interface ProvenanceAsset {
   license: AssetLicense
 }
 
+/** Item media plus choice media (multiple choice / multi select). */
+const itemMedia = (it: Item): MediaRef[] => [
+  ...it.media,
+  ...('choices' in it ? it.choices.flatMap((c) => (c.media ? [c.media] : [])) : []),
+]
+
 function Provenance({ artifact }: { artifact: Artifact }) {
   const items = artifact.sections.flatMap((sec) => sec.items)
   const seen = new Map<string, { src: SourceRef; items: number[] }>()
@@ -56,7 +62,7 @@ function Provenance({ artifact }: { artifact: Artifact }) {
   const all = [...seen.values()]
   const assetIds = [
     ...new Set(
-      artifact.sections.flatMap((sec) => [...sec.media, ...sec.items.flatMap((i) => i.media)]).map((m) => m.assetId),
+      artifact.sections.flatMap((sec) => [...sec.media, ...sec.items.flatMap(itemMedia)]).map((m) => m.assetId),
     ),
   ]
   const prov = useResource<{ assets: ProvenanceAsset[] }>(
@@ -133,15 +139,8 @@ function Provenance({ artifact }: { artifact: Artifact }) {
                   {a.alt}: {a.generated ? 'AI-genererad' : a.license.license}
                   {a.license.creator && `, ${a.license.creator}`}
                   {a.license.attribution && ` · ${a.license.attribution}`}
-                  {a.license.sourceUrl && (
-                    <>
-                      {' '}
-                      ·{' '}
-                      <a href={a.license.sourceUrl} target="_blank" rel="noreferrer">
-                        källa
-                      </a>
-                    </>
-                  )}
+                  <ExtLink href={a.license.sourceUrl}>källa</ExtLink>
+                  <ExtLink href={a.license.licenseUrl}>licens</ExtLink>
                 </li>
               ))}
             </ul>
@@ -186,6 +185,7 @@ export function ArtifactView() {
   const { artifact: a, requestedIllustrations } = res.data
   const issues = a.validation.issues
   const general = issues.filter((i) => !i.itemId)
+  const flagged = issues.filter((i) => i.itemId && i.severity !== 'error')
   const busy = !!job
 
   const act = async (fn: () => Promise<unknown>, ok?: string) => {
@@ -237,7 +237,21 @@ export function ArtifactView() {
           {a.feedback === 'end' ? 'återkoppling i slutet' : 'återkoppling direkt'}
         </p>
         {a.validation.ok ? (
-          <p className={s.ok}>Materialet klarade kontrollen.</p>
+          <p className={s.ok}>
+            {flagged.length === 0 ? (
+              'Materialet klarade kontrollen.'
+            ) : (
+              <>
+                Klarade kontrollen ·{' '}
+                <Button
+                  variant="quiet"
+                  onClick={() => document.getElementById(`item-${flagged[0]!.itemId}`)?.scrollIntoView()}
+                >
+                  {flagged.length === 1 ? '1 sak att titta på' : `${flagged.length} saker att titta på`}
+                </Button>
+              </>
+            )}
+          </p>
         ) : (
           <p className={s.issueError}>
             Materialet har {issues.filter((i) => i.severity === 'error').length} fel som behöver rättas innan det kan

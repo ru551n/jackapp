@@ -15,6 +15,7 @@ import {
   imageJobHandler,
   imagesToday,
   needsRealImagery,
+  screenRequest,
   reserveImage,
   type ImageJobPayload,
 } from './index'
@@ -68,6 +69,26 @@ describe('needsRealImagery', () => {
     'false for %s',
     (d) => expect(needsRealImagery(d)).toBe(false),
   )
+  it('routes photo requests to licensed search instead of refusing them', () => {
+    for (const d of ['ett foto av en älg', 'fotografi av en räv', 'fotorealistisk bild av en ko'])
+      expect(screenRequest({ description: d, subject: 'svenska' })?.code).toBe('factual_reference')
+    expect(screenRequest({ description: 'fotosyntes i ett blad', subject: 'svenska' })).toBeUndefined()
+  })
+
+  it('treats species and anatomy in biology/NO as factual', () => {
+    expect(needsRealImagery('en blåmes på en gren', 'biologi')).toBe(true)
+    expect(needsRealImagery('hjärtat och lungorna', 'NO')).toBe(true)
+    expect(needsRealImagery('en igelkott', 'no')).toBe(true)
+    expect(needsRealImagery('en glad igelkott som räknar', 'matematik')).toBe(false)
+    expect(needsRealImagery('barn som leker i skogen', 'biologi')).toBe(false)
+  })
+
+  it('does not flag innocent words as unsafe', () => {
+    for (const d of ['en karta över döda havet', 'två likadana bollar', 'de är lika stora'])
+      expect(screenRequest({ description: d, subject: 'matematik' })?.code).not.toBe('unsafe_content')
+    expect(screenRequest({ description: 'någon som dödar en drake', subject: '' })?.code).toBe('unsafe_content')
+  })
+
   it('uses the subject for artifacts', () => {
     expect(needsRealImagery('ett vikingasvärd', 'historia')).toBe(true)
     expect(needsRealImagery('ett vikingasvärd', 'svenska')).toBe(false)

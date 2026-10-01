@@ -219,7 +219,10 @@ export function parseRobots(txt: string, token = ROBOTS_TOKEN): Rule[] {
       if (!cur || cur.rules.length) groups.push((cur = { agents: [], rules: [] }))
       cur.agents.push(value.toLowerCase())
     } else if ((key === 'allow' || key === 'disallow') && cur) {
-      if (value) cur.rules.push({ allow: key === 'allow', pattern: value })
+      if (value.length > MAX_PATTERN) {
+        // Cut a long Disallow (blocks more); drop a long Allow (would allow more).
+        if (key === 'disallow') cur.rules.push({ allow: false, pattern: value.slice(0, MAX_PATTERN) })
+      } else if (value) cur.rules.push({ allow: key === 'allow', pattern: value })
       else cur.rules.push({ allow: true, pattern: '' }) // "Disallow:" = allow all; keeps the group non-empty
     }
   }
@@ -227,13 +230,26 @@ export function parseRobots(txt: string, token = ROBOTS_TOKEN): Rule[] {
   return (mine.length ? mine : groups.filter((g) => g.agents.includes('*'))).flatMap((g) => g.rules)
 }
 
-function matches(pattern: string, path: string): boolean {
+/** Robots.txt patterns longer than this are cut (Disallow) or ignored (Allow). */
+const MAX_PATTERN = 512
+
+/** `*`/`$` wildcard match against a path prefix without regex backtracking (greedy leftmost, linear scans). */
+export function matches(pattern: string, path: string): boolean {
   const anchored = pattern.endsWith('$')
-  const body = (anchored ? pattern.slice(0, -1) : pattern)
-    .split('*')
-    .map((s) => s.replace(/[.+?^${}()|[\]\\]/g, '\\$&'))
-    .join('.*')
-  return new RegExp(`^${body}${anchored ? '$' : ''}`).test(path)
+  const parts = (anchored ? pattern.slice(0, -1) : pattern).split('*')
+  const first = parts[0]!
+  if (!path.startsWith(first)) return false
+  if (parts.length === 1) return !anchored || path.length === first.length
+  let pos = first.length
+  const last = parts.length - 1
+  for (let i = 1; i < last; i++) {
+    const at = path.indexOf(parts[i]!, pos)
+    if (at < 0) return false
+    pos = at + parts[i]!.length
+  }
+  const tail = parts[last]!
+  if (anchored) return path.length - tail.length >= pos && path.endsWith(tail)
+  return path.indexOf(tail, pos) >= 0
 }
 
 export function robotsAllows(rules: Rule[], pathAndQuery: string): boolean {

@@ -86,6 +86,20 @@ const MAKES = word(
 const DESIGNATION = /(?<![\p{L}\d])\p{Lu}\p{L}*[ -]?\d{2,}|(?<![\p{L}\d])[A-Z]{1,3}\d+(?![\p{L}\d])/u
 const ARTIFACT = /fynd|artefakt|föremål|runsten|fornlämning|fossil|skelett|svärd|hjälm|mynt|smycke/i
 const FACT_SUBJECT = /histori|geografi|samhäll|biologi|arkeologi|history|geography/i
+/** A photo is by definition real imagery: search licensed photos instead of refusing. */
+const PHOTO = word(
+  'foto|fotot|fotona|fotografi\\p{L}*|fotografera\\p{L}*|fotorealistisk\\p{L}*|photo\\p{L}*|photorealistic',
+)
+/** Biology/NO subjects (Lgr22: biologi, NO in åk 1–6, naturkunskap). */
+const BIO_SUBJECT = /biologi|naturorient|naturkunskap|biology|(?<!\p{L})no(?!\p{L})/iu
+/** Species and anatomy: children identify these from pictures, so they must be accurate. */
+const SPECIES_ANATOMY = word(
+  'arter?|djurart\\p{L}*|växtart\\p{L}*|fåglar|fågel|fisk(?:ar)?|insekt(?:er)?|grod(?:a|or)|padda|ödla|huggorm|' +
+    'älg|kronhjort|rådjur|räv|varg|björn|lodjur|järv|igelkott|ekorre|bäver|säl|blåmes|talgoxe|kråka|skata|uggla|örn|' +
+    'svan|myr(?:a|or)|humla|fjäril|nyckelpiga|spindel|svamp(?:ar)?|blomm(?:a|or)|maskros|blåsippa|björk|' +
+    'skelett|hjärta[nt]?|lung(?:a|or)|hjärna[nt]?|njur(?:e|ar)|magsäck|tarm(?:ar)?|muskl?er|muskel|' +
+    'ögat|örat|tänder|blodomlopp\\p{L}*|organ|celler?|kroppen|matspjälkning\\p{L}*|nervsystem\\p{L}*',
+)
 
 /** True when a capitalised word appears after a sentence's first word (a proper noun: a place, person or brand). */
 const hasProperNoun = (text: string) =>
@@ -99,8 +113,9 @@ const hasProperNoun = (text: string) =>
 
 /**
  * Deterministic: does this need real, licensed imagery rather than an AI illustration?
- * True for maps, flags, "real/authentic/identify" wording, vehicle makes and model numbers,
- * proper nouns (named places, finds, people, characters) and artifacts in fact subjects.
+ * True for maps, flags, photos, "real/authentic/identify" wording, vehicle makes and model numbers,
+ * proper nouns (named places, finds, people, characters), artifacts in fact subjects and species or
+ * anatomy in biology/NO.
  * Errs towards true; a false positive only means a licensed image is searched instead.
  */
 export function needsRealImagery(description: string, subject = ''): boolean {
@@ -111,12 +126,15 @@ export function needsRealImagery(description: string, subject = ''): boolean {
     MAKES.test(description) ||
     DESIGNATION.test(description) ||
     hasProperNoun(description) ||
-    (FACT_SUBJECT.test(subject) && ARTIFACT.test(description))
+    PHOTO.test(description) ||
+    (FACT_SUBJECT.test(subject) && ARTIFACT.test(description)) ||
+    (BIO_SUBJECT.test(subject) && SPECIES_ANATOMY.test(description))
   )
 }
 
 const UNSAFE = word(
-  'blodig\\p{L}*|blodbad|mord|mörda\\p{L}*|döda|dödar|dödad|lik|skjut\\p{L}*|pistol\\p{L}*|gevär\\p{L}*|vapen|bomber?|kniv\\p{L}*|skräck\\p{L}*|läskig\\p{L}*|zombie\\p{L}*|demoner?|blood|kill|killing|killer|guns?|weapons?|horror|gore|fotorealistisk\\p{L}*|photorealistic|foto|fotot|fotografi\\p{L}*|photo\\p{L}*',
+  // Not "döda" (Döda havet) or "lik" (likadan, "lik" = alike): too many innocent hits.
+  'blodig\\p{L}*|blodbad|mord|mörda\\p{L}*|dödar|dödad|dödade|skjut\\p{L}*|pistol\\p{L}*|gevär\\p{L}*|vapen|bomber?|kniv\\p{L}*|skräck\\p{L}*|läskig\\p{L}*|zombie\\p{L}*|demoner?|blood|kill|killing|killer|guns?|weapons?|horror|gore',
 )
 
 export type ImageRefusal = { code: 'factual_reference' | 'unsafe_content'; message: string }
@@ -126,8 +144,7 @@ export function screenRequest(p: Pick<ImageJobPayload, 'description' | 'subject'
   if (UNSAFE.test(p.description))
     return {
       code: 'unsafe_content',
-      message:
-        'Bilden kan inte skapas: beskrivningen innehåller våld, vapen, skrämmande innehåll eller foto av verkliga personer.',
+      message: 'Bilden kan inte skapas: beskrivningen innehåller våld, vapen eller skrämmande innehåll.',
     }
   if (needsRealImagery(p.description, p.subject))
     return {

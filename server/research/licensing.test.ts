@@ -14,7 +14,12 @@ describe('classifyLicense', () => {
     ['pdm', '1.0', 'PD', true, false],
     ['cc-by-4.0', undefined, 'CC-BY-4.0', true, false],
     ['CC BY-SA 3.0', undefined, 'CC-BY-SA-3.0', true, true],
-    ['cc-by-sa-3.0-de', undefined, 'CC-BY-SA-3.0', true, true],
+    ['cc-by-sa-3.0-de', undefined, 'CC-BY-SA-3.0-DE', true, true],
+    ['CC BY 3.0 IGO', undefined, 'CC-BY-3.0-IGO', true, false],
+    ['CC BY-SA 3.0 migrated', undefined, 'CC-BY-SA-3.0', true, true],
+    ['PD-US', undefined, 'PD-US', false, false],
+    ['PD-US-expired', undefined, 'PD-US', false, false],
+    ['PD-1923', undefined, 'PD-US', false, false],
     ['by-sa', '2.0', 'CC-BY-SA-2.0', true, true],
     ['by', '', 'CC-BY', false, false],
     ['cc-by-nc-2.0', undefined, 'CC-BY-NC-2.0', false, false],
@@ -30,6 +35,82 @@ describe('classifyLicense', () => {
     expect(v).toMatchObject({ license: id, autoUsable: usable })
     if (usable) expect(v.shareAlike).toBe(sa)
     else expect(v.reason).toBeTruthy()
+  })
+})
+
+describe('licence labels and deed URLs', () => {
+  it('keeps ports and IGO in the label and builds the deed URL', () => {
+    expect(classifyLicense('cc-by-sa-3.0-de')).toMatchObject({
+      label: 'CC BY-SA 3.0 DE',
+      url: 'https://creativecommons.org/licenses/by-sa/3.0/de/',
+    })
+    expect(classifyLicense('CC BY 3.0 IGO')).toMatchObject({
+      label: 'CC BY 3.0 IGO',
+      url: 'https://creativecommons.org/licenses/by/3.0/igo/',
+    })
+    expect(classifyLicense('by', '4.0').url).toBe('https://creativecommons.org/licenses/by/4.0/')
+  })
+})
+
+const commons = (extmetadata: Record<string, string>) => ({
+  query: {
+    pages: {
+      1: {
+        title: 'File:Kronhjort.jpg',
+        index: 1,
+        imageinfo: [
+          {
+            url: 'https://upload.wikimedia.org/k.jpg',
+            descriptionurl: 'https://commons.wikimedia.org/wiki/File:Kronhjort.jpg',
+            extmetadata: Object.fromEntries(Object.entries(extmetadata).map(([k, value]) => [k, { value }])),
+          },
+        ],
+      },
+    },
+  },
+})
+
+describe('Commons metadata', () => {
+  it('never uses Credit as the creator and fills a missing licence URL', () => {
+    const [c] = parseCommons(commons({ Credit: 'Own work', License: 'cc-by-sa-3.0-de' }), AT)
+    expect(c!.license.creator).toBeUndefined()
+    expect(c!.license.licenseUrl).toBe('https://creativecommons.org/licenses/by-sa/3.0/de/')
+    expect(c!.license.attribution).toContain('okänd upphovsperson')
+    expect(c!.license.attribution).toContain('CC BY-SA 3.0 DE (https://creativecommons.org/licenses/by-sa/3.0/de/)')
+    expect(c!.license.attribution).not.toContain('Own work')
+  })
+
+  it('uses UsageTerms when License is missing and rejects PD on a copyrighted file', () => {
+    expect(parseCommons(commons({ UsageTerms: 'CC BY 4.0' }), AT)[0]!.license.license).toBe('CC-BY-4.0')
+    const [pd] = parseCommons(commons({ License: 'pd', Copyrighted: 'True' }), AT)
+    expect(pd!.license.autoUsable).toBe(false)
+    expect(
+      parseCommons(commons({ License: 'pd', AttributionRequired: 'true' }), AT)[0]!.verdict.attributionRequired,
+    ).toBe(true)
+  })
+})
+
+describe('Openverse public-domain marks', () => {
+  const one = (source: string) =>
+    parseOpenverse(
+      {
+        results: [
+          {
+            url: 'https://example.org/a.jpg',
+            title: 'Vas',
+            license: 'pdm',
+            license_version: '1.0',
+            source,
+            foreign_landing_url: 'https://example.org/a',
+          },
+        ],
+      },
+      AT,
+    )[0]!.license.autoUsable
+  it('trusts pdm only from curated institutions', () => {
+    expect(one('met')).toBe(true)
+    expect(one('smithsonian_national_museum_of_natural_history')).toBe(true)
+    expect(one('flickr')).toBe(false)
   })
 })
 
@@ -66,7 +147,7 @@ describe('provider parsing', () => {
       ['CC-BY-SA-2.0', true],
       ['CC0-1.0', true],
       ['CC-BY-NC-2.0', false],
-      ['PD', true],
+      ['PD', false], // pdm from Flickr: an uploader's claim
       ['unknown', false],
       ['CC-BY', false],
     ])

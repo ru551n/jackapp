@@ -18,6 +18,8 @@ The rule is enforced before any provider call. `needsRealImagery(description, su
 - a model designation: a capitalised word followed by digits (`Saab 37`, `Boeing 747`) or a short code (`A320`, `Rc6`)
 - a proper noun, meaning a capitalised word after the first word of a sentence (`vikingasvärd från Birka`, named people, brands and characters)
 - in a history, geography, social-studies or biology subject: an artifact or specimen word (`svärd`, `runsten`, `fynd`, `fossil`, …)
+- in biology or NO: a species or anatomy word (`blåmes`, `älg`, `svamp`, `hjärtat`, `lungor`, `skelett`, …); children learn to recognise these, so they must be real photos or drawings
+- photo wording (`foto`, `fotografi`, `fotorealistisk`, `photo`): a photo is real imagery, so it is searched for, not generated
 
 The heuristic errs towards true. A false positive only means that a licensed image is searched for instead. When it returns true, the job and the API refuse with code `factual_reference`.
 
@@ -40,7 +42,7 @@ Prompts are written in English, because image models follow English best. The sc
 
 ## Safety
 
-- Descriptions containing violence, weapons, scary content or photo/photorealism wording are refused with `unsafe_content`.
+- Descriptions containing violence, weapons or scary content are refused with `unsafe_content` (checked first). Photo wording is routed to the licensed search instead (above). Words with common innocent uses (`döda` as in Döda havet, `lik` as in likadan) are not on the list.
 - Factual reference imagery is refused with `factual_reference` (see above).
 - Generated assets are stored with `generated: true` and the licence `{ license: 'ai-generated', provider: <AI_IMAGE_PROVIDER kind>, creator: 'AI (<model>)', autoUsable: true }`. The alt text is Swedish: `AI-genererad bild: <beskrivning>`. The UI should label AI images.
 

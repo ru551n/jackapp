@@ -6,6 +6,7 @@ import {
   FetchError,
   isBlockedAddress,
   parseRobots,
+  matches,
   robotsAllows,
   robotsChecker,
   safeFetch,
@@ -180,6 +181,37 @@ describe('safeFetch limits', () => {
 })
 
 describe('robots.txt', () => {
+  it('matches * and $ wildcards like the spec', () => {
+    const t: [string, string, boolean][] = [
+      ['/fish', '/fish.html', true],
+      ['/fish', '/Fish', false],
+      ['/*.php', '/index.php', true],
+      ['/*.php', '/a/b.php?x', true],
+      ['/*.php$', '/a.php', true],
+      ['/*.php$', '/a.php?x', false],
+      ['/fish*.php', '/fishheads/c.php', true],
+      ['/a*b*c$', '/abxc', true],
+      ['/a*b*c$', '/abc/x', false],
+      ['/a*bc$', '/abc', true],
+      ['/ab*b$', '/ab', false],
+      ['/exact$', '/exact', true],
+      ['/exact$', '/exactly', false],
+      ['*', '/anything', true],
+    ]
+    for (const [p, path, want] of t) expect([p, path, matches(p, path)]).toEqual([p, path, want])
+  })
+
+  it('handles pathological patterns in linear time (no regex backtracking)', () => {
+    const pattern = '/' + '*a'.repeat(200) + '$'
+    const path = '/' + 'a'.repeat(5000) + 'b'
+    const t0 = performance.now()
+    expect(matches(pattern, path)).toBe(false)
+    const rules = parseRobots(`User-agent: *\nDisallow: ${'/*a'.repeat(1000)}\nAllow: /${'x'.repeat(600)}`)
+    expect(rules.map((r) => [r.allow, r.pattern.length])).toEqual([[false, 512]])
+    expect(robotsAllows(rules, path)).toBe(true)
+    expect(performance.now() - t0).toBeLessThan(5)
+  })
+
   const txt = `
 # comment
 User-agent: *

@@ -63,21 +63,31 @@ The worker container should still have no route to internal admin networks; the 
 
 Classification is deterministic (`classifyLicense` in `server/research/licensing.ts`); a model never decides it.
 
-| Licence                                                     | Stored id      | Auto-usable | Attribution                 |
-| ----------------------------------------------------------- | -------------- | ----------- | --------------------------- |
-| CC0                                                         | `CC0-1.0`      | yes         | given anyway (courtesy)     |
-| Public domain, PD-\* (PD-USGov, PD-old, …), Openverse `pdm` | `PD`           | yes         | given anyway (courtesy)     |
-| CC BY 1.0–4.0 (incl. ported, e.g. 3.0-de)                   | `CC-BY-x.y`    | yes         | required (TASL)             |
-| CC BY-SA 1.0–4.0                                            | `CC-BY-SA-x.y` | yes         | required + share-alike note |
-| CC BY-NC, BY-NC-SA, BY-NC-ND                                | `CC-BY-NC-…`   | **no**      | –                           |
-| CC BY-ND                                                    | `CC-BY-ND-x.y` | **no**      | –                           |
-| CC BY without a known version                               | `CC-BY`        | **no**      | –                           |
-| GFDL only, "Attribution" template, sampling+, anything else | `unknown`      | **no**      | –                           |
-| Missing licence metadata                                    | `unknown`      | **no**      | –                           |
+| Licence                                                        | Stored id                          | Auto-usable | Attribution                  |
+| -------------------------------------------------------------- | ---------------------------------- | ----------- | ---------------------------- |
+| CC0                                                            | `CC0-1.0`                          | yes         | shown anyway (courtesy)      |
+| Public domain, PD-\* (PD-USGov, PD-old, …)                     | `PD`                               | yes         | shown anyway (courtesy)      |
+| Openverse `pdm` from a curated institution (Met, Smithsonian…) | `PD`                               | yes         | shown anyway (courtesy)      |
+| Openverse `pdm` from any other source (e.g. Flickr)            | `PD`                               | **no**      | –                            |
+| US-only PD tags (`PD-US`, `PD-US-expired`, `PD-1923`, …)       | `PD-US`                            | **no**      | –                            |
+| CC BY 1.0–4.0                                                  | `CC-BY-x.y`                        | yes         | required (TASL)              |
+| CC BY-SA 1.0–4.0                                               | `CC-BY-SA-x.y`                     | yes         | required + share-alike note  |
+| Ported / IGO CC BY(-SA), e.g. 3.0 DE, 3.0 IGO                  | `CC-BY-SA-3.0-DE`, `CC-BY-3.0-IGO` | yes         | as above, port kept in label |
+| CC BY-NC, BY-NC-SA, BY-NC-ND                                   | `CC-BY-NC-…`                       | **no**      | –                            |
+| CC BY-ND                                                       | `CC-BY-ND-x.y`                     | **no**      | –                            |
+| CC BY without a known version                                  | `CC-BY`                            | **no**      | –                            |
+| GFDL only, "Attribution" template, sampling+, anything else    | `unknown`                          | **no**      | –                            |
+| Missing licence metadata                                       | `unknown`                          | **no**      | –                            |
 
-Further rejections: Commons files with `Restrictions` (trademark, personality rights, …), candidates without a source page to link, Openverse results flagged `mature`.
+"Migrated", "international" and "unported" suffixes are ignored. When the provider gives no licence URL, the canonical deed URL is built from the id (CC BY 4.0 §3(a)(1)(C) requires a link to the licence), e.g. `https://creativecommons.org/licenses/by-sa/3.0/de/`.
 
-Why NC and ND are denied: **ND** forbids adaptations, and we place images in exercise layouts, crop and scale them, which can count as an adaptation. **NC**'s "non-commercial" is unclear for a self-hosted platform and for content that may later be shared, and the licensor's own reading is what counts; a household app shouldn't carry that ambiguity by default. **Unknown** is never used automatically: without a licence we have no permission at all.
+Further rejections: Commons files with `Restrictions` (trademark, personality rights, …), Commons files marked `Copyrighted: True` that claim PD, candidates without a source page to link, Openverse results flagged `mature`. Commons `License` is read first, then `LicenseShortName`, then `UsageTerms`; `AttributionRequired: true` forces attribution even for PD/CC0.
+
+Why NC and ND are denied: **ND** forbids sharing adaptations. We do not modify images (they are stored and shown unmodified, only scaled by the browser), but placing them in exercise layouts next to other content is close enough to the line that a household app should not depend on the reading. **NC**'s "non-commercial" is unclear for a self-hosted platform and for content that may later be shared, and the licensor's own reading is what counts; a household app shouldn't carry that ambiguity by default. **Unknown** is never used automatically: without a licence we have no permission at all.
+
+Why US-only PD tags are denied: they say the work is public domain in the United States (e.g. published there before 1930), which says nothing about Sweden, and we cannot tell whether a work is American. An adult can still pick such an image by hand.
+
+**Courtesy credit:** CC0 and PD images also get the full TASL credit text. The adult views show it for every external image, with links to the source and the licence. The learner view shows credits only where attribution is required (`attributionRequired`), so a child's screen stays calm; nothing legally required is left out.
 
 ### Attribution
 
@@ -87,14 +97,14 @@ Built per Creative Commons' TASL guidance (Title, Author, Source, Licence), in S
 ”Saab JAS 39 Gripen”, av Example Photographer, licens: CC BY-SA 4.0 (https://creativecommons.org/licenses/by-sa/4.0), källa: Wikimedia Commons, https://commons.wikimedia.org/wiki/File:… . Får delas vidare under samma licens.
 ```
 
-The author is taken from Commons `Artist` (HTML stripped) or Openverse `creator`; if missing, "okänd upphovsperson". The full licence record (`AssetLicense`) is stored with the asset and travels with every `MediaRef`. Images are stored unmodified (Commons serves a ≤1024 px thumbnail, which is the file owner's own rendition), so no "modified" notice is needed; add one if a later step crops or edits images.
+The author is taken from Commons `Artist` (HTML stripped) or Openverse `creator`; if missing, "okänd upphovsperson". Commons `Credit` is never used as the author: it usually holds "Own work" or a source, not a person. The full licence record (`AssetLicense`) is stored with the asset and travels with every `MediaRef`. Images are stored unmodified (Commons serves a ≤1024 px thumbnail, which is the file owner's own rendition), so no "modified" notice is needed; add one if a later step crops or edits images.
 
 ## Sources
 
 - Wikimedia Commons: MediaWiki API `generator=search`, `gsrnamespace=6` (File), `prop=imageinfo`, `iiprop=url|extmetadata|mime`, `iiurlwidth=1024`. `preferFactual` adds `filetype:bitmap` (photos over diagrams/SVG).
 - Openverse: `GET https://api.openverse.org/v1/images/?q=…&license=cc0,pdm,by,by-sa&mature=false`, plus `category=photograph` when `preferFactual`. The API's own licence filter is not trusted; every result is classified again.
 
-Results are interleaved (Commons first). Neither needs a key; anonymous Openverse use is rate-limited.
+Commons results come first (curated licence metadata); Openverse only fills up. Neither needs a key; anonymous Openverse use is rate-limited.
 
 ## Limitations
 
