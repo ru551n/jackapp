@@ -93,7 +93,7 @@ describe('band selection', () => {
   })
 
   it('early learners get the JackApp home, with an exit to the picker', async () => {
-    mockApi({ [`GET /learners/${ID}`]: [200, learner(EARLY)] })
+    mockApi({ [`GET /learners/${ID}`]: [200, learner(EARLY)], 'POST /gate/lock': [200, {}] })
     renderAt()
     expect(await screen.findByRole('heading', { name: 'Mitt äventyr' })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: /Tunnelbanan/ })).toHaveAttribute('href', `/l/${ID}/omrade/tunnelbanan`)
