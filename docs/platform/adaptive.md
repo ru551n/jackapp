@@ -55,7 +55,7 @@ Steps are ranked in this order, at most 2 per kind and 6 in total:
 3. **continuePath**: the active milestone of each active path.
 4. **explore**: a curriculum subject for the learner's year (`subjectsFor`) that has no evidence and no path yet. There are 2 such steps when nothing else is suggested.
 
-Each step carries a Swedish `reason` for adults, a `childText` and a ready `GenerationRequest` draft (`request`). The skill tags are in `request.instructions`, because `GenerationRequest` has no skills field. Learner mode gets `{ kind, title, text, pathId? }` only.
+Each step carries a Swedish `reason` for adults, a `childText` and a ready `GenerationRequest` draft (`request`). The skill tags are in `request.skills`; generation makes every item carry them (see generation.md). Learner mode gets `{ kind, title, text, pathId? }` only.
 
 ## Remediation (`remediationRequest(summary, profile, { difficulty? })`)
 

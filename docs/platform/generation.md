@@ -76,6 +76,7 @@ The model never produces contract items directly. `items.ts` defines a smaller s
 - `curriculum` SourceRefs and `curriculumRefs`.
 - A `model` source when nothing else applies.
 - It also trims choices to `support.maxChoices`, always keeping the correct ones.
+- **Skills:** when the request has `skills` (learning paths, remediation, reviews), the prompt asks for those tags, and `itemSkills` enforces them: an item keeps the model's tags that equal or refine a requested tag (only the finest of a chain, since the adaptive roll-up would otherwise count one answer twice); an item with none of them gets the requested tags.
 
 ### Blueprint (sections)
 

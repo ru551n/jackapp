@@ -15,6 +15,7 @@ import { artifactVersions, learners } from '../db/schema'
 import { claim, JobFailure, type JobHandler, type JobTools } from '../jobs'
 import { asAdult, createTestApp, seedLearner } from '../test/helpers'
 import { blueprint, generateArtifact } from './engine'
+import { itemSkills } from './items'
 import { generationJobHandlers } from './jobs'
 import { buildSystemPrompt, PROMPT_VERSION, type PromptInput } from './prompts'
 import { clampInterpretation, resolveRequest } from './request'
@@ -215,6 +216,26 @@ describe('request interpretation', () => {
     expect(a.artifact.sections.flatMap((s) => s.items)).toHaveLength(4)
     expect(a.row.request).toMatchObject({ theme: 'tåg', topic: 'multiplikation', support: { textAmount: 'minimal' } })
     expect(calls[1]!.system).toContain('Tema: tåg')
+  })
+
+  it('items carry the requested skill tags (or finer ones), for adaptive evidence', async () => {
+    const t = await setup()
+    const tags = [['math.multiplication.tables-6-9', 'math.multiplication'], ['science.volcanoes'], ['math.division']]
+    const { ai, calls } = scriptedAi(t.db, { item: (k, n) => fakeItem(k, n, { skills: tags[(n - 1) % 3] }) })
+    await post(t, `/learners/${t.learnerId}/generate`, {
+      type: 'exercises',
+      questionCount: 3,
+      skills: ['math.multiplication', 'math.division'],
+    })
+    const { resultId } = await runNext(t.db, generationJobHandlers({ ai }), 'artifact.generate')
+    const items = (await loadArtifact(t.db, resultId!))!.artifact.sections.flatMap((s) => s.items)
+    expect(items.map((i) => i.skills)).toEqual([
+      ['math.multiplication.tables-6-9'], // finest only: roll-up would count math.multiplication twice
+      ['math.multiplication', 'math.division'], // off-list tag → the requested ones
+      ['math.division'],
+    ])
+    expect(calls[0]!.system).toContain('math.multiplication, math.division')
+    expect(itemSkills(['a.b'], undefined)).toEqual(['a.b'])
   })
 })
 

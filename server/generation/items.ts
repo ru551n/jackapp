@@ -108,6 +108,19 @@ export interface ItemContext {
   material?: ProcessedStudyMaterial
   maxChoices: number
   includeHints: boolean
+  /** GenerationRequest.skills: every item carries these tags or finer ones. */
+  skills?: string[]
+}
+
+/**
+ * Item tags under the requested skills: the model's tags that equal or refine a requested tag
+ * (only the finest of a chain: roll-up would count one answer twice), else the requested tags.
+ */
+export function itemSkills(model: string[], required?: string[]): string[] {
+  if (!required?.length) return model
+  const fits = [...new Set(model.filter((s) => required.some((t) => s === t || s.startsWith(`${t}.`))))]
+  const finest = fits.filter((s) => !fits.some((o) => o.startsWith(`${s}.`)))
+  return (finest.length ? finest : required).slice(0, 6)
 }
 
 const choice = (text: string, i: number) => ({ id: `c${i + 1}`, text })
@@ -149,7 +162,7 @@ export function toItem(g: GenItem, id: string, ctx: ItemContext): { item: Item; 
     hints: ctx.includeHints ? (g.hints ?? []) : [],
     explanation: g.explanation,
     difficulty: g.difficulty,
-    skills: g.skills,
+    skills: itemSkills(g.skills, ctx.skills),
     sources,
     curriculumRefs,
   }

@@ -200,6 +200,7 @@ export function promptInputFor(p: Prepared, offered: OfferedRef[]): PromptInput 
     feedback: r.feedback,
     durationMinutes: r.durationMinutes,
     includeImages: r.includeImages,
+    skills: r.skills,
   }
 }
 
@@ -258,6 +259,7 @@ export async function generateArtifact(
     material: p.material,
     maxChoices: r.support.maxChoices,
     includeHints: r.hints,
+    skills: r.skills,
   }
   let model: string | undefined
   const call = async <T>(schema: z.ZodType<T>, schemaName: string, task: string): Promise<T> => {
@@ -420,6 +422,7 @@ export async function regenerateItem(
     material: p.material,
     maxChoices: r.support.maxChoices,
     includeHints: r.hints,
+    skills: r.skills,
   })
   const next: Artifact = {
     ...artifact,

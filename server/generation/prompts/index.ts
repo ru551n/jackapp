@@ -10,7 +10,7 @@ import type {
 
 // Versioned prompt building blocks (docs/platform/generation.md#prompt-architecture).
 // Bump PROMPT_VERSION whenever wording changes; it is stored on every artifact version.
-export const PROMPT_VERSION = 'generation/v1'
+export const PROMPT_VERSION = 'generation/v2'
 
 export interface OfferedRef {
   /** Local id the model may cite, e.g. "C1". */
@@ -40,6 +40,8 @@ export interface PromptInput {
   feedback: 'immediate' | 'end'
   durationMinutes: number
   includeImages: boolean
+  /** Required skill tags (learning paths, remediation). */
+  skills?: string[]
 }
 
 const STAGE = { forskoleklass: 'förskoleklass', grundskola: 'grundskolan', gymnasieskola: 'gymnasiet' } as const
@@ -185,7 +187,9 @@ export function settingsBlock(p: PromptInput): string {
     `Ungefärlig tid för hela passet: ${p.durationMinutes} minuter.`,
     p.subjectCode ? `Ämneskod: ${p.subjectCode}.` : '',
     p.topic ? `Område: ${p.topic}.` : '',
-    'skills: korta färdighetstaggar i formatet "ämne.område.delmoment", t.ex. "math.multiplication.tables-6-9".',
+    p.skills?.length
+      ? `skills: varje uppgift ska ha en av dessa färdighetstaggar, eller en finare undertagg av den (t.ex. "${p.skills[0]}.delmoment"): ${p.skills.join(', ')}.`
+      : 'skills: korta färdighetstaggar i formatet "ämne.område.delmoment", t.ex. "math.multiplication.tables-6-9".',
     p.includeImages ? 'Föreslå illustrationer (fältet illustration) där bilder hjälper.' : '',
   ]
     .filter(Boolean)

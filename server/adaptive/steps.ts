@@ -18,7 +18,6 @@ const DAY = 86_400_000
 
 const QUESTIONS = { low: 5, normal: 8, high: 12 } as const
 const isMath = (skill: string) => skill.split('.')[0] === 'math'
-const tagLine = (skills: string[]) => `Märk uppgifterna med färdighetstaggarna: ${skills.join(', ')}.`
 
 /** Presentation hints for the generator; independent of academic difficulty. */
 function supportLines(p: Profile): string[] {
@@ -64,6 +63,7 @@ export function remediationRequest(
     feedback: 'immediate',
     hints: true,
     includeImages: profile.support.visualSupport === 'high',
+    skills: [summary.skill],
     instructions: [
       `Stödlektion om ${label}, i den här ordningen:`,
       '1. En enklare representation (bild, konkret material eller tallinje).',
@@ -72,7 +72,6 @@ export function remediationRequest(
       '4. Upprepad övning på samma nivå.',
       '5. En kort avslutande kontroll (section kind "check").',
       ...supportLines(profile),
-      tagLine([summary.skill]),
     ].join('\n'),
   })
 }
@@ -90,8 +89,6 @@ export function practiceRequest(
     studySetId?: string
   },
 ): GenerationRequest {
-  const lines = supportLines(profile)
-  if (o.skills?.length) lines.push(tagLine(o.skills))
   return GenerationRequest.parse({
     learnerId: profile.id,
     type: o.type,
@@ -105,7 +102,8 @@ export function practiceRequest(
     durationMinutes: profile.support.sessionMinutes,
     support: profile.support,
     includeImages: profile.support.visualSupport === 'high',
-    instructions: lines.join('\n'),
+    skills: o.skills,
+    instructions: supportLines(profile).join('\n'),
   })
 }
 

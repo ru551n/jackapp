@@ -3,7 +3,7 @@ import { buildApp } from '../app/build'
 import { createTestDb, type Db } from '../db/client'
 import { learners } from '../db/schema'
 import { CoreEnv } from '../config/env'
-import { LearnerProfileInput } from '../../shared/contracts'
+import { LearnerProfileInput, type SchoolPosition } from '../../shared/contracts'
 import { storePin } from '../gate/pin'
 
 export const TEST_ENV = CoreEnv.parse({
@@ -29,7 +29,7 @@ export async function createTestApp(opts: { readiness?: ReadinessCheck[]; pin?: 
   return { app, db: handle.db, close: async () => (await app.close(), await handle.close()) }
 }
 
-export async function seedLearner(db: Db, school = { stage: 'grundskola', year: 1 } as const) {
+export async function seedLearner(db: Db, school: SchoolPosition = { stage: 'grundskola', year: 1 }) {
   const profile = LearnerProfileInput.parse({ displayName: 'Jack', school })
   const [l] = await db.insert(learners).values({ profile }).returning()
   return l!
