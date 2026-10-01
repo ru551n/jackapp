@@ -33,6 +33,21 @@ function grounded(out: { items: Record<string, unknown>[] }, system: string, kin
   return out
 }
 
+/**
+ * Strict-mode schemas arrive without minItems (the adapter strips it; the prompt states the count).
+ * The dev mock sizes arrays by minItems, so restore it from the prompt wording.
+ */
+function withCounts(schema: any, prompt: string) {
+  const js = structuredClone(schema)
+  const items = js?.properties?.items
+  const n = /Skapa exakt (\d+) uppgifter|Följande (\d+) uppgifter/.exec(prompt)
+  if (items?.type === 'array' && items.minItems === undefined && n) items.minItems = Number(n[1] ?? n[2])
+  const bodies = js?.properties?.bodies
+  if (bodies?.type === 'array' && bodies.minItems === undefined)
+    bodies.minItems = Math.max(1, prompt.match(/^\d+\. .*\(cirka \d+ ord\)$/gm)?.length ?? 1)
+  return js
+}
+
 function answer(body: { messages?: Msg[]; response_format?: any }): string {
   const text = (m: Msg) => (typeof m.content === 'string' ? m.content : m.content.map((p) => p.text ?? '').join('\n'))
   const messages = (body.messages ?? []).map((m) => ({ role: m.role, content: text(m) }))
@@ -41,11 +56,15 @@ function answer(body: { messages?: Msg[]; response_format?: any }): string {
   const req = {
     system,
     messages: messages.filter((m) => m.role !== 'system') as never,
-    json: schema && { name: schema.name, jsonSchema: schema.schema, mode: 'json_schema' as const },
+    json: schema && {
+      name: schema.name,
+      jsonSchema: withCounts(schema.schema, messages.map((m) => m.content).join('\n')),
+      mode: 'json_schema' as const,
+    },
   }
   let out = devMockText(req as never, 0) as any
   if (schema?.name === 'artifact_items' && system.includes('Källläge STRIKT')) {
-    const items = schema.schema.properties.items.items
+    const items = req.json.jsonSchema.properties.items.items
     const kinds = (items.anyOf ?? items.oneOf ?? [items]).map((o: any) => o.properties.kind.const)
     out = grounded(out, system, kinds)
   }

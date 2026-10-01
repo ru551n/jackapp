@@ -3,7 +3,9 @@
 # Adds a mock OpenAI-compatible AI (scripts/mock-openai.ts) on the internal network, so text and vision
 # go through the real HTTP adapter. Secrets come from the script's temp env file, never the repo .env.
 
+# Own image tag: never replaces the jackapp:local image of a real deployment on this host.
 x-smoke-env: &smoke-env
+  image: jackapp-smoke-test:local
   env_file: !override ['${SMOKE_ENV_FILE:?run scripts/docker-smoke.sh}']
 
 services:

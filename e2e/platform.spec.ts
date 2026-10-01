@@ -66,6 +66,17 @@ async function answerItem(page: Page): Promise<boolean> {
       // Last option first: the dev mock puts the right answer first, so this starts wrong.
       const n = await options.count()
       await options.nth(n - 1 - (attempt % n)).click()
+    } else if (await main.getByRole('group', { name: 'Välj en ruta här först' }).isVisible()) {
+      // Early-band matching: tap a left tile, then a right one. Unpair, then pair with a new rotation.
+      const lefts = main.getByRole('group', { name: 'Välj en ruta här först' }).getByRole('button')
+      const rights = main.getByRole('group', { name: 'Sedan det som hör ihop' }).getByRole('button')
+      const n = await lefts.count()
+      for (let i = 0; i < n; i++)
+        if ((await lefts.nth(i).textContent())?.includes('ihop med')) await lefts.nth(i).click()
+      for (let i = 0; i < n; i++) {
+        await lefts.nth(i).click()
+        await rights.nth((i + attempt + 1) % n).click()
+      }
     } else if (await main.getByRole('list', { name: 'Din ordning' }).isVisible()) {
       await main
         .getByRole('button', { name: /^Flytta ner/, disabled: false })
@@ -95,7 +106,7 @@ async function answerItem(page: Page): Promise<boolean> {
 /** Plays a whole run from its first item. Returns whether any item asked to try again. */
 async function playRun(page: Page): Promise<boolean> {
   const main = page.getByRole('main')
-  await expect(main.getByText(/Uppgift 1 av \d+/).first()).toBeVisible()
+  await expect(main.getByRole('progressbar', { name: /^Uppgift 1 av \d+$/ })).toBeVisible()
   let retried = false
   for (let i = 0; i < 60; i++) {
     while (await main.getByRole('button', { name: 'Fortsätt' }).isVisible())
@@ -193,7 +204,7 @@ test('study upload: image + PDF, strict practice test, approval, learner list', 
   await expect(page.getByRole('main').getByRole('listitem')).toHaveCount(2)
 })
 
-test('middle learner: free-text request with immediate approval is playable', async ({ page }) => {
+test('middle learner: free-text request, approved by the adult, is playable', async ({ page }) => {
   await openAdult(page)
   await page.getByRole('link', { name: 'Lägg till elev' }).click()
   await page.getByLabel('Namn').fill('Mira')
@@ -209,8 +220,25 @@ test('middle learner: free-text request with immediate approval is playable', as
   await page.getByRole('link', { name: 'Önska uppdrag' }).click()
   await page.getByLabel('Vad vill du lära dig?').fill('Jag vill lära mig bråk med flygplan')
   await page.getByRole('button', { name: 'Skapa', exact: true }).click()
-  await expect(page.getByText('Ditt uppdrag är klart!')).toBeVisible({ timeout: 60_000 })
-  await page.getByRole('link', { name: 'Starta' }).click()
+  // Learner-made material waits for an adult (newer servers), or is ready at once (immediate policy).
+  const ready = page.getByText('Ditt uppdrag är klart!')
+  const waits = page.getByText('En vuxen tittar på uppdraget först.')
+  await expect(ready.or(waits)).toBeVisible({ timeout: 60_000 })
+  if (await waits.isVisible()) {
+    await openAdult(page)
+    await page.getByRole('link', { name: '1 material väntar på godkännande' }).click()
+    await page
+      .getByRole('link', { name: /Addition/ })
+      .first()
+      .click()
+    await page.getByRole('button', { name: 'Godkänn' }).click()
+    await expect(page.getByText('Godkänt', { exact: true })).toBeVisible()
+    await enterLearner(page, 'Mira')
+    await page
+      .getByRole('link', { name: /Addition/ })
+      .first()
+      .click()
+  } else await page.getByRole('link', { name: 'Starta' }).click()
   await playRun(page)
   await expect(page.getByRole('heading', { name: /^Du klarade \d+ av \d+$/ })).toBeVisible()
 })
