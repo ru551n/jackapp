@@ -2,7 +2,8 @@ import type { Vehicle } from '../../core/types'
 
 // Civilian and fighter aircraft; specs verified against Wikipedia (sv/en) and flugzeuginfo.net.
 // Variants: Gripen C, Viggen JA 37 (speed), F/A-18A-D, F-15 (Eagle), Boeing 737-800, Airbus A320 (with sharklets).
-// topSpeedKmh is only given where a source states km/h; Mach-only figures are omitted.
+// topSpeedKmh = maximum speed, only where a source states km/h. Mach-only and cruise figures are omitted.
+// Boeing 737: every figure is the 737-800 (the original 737-100 flew in 1967, the -800 in 1997).
 export const AIRCRAFT: Vehicle[] = [
   {
     id: 'gripen',
@@ -48,10 +49,13 @@ export const AIRCRAFT: Vehicle[] = [
       'Viggen är ett svenskt flygplan från Saab.',
       'Viggen har vingar både fram och bak.',
       'Viggen har en motor.',
-      'Viggen flög för Sverige från 1972 till 2007.',
+      'Viggen kom i tjänst i Sverige 1971.',
     ],
     specs: { firstYear: 1967, engines: 1, lengthM: 16.4, wingspanM: 10.6, topSpeedKmh: 2231 },
-    sources: ['https://sv.wikipedia.org/wiki/Saab_37_Viggen', 'https://en.wikipedia.org/wiki/Saab_37_Viggen'],
+    sources: [
+      'https://sv.wikipedia.org/wiki/Saab_37_Viggen',
+      'https://en.wikipedia.org/wiki/Saab_37_Viggen' /* in service 21 June 1971; JA 37 retired 2005 */,
+    ],
     unlock: { area: 'flygplatsen', missions: 2 },
   },
   {
@@ -62,10 +66,11 @@ export const AIRCRAFT: Vehicle[] = [
     country: 'USA',
     swedish: false,
     facts: ['F-16 kommer från USA.', 'F-16 har en motor.', 'F-16 flög första gången 1974.'],
-    specs: { firstYear: 1974, engines: 1, lengthM: 15.02, wingspanM: 10 },
+    specs: { firstYear: 1974, engines: 1, lengthM: 15.06, wingspanM: 9.96 },
     sources: [
       'https://sv.wikipedia.org/wiki/F-16_Fighting_Falcon',
       'https://en.wikipedia.org/wiki/General_Dynamics_F-16_Fighting_Falcon',
+      'http://www.flugzeuginfo.net/acdata_php/acdata_f16_en.php',
     ],
     unlock: { area: 'flygplatsen', missions: 3 },
   },
@@ -96,9 +101,9 @@ export const AIRCRAFT: Vehicle[] = [
     facts: [
       'Boeing 737 är ett passagerarflygplan.',
       'Boeing 737 har två motorer under vingarna.',
-      'Det finns fler Boeing 737 än något annat jetflygplan för passagerare.',
+      'Boeing 737 är ett av de vanligaste passagerarflygplanen i världen.',
     ],
-    specs: { firstYear: 1967, engines: 2, lengthM: 39.5, wingspanM: 34.3 },
+    specs: { firstYear: 1997, engines: 2, lengthM: 39.5, wingspanM: 35.8 },
     sources: ['https://sv.wikipedia.org/wiki/Boeing_737', 'https://en.wikipedia.org/wiki/Boeing_737_Next_Generation'],
     unlock: { area: 'engelska', missions: 2 },
   },
@@ -124,10 +129,10 @@ export const AIRCRAFT: Vehicle[] = [
     facts: [
       'Saab 340 är ett svenskt passagerarflygplan.',
       'Saab 340 har två propellrar.',
-      'Det finns plats för 33 eller 34 passagerare.',
+      'Det finns plats för ungefär 34 passagerare.',
     ],
-    specs: { firstYear: 1983, engines: 2, lengthM: 19.73, wingspanM: 21.44, topSpeedKmh: 523 },
-    sources: ['https://sv.wikipedia.org/wiki/Saab_340'],
+    specs: { firstYear: 1983, engines: 2, lengthM: 19.73, wingspanM: 21.44 },
+    sources: ['https://sv.wikipedia.org/wiki/Saab_340', 'https://en.wikipedia.org/wiki/Saab_340'],
     unlock: { area: 'engelska', missions: 3 },
   },
   {
@@ -153,9 +158,10 @@ export const AIRCRAFT: Vehicle[] = [
     category: 'fighter',
     country: 'USA',
     swedish: false,
-    facts: ['F/A-18 kommer från USA.', 'F/A-18 har två motorer.', 'F/A-18 har två stjärtfenor som lutar utåt.'],
-    specs: { firstYear: 1978, engines: 2, lengthM: 17.1, wingspanM: 12.3 },
-    sources: ['https://sv.wikipedia.org/wiki/F/A-18_Hornet'],
+    facts: ['F/A-18 kommer från USA.', 'F/A-18 har två motorer.', 'F/A-18 har två stjärtfenor.'],
+    // wingspan 11.43 m without the wingtip missile rails (12.3 m with them)
+    specs: { firstYear: 1978, engines: 2, lengthM: 17.1, wingspanM: 11.43 },
+    sources: ['https://sv.wikipedia.org/wiki/F/A-18_Hornet', 'https://www.navair.navy.mil/product/FA-18-D-Hornet'],
     unlock: { area: 'flygplatsen', missions: 7 },
   },
   {
@@ -170,8 +176,8 @@ export const AIRCRAFT: Vehicle[] = [
       'A380 har fyra motorer.',
       'A380 är världens största passagerarflygplan.',
     ],
-    specs: { firstYear: 2005, engines: 4, lengthM: 72.7, wingspanM: 79.8, topSpeedKmh: 953 },
-    sources: ['https://sv.wikipedia.org/wiki/Airbus_A380'],
+    specs: { firstYear: 2005, engines: 4, lengthM: 72.7, wingspanM: 79.8 },
+    sources: ['https://sv.wikipedia.org/wiki/Airbus_A380', 'https://en.wikipedia.org/wiki/Airbus_A380'],
     unlock: { area: 'engelska', missions: 4 },
   },
   {
