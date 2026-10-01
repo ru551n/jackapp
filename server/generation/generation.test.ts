@@ -21,7 +21,7 @@ import { jobsServices } from '../jobs'
 import { targetLanguage } from '../validation/subjects'
 import { blueprint, generateArtifact, offerCurriculum } from './engine'
 import { fallbackSkill, genItemsSchema, ITEM_KINDS, itemSkills, normalizeSkill, toItem } from './items'
-import { generationJobHandlers } from './jobs'
+import { generationJobHandlers, type GenerationDeps } from './jobs'
 import {
   buildSystemPrompt,
   itemsTask,
@@ -1050,7 +1050,8 @@ describe('practice tests, repair and recovery', () => {
         throw new Error('cancelled')
       },
     }
-    const gen = (a: typeof ai) => generationJobHandlers({ ai: a }).find((x) => x.type === 'artifact.generate')!
+    const gen = (a: GenerationDeps['ai']) =>
+      generationJobHandlers({ ai: a }).find((x) => x.type === 'artifact.generate')!
     await expect(gen(ai).run(job, tools)).rejects.toThrow('cancelled')
     const list = await t.app.inject({ url: `/api/v1/learners/${t.learnerId}/artifacts`, headers: asAdult })
     expect(list.json()).toHaveLength(0)
