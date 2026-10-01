@@ -132,3 +132,5 @@ Only `ai.text` is critical.
 - **Research:** returns one example result.
 
 Tests can script text and vision by passing `createAi(env, { db, log, mock: { text: (req, call) => ... } })`. The script returns a string (raw model text) or an object (native JSON).
+
+`npm run dev:all` (`server/dev.ts`) scripts the mock text model with `devMockText` (`server/ai/dev-mock.ts`): deterministic, varied addition practice that passes validation for every artifact type and item kind (unique choices, a correct answer, numeric items with a `check` that evaluates to the answer), so local and e2e flows produce approvable material. Other prompts get the minimal schema sample.

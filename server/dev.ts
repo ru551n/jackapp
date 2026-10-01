@@ -6,6 +6,7 @@ import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { pino } from 'pino'
 import { createAi } from './ai'
+import { devMockText } from './ai/dev-mock'
 import { buildApp } from './app/build'
 import { CoreEnv, parseEnv } from './config/env'
 import { syncBundledCurriculum } from './curriculum/service'
@@ -42,7 +43,8 @@ const db = drizzle(client, { schema }) as unknown as Db
 await migrate(db as never, { migrationsFolder: MIGRATIONS_DIR })
 await syncBundledCurriculum(db, log)
 
-const ai = createAi(process.env, { db, log })
+// Mock providers get a scripted model that writes valid (approvable) material.
+const ai = createAi(process.env, { db, log, mock: { text: devMockText } })
 const jobs = jobsServices({ db })
 const handlers = jobHandlers({ db, env, ai, log })
 const worker = createWorker({ db, log, handlers, concurrency: 2, pollMs: 500 })

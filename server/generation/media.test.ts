@@ -127,6 +127,15 @@ describe('generation → images → artifact versions', () => {
     // Adult view: only the refused (unsafe) request is still open.
     const view = (await t.app.inject({ url: `/api/v1/artifacts/${artifactId}`, headers: asAdult })).json()
     expect(view.requestedIllustrations).toEqual([{ itemId: items[2]!.id, description: ILLUSTRATIONS[2] }])
+    // Provenance: every shown asset, with its licence record.
+    expect(view.assetIds.sort()).toEqual([items[0]!.media[0]!.assetId, items[1]!.media[0]!.assetId].sort())
+    const prov = await t.app.inject({ url: `/api/v1/research/provenance?assetIds=${view.assetIds}`, headers: asAdult })
+    expect(
+      prov
+        .json()
+        .assets.map((x: { generated: boolean }) => x.generated)
+        .sort(),
+    ).toEqual([false, true])
 
     // Idempotent: replaying a completion adds nothing.
     const image = all.find((j) => j.type === 'image.generate')!

@@ -706,6 +706,7 @@ describe('web research (useWebResearch)', () => {
     // Adult view → provenance view.
     const view = (await t.app.inject({ url: `/api/v1/artifacts/${resultId}`, headers: asAdult })).json()
     expect(view.researchBriefIds).toEqual([briefId])
+    expect(view.assetIds).toEqual([])
     const prov = await t.app.inject({ url: `/api/v1/research/provenance?briefIds=${briefId}`, headers: asAdult })
     expect(prov.json().briefs[0].sources[0]).toMatchObject({ index: 1, url: 'https://vulkan.example/artikel' })
 
