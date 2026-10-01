@@ -65,6 +65,12 @@ export interface JobHandler {
   type: JobType
   /** Returns the id of the produced entity, if any. */
   run(job: JobRow, tools: JobTools): Promise<string | void>
+  /**
+   * Completion hook: runs once after the job is marked completed (never after a failure, cancel or
+   * lost lock). Composed in server/worker/handlers.ts so domains don't import each other. Errors
+   * are logged and never change the job's state.
+   */
+  onCompleted?(job: JobRow, resultId: string | undefined, tools: Pick<JobTools, 'db' | 'log'>): Promise<void>
 }
 
 export function defineJobHandler(type: JobType, run: JobHandler['run']): JobHandler {
@@ -160,9 +166,13 @@ export function createWorker(opts: WorkerOptions): Worker {
     }
     const done = (async () => {
       try {
-        const resultId = await Promise.race([handlers.get(job.type)!.run(job, tools), aborted])
-        await complete(db, job.id, workerId, resultId || undefined)
+        const handler = handlers.get(job.type)!
+        const resultId = (await Promise.race([handler.run(job, tools), aborted])) || undefined
+        if (!(await complete(db, job.id, workerId, resultId))) return
         jlog.info('job completed')
+        await handler
+          .onCompleted?.(job, resultId, tools)
+          .catch((e: Error) => jlog.error({ err: { name: e.name, message: e.message } }, 'completion hook failed'))
       } catch (err) {
         const reason = ctrl.signal.aborted ? ctrl.signal.reason : undefined
         if (reason === 'shutdown') await release(db, job.id, workerId)

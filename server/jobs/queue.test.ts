@@ -201,6 +201,27 @@ describe('worker runtime', () => {
     expect((await getStatus(db, id))!.resultId).toBe('artifact-9')
   })
 
+  it('runs onCompleted once after completion only; hook errors never change the job', async () => {
+    const seen: [string, string | undefined][] = []
+    await startWorker([
+      {
+        ...defineJobHandler('curriculum.sync', async (job) =>
+          (job.payload as { fail?: boolean }).fail ? Promise.reject(new Error('x')) : 'r-1',
+        ),
+        onCompleted: async (job, resultId) => {
+          seen.push([job.id, resultId])
+          throw new Error('hook broke')
+        },
+      },
+    ])
+    const ok = await enqueue(db, { type: 'curriculum.sync', payload: {} })
+    const bad = await enqueue(db, { type: 'curriculum.sync', payload: { fail: true } })
+    await until(async () => (await state(ok.id)) === 'completed' && (await state(bad.id)) === 'failed')
+    await until(() => seen.length === 1)
+    expect(seen).toEqual([[ok.id, 'r-1']])
+    expect(await getStatus(db, ok.id)).toMatchObject({ state: 'completed', resultId: 'r-1' })
+  })
+
   it('runs up to `concurrency` jobs in parallel', async () => {
     let peak = 0
     let now = 0

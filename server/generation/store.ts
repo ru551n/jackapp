@@ -73,22 +73,28 @@ const versionValues = (a: Artifact, meta: VersionMeta) => ({
   promptVersion: meta.promptVersion,
 })
 
-/** Store `content` as the next version and make it current. */
+/**
+ * Store `content` as the next version and make it current. With `expectVersion`, returns undefined
+ * (stores nothing) when another version landed meanwhile; `keepApproval` leaves the row's approval.
+ */
 export async function addVersion(
   db: Db,
   content: Artifact,
   meta: VersionMeta,
   /** New resolved request (transforms), so later transforms build on it. */
   request?: GenerationRequest,
-): Promise<Artifact> {
+  opts: { expectVersion?: number; keepApproval?: boolean } = {},
+): Promise<Artifact | undefined> {
   return db.transaction(async (tx) => {
     const [cur] = await tx
-      .select({ v: artifacts.currentVersion })
+      .select({ v: artifacts.currentVersion, approval: artifacts.approval })
       .from(artifacts)
       .where(eq(artifacts.id, content.id))
       .for('update')
     if (!cur) throw new Error('artifact missing')
-    const a = ArtifactSchema.parse({ ...content, version: cur.v + 1 })
+    if (opts.expectVersion !== undefined && cur.v !== opts.expectVersion) return undefined
+    const approval = opts.keepApproval ? cur.approval : content.approval
+    const a = ArtifactSchema.parse({ ...content, approval, version: cur.v + 1 })
     await tx.insert(artifactVersions).values(versionValues(a, meta))
     await tx
       .update(artifacts)

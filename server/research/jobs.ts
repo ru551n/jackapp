@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { SchoolPosition } from '../../shared/contracts'
+import { MediaTarget } from '../images/prompt'
 import { AiError } from '../ai'
 import { registerJobPayload } from '../jobs/queue'
 import { defineJobHandler, type JobHandler, type JobTools } from '../jobs/runtime'
@@ -13,9 +14,12 @@ export const ResearchRunPayload = z.object({
   school: SchoolPosition.optional(),
 })
 export const AssetFetchPayload = z.object({
-  query: z.string().trim().min(2).max(200),
+  query: z.string().trim().min(2).max(300),
   count: z.number().int().min(1).max(5).default(1),
   preferFactual: z.boolean().default(true),
+  /** Optional media slot: the worker's completion hook puts the first asset there. */
+  artifactId: z.string().uuid().optional(),
+  target: MediaTarget.optional(),
 })
 
 registerJobPayload('research.run', ResearchRunPayload)
@@ -38,7 +42,7 @@ export function researchJobHandlers(deps: HandlerDeps, env: NodeJS.ProcessEnv = 
     defineJobHandler('research.run', async (job, tools) => {
       const input = parsePayload(ResearchRunPayload, job.payload, tools)
       await tools.progress(0.1, 'Söker på webben')
-      const r = await researchBrief(tools.db, deps.ai, input, { env, signal: tools.signal }).catch((e) =>
+      const r = await researchBrief(tools.db, deps.ai, input, { ...deps.net, env, signal: tools.signal }).catch((e) =>
         rethrow(e, tools),
       )
       if (!r) return tools.fail('feature_disabled', 'Webbsökning är avstängd eller inte konfigurerad.', false)
@@ -47,7 +51,12 @@ export function researchJobHandlers(deps: HandlerDeps, env: NodeJS.ProcessEnv = 
     defineJobHandler('asset.fetch', async (job, tools) => {
       const input = parsePayload(AssetFetchPayload, job.payload, tools)
       await tools.progress(0.1, 'Söker licensierade bilder')
-      const refs = await findLicensedImages(tools.db, input, { env, dataDir: deps.env.DATA_DIR, signal: tools.signal })
+      const refs = await findLicensedImages(tools.db, input, {
+        ...deps.net,
+        env,
+        dataDir: deps.env.DATA_DIR,
+        signal: tools.signal,
+      })
       if (!refs.length)
         return tools.fail('no_assets', 'Inga bilder med tillåten licens hittades (eller funktionen är avstängd).', true)
       return refs[0]!.assetId

@@ -142,6 +142,8 @@ export interface IllustrationSlot {
   description: string
   purpose: ImagePurpose
   count?: number
+  /** The item the slot belongs to (generation's illustration requests). */
+  itemId?: string
 }
 
 export interface IllustrationOptions {
@@ -176,7 +178,7 @@ export async function illustrationJobsFor(slots: IllustrationSlot[], opts: Illus
         count: slot.count,
         learnerId: opts.learnerId,
         artifactId: slot.artifactId,
-        target: { path: slot.path },
+        target: { path: slot.path, itemId: slot.itemId },
       },
     })
     out.push({ slot, jobId: id })

@@ -66,5 +66,5 @@ failed ──retry (adult)──► queued   (attempts reset to 0)
      return setId // stored as resultId
    })
    ```
-4. Add the handler to the worker's handler list in `server/worker`.
+4. Add the handler to the worker's handler list in `server/worker`. To react when a job of another domain completes, add an `onCompleted` hook in `ON_COMPLETED` there (it runs after the job is marked completed; errors are logged, never retried).
 5. Enqueue the job from a route with `ctx.jobs.enqueue({ type, payload, learnerId, dedupeKey })`, or with `enqueue(db, …)` directly. Then return the job id so the UI can follow its events.

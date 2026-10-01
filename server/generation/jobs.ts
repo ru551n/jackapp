@@ -25,6 +25,7 @@ import { describeItem } from './items'
 import { PROMPT_VERSION, TRANSFORM_SV, transformContext, type TransformKind } from './prompts'
 import { interpretInstructions, resolveRequest, scrubRequest, type ResolvedRequest } from './request'
 import { loadBrief, researchBrief, type BriefResult, type ResearchOptions } from '../research/brief'
+import { enqueueIllustrations } from './media'
 import { addVersion, approvalFor, createArtifact, loadArtifact, type StoredArtifact } from './store'
 
 // Job payloads and handlers: artifact.generate (new + transforms) and artifact.regenerateItem.
@@ -217,6 +218,14 @@ export function generationJobHandlers(deps: GenerationDeps): JobHandler[] {
         jobId: job.id,
       })
       if (!g.ok) tools.fail('validation_failed', validationFailedMessage(a, true), false)
+      await enqueueIllustrations(
+        tools.db,
+        deps.ai,
+        { artifact: a, illustrations: g.illustrations },
+        resolved,
+        profile,
+        tools.log,
+      )
       return a.id
     })
   })
@@ -251,13 +260,34 @@ export function generationJobHandlers(deps: GenerationDeps): JobHandler[] {
       const a = { ...g.artifact, approval: approvalFor(policy, g.ok) }
       await createArtifact(tools.db, a, request, { ...meta('transform:more', g.model), illustrations: g.illustrations })
       if (!g.ok) tools.fail('validation_failed', validationFailedMessage(a, true), false)
+      await enqueueIllustrations(
+        tools.db,
+        deps.ai,
+        { artifact: a, illustrations: g.illustrations },
+        request,
+        profile,
+        tools.log,
+      )
       return a.id
     }
     const keep = prev.approval === 'draft'
     const a = { ...g.artifact, createdAt: prev.createdAt, approval: nextApproval(prev.approval, g.ok, policy) }
     if (!g.ok && !keep) tools.fail('validation_failed', validationFailedMessage(a, false), false)
-    await addVersion(tools.db, a, { ...meta(`transform:${t.kind}`, g.model), illustrations: g.illustrations }, request)
+    const saved = await addVersion(
+      tools.db,
+      a,
+      { ...meta(`transform:${t.kind}`, g.model), illustrations: g.illustrations },
+      request,
+    )
     if (!g.ok) tools.fail('validation_failed', validationFailedMessage(a, true), false)
+    await enqueueIllustrations(
+      tools.db,
+      deps.ai,
+      { artifact: saved!, illustrations: g.illustrations },
+      request,
+      profile,
+      tools.log,
+    )
     return a.id
   }
 
@@ -276,8 +306,18 @@ export function generationJobHandlers(deps: GenerationDeps): JobHandler[] {
       if (!r.ok && prev.approval !== 'draft') tools.fail('validation_failed', validationFailedMessage(a, false), false)
       const illustrations = [...stored.illustrations.filter((i) => i.itemId !== itemId)]
       if (r.illustration) illustrations.push(r.illustration)
-      await addVersion(tools.db, a, { ...meta('regenerateItem', r.model), illustrations })
+      const saved = await addVersion(tools.db, a, { ...meta('regenerateItem', r.model), illustrations })
       if (!r.ok) tools.fail('validation_failed', validationFailedMessage(a, true), false)
+      // Only the new item's illustration: the others already had their chance.
+      const mine = illustrations.filter((i) => i.itemId === itemId)
+      await enqueueIllustrations(
+        tools.db,
+        deps.ai,
+        { artifact: saved!, illustrations: mine },
+        request,
+        profile,
+        tools.log,
+      )
       return a.id
     })
   })
