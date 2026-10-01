@@ -33,6 +33,22 @@ const SOURCE_MODES: { v: SourceMode; label: string; help: string }[] = [
 ]
 const DIFFICULTY = ['Mycket lätt', 'Lätt', 'Lagom', 'Svår', 'Mycket svår']
 
+type Preset = 'mc' | 'free' | 'mcFree' | 'mix' | 'custom'
+/** Question-type presets; `kinds` undefined = the AI picks a mix. Free text is never offered to the early band. */
+const PRESETS: { v: Preset; label: string; kinds?: ItemKind[]; kindMix?: Record<string, number>; free?: true }[] = [
+  { v: 'mc', label: 'Flerval', kinds: ['multipleChoice'] },
+  { v: 'free', label: 'Skriv eget svar (AI rättar)', kinds: ['freeText'], free: true },
+  {
+    v: 'mcFree',
+    label: 'Flerval + eget svar',
+    kinds: ['multipleChoice', 'freeText'],
+    kindMix: { multipleChoice: 7, freeText: 3 },
+    free: true,
+  },
+  { v: 'mix', label: 'Låt AI välja en bra blandning' },
+  { v: 'custom', label: 'Välj själv' },
+]
+
 function Choice({
   name,
   checked,
@@ -55,7 +71,8 @@ function Choice({
 export function TestConfigurator({ learnerId, variant, studySetId, onCreated, onCancel }: TestConfiguratorProps) {
   const [count, setCount] = useState(COUNT_DEFAULT[variant])
   const [difficulty, setDifficulty] = useState<number>() // undefined: fitted to the learner
-  const [mix, setMix] = useState(true)
+  const early = variant === 'early'
+  const [preset, setPreset] = useState<Preset>(early ? 'mix' : 'mcFree')
   const [kinds, setKinds] = useState<ItemKind[]>(['multipleChoice', 'trueFalse', 'fillBlank'])
   const [feedback, setFeedback] = useState<'immediate' | 'end'>('immediate')
   const [hints, setHints] = useState(true)
@@ -64,6 +81,7 @@ export function TestConfigurator({ learnerId, variant, studySetId, onCreated, on
   const [waiting, setWaiting] = useState(false)
   const [error, setError] = useState('')
 
+  const chosen = PRESETS.find((p) => p.v === preset)
   const submit = async () => {
     setError('')
     setJobId(undefined)
@@ -74,7 +92,9 @@ export function TestConfigurator({ learnerId, variant, studySetId, onCreated, on
         sourceMode,
         questionCount: count,
         ...(difficulty ? { difficulty } : {}),
-        ...(mix ? {} : { itemKinds: kinds }),
+        ...(preset === 'custom' ? { itemKinds: kinds } : {}),
+        ...(chosen?.kinds ? { itemKinds: chosen.kinds } : {}),
+        ...(chosen?.kindMix ? { kindMix: chosen.kindMix } : {}),
         feedback,
         hints,
       })
@@ -174,24 +194,25 @@ export function TestConfigurator({ learnerId, variant, studySetId, onCreated, on
 
       <fieldset className={styles.fieldset}>
         <legend>Typ av frågor</legend>
-        <Choice name="mix" checked={mix} onChange={() => setMix(true)}>
-          Låt AI välja en bra blandning
-        </Choice>
-        <Choice name="mix" checked={!mix} onChange={() => setMix(false)}>
-          Välj själv
-        </Choice>
-        {!mix && (
+        {PRESETS.filter((p) => !(early && p.free)).map((p) => (
+          <Choice key={p.v} name="preset" checked={preset === p.v} onChange={() => setPreset(p.v)}>
+            {p.label}
+          </Choice>
+        ))}
+        {preset === 'custom' && (
           <div className={styles.kinds}>
-            {(Object.keys(KIND_LABELS) as ItemKind[]).map((k) => (
-              <label key={k} className={styles.check}>
-                <input
-                  type="checkbox"
-                  checked={kinds.includes(k)}
-                  onChange={(e) => setKinds((ks) => (e.target.checked ? [...ks, k] : ks.filter((x) => x !== k)))}
-                />
-                {KIND_LABELS[k]}
-              </label>
-            ))}
+            {(Object.keys(KIND_LABELS) as ItemKind[])
+              .filter((k) => !(early && k === 'freeText'))
+              .map((k) => (
+                <label key={k} className={styles.check}>
+                  <input
+                    type="checkbox"
+                    checked={kinds.includes(k)}
+                    onChange={(e) => setKinds((ks) => (e.target.checked ? [...ks, k] : ks.filter((x) => x !== k)))}
+                  />
+                  {KIND_LABELS[k]}
+                </label>
+              ))}
           </div>
         )}
       </fieldset>
@@ -219,7 +240,7 @@ export function TestConfigurator({ learnerId, variant, studySetId, onCreated, on
         </p>
       )}
       <div className={styles.actions}>
-        <Button type="submit" disabled={!mix && !kinds.length}>
+        <Button type="submit" disabled={preset === 'custom' && !kinds.length}>
           Skapa provet
         </Button>
         {onCancel && (

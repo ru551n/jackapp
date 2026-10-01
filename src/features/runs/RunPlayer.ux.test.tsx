@@ -5,6 +5,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ItemInput } from './ItemInput'
 import { initialValue, type PublicItem } from './presentation'
 import { RunPlayer } from './RunPlayer'
+import { RunResults } from './RunResults'
+import { speak } from '../../lib/speech'
 import { hasFel, mockApi } from './testApi'
 
 // Speech is unavailable in jsdom; pretend a voice exists so "Lyssna" buttons render.
@@ -164,5 +166,46 @@ describe('ItemInput, early band', () => {
   it('numeric: the decimal-comma note is left out with brief text', () => {
     render(<Harness item={{ id: 'n1', kind: 'numeric', prompt: 'Hur många?' }} onValue={vi.fn()} />)
     expect(screen.queryByText(/decimaler med komma/)).toBeNull()
+  })
+})
+
+describe('AI-graded free text results', () => {
+  const ai = {
+    keyPointsMet: [0],
+    feedback: 'Bra början!',
+    score: 0.5,
+    keyPoints: [
+      { point: 'Räven bor i skogen', verdict: 'met' as const, evidence: 'räven bor i skogen' },
+      { point: 'Räven äter möss', verdict: 'missing' as const },
+    ],
+  }
+
+  it('results screen shows each free-text answer with covered and missing points', async () => {
+    mockApi({})
+    render(
+      <RunResults
+        learnerId={L}
+        variant="middle"
+        runId={RUN}
+        summary={{
+          answered: 1,
+          total: 1,
+          correct: 0,
+          message: 'Du klarade 0 av 1. Bra kämpat!',
+          skills: [],
+          review: [],
+          selfAssess: [],
+          freeText: [{ itemId: 'i2', prompt: 'Berätta om räven.', answer: 'Räven bor i skogen.', ai }],
+        }}
+      />,
+    )
+    expect(screen.getByRole('heading', { name: 'Dina egna svar' })).toBeInTheDocument()
+    expect(screen.getByText('Berätta om räven.')).toBeInTheDocument()
+    expect(screen.getByText('Räven bor i skogen.')).toBeInTheDocument()
+    expect(screen.getByText('Räven äter möss')).toBeInTheDocument()
+    expect(screen.getByText('Bra början!')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Lyssna' }))
+    expect(speak).toHaveBeenCalledWith(expect.stringContaining('Det här kan du lägga till: Räven äter möss.'), 'sv')
+    expect(hasFel()).toBe(false)
   })
 })

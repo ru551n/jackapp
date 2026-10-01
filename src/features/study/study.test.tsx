@@ -192,7 +192,7 @@ describe('TestConfigurator', () => {
     })
     const onCreated = vi.fn()
     render(<TestConfigurator learnerId={L} variant="middle" studySetId="s1" onCreated={onCreated} />)
-    expect(screen.getByLabelText(/Låt AI välja en bra blandning/)).toBeChecked()
+    expect(screen.getByLabelText('Flerval + eget svar')).toBeChecked()
     await userEvent.click(screen.getByLabelText(/Materialet \+ läroplanen/))
     await userEvent.click(screen.getByLabelText('När provet är klart'))
     await userEvent.click(screen.getByRole('button', { name: 'Skapa provet' }))
@@ -203,10 +203,28 @@ describe('TestConfigurator', () => {
       studySetId: 's1',
       sourceMode: 'sourceAndCurriculum',
       questionCount: 10,
+      itemKinds: ['multipleChoice', 'freeText'],
+      kindMix: { multipleChoice: 7, freeText: 3 },
       feedback: 'end',
       hints: true,
     })
     expect(hasFel()).toBe(false)
+  })
+
+  it('offers question-type presets; the early band gets no free text', async () => {
+    const calls = mockApi({ [`POST /learners/${L}/generate`]: { jobId: 'g1' } })
+    const { unmount } = render(<TestConfigurator learnerId={L} variant="upper" studySetId="s1" onCreated={vi.fn()} />)
+    await userEvent.click(screen.getByLabelText('Skriv eget svar (AI rättar)'))
+    await userEvent.click(screen.getByRole('button', { name: 'Skapa provet' }))
+    expect(calls.find((c) => c.method === 'POST')!.body).toMatchObject({ itemKinds: ['freeText'] })
+    unmount()
+
+    render(<TestConfigurator learnerId={L} variant="early" studySetId="s1" onCreated={vi.fn()} />)
+    expect(screen.getByLabelText('Låt AI välja en bra blandning')).toBeChecked()
+    expect(screen.getByLabelText('Flerval')).toBeInTheDocument()
+    expect(screen.queryByText(/eget svar/)).toBeNull()
+    await userEvent.click(screen.getByLabelText('Välj själv'))
+    expect(screen.queryByText(/eget svar/)).toBeNull()
   })
 
   it('sends chosen item kinds', async () => {

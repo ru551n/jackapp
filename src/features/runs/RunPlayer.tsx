@@ -11,12 +11,13 @@ import {
   errorText,
   initialValue,
   isAnswered,
+  keyPointsSpeech,
   RATINGS,
   speechLang,
   type CommonProps,
   type PublicItem,
 } from './presentation'
-import { RunResults } from './RunResults'
+import { KeyPoints, RunResults } from './RunResults'
 import styles from './runs.module.css'
 
 // Plays an approved artifact through the runs API (docs/platform/runs.md). No timers, ever.
@@ -323,12 +324,13 @@ export function RunPlayer({
         {fb?.done && (
           <div className={fb.correct ? styles.success : styles.reveal}>
             <p className={styles.fbTitle}>{fb.message}</p>
+            {fb.ai && <KeyPoints ai={fb.ai} />}
+            {fb.ai && fb.ai.feedback !== fb.message && <p>{fb.ai.feedback}</p>}
             {fb.solution && !fb.correct && (
               <p>
-                Svaret: <strong>{fb.solution}</strong>
+                {item.kind === 'freeText' ? 'Exempel på svar' : 'Svaret'}: <strong>{fb.solution}</strong>
               </p>
             )}
-            {fb.ai && <p>{fb.ai.feedback}</p>}
             {fb.explanation &&
               (collapse ? (
                 <details>
@@ -338,7 +340,15 @@ export function RunPlayer({
               ) : (
                 <Markdown text={fb.explanation} />
               ))}
-            {say(fb.message, fb.solution && !fb.correct && `Svaret: ${fb.solution}.`, fb.ai?.feedback, fb.explanation)}
+            {say(
+              fb.message,
+              fb.ai && keyPointsSpeech(fb.ai),
+              fb.ai && fb.ai.feedback !== fb.message && fb.ai.feedback,
+              fb.solution &&
+                !fb.correct &&
+                `${item.kind === 'freeText' ? 'Exempel på svar' : 'Svaret'}: ${fb.solution}.`,
+              fb.explanation,
+            )}
           </div>
         )}
         {waitingRetry && (

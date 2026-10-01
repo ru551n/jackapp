@@ -119,6 +119,8 @@ export const GenerationRequest = z.object({
   sourceMode: SourceMode.default('sourceAndCurriculum'),
   questionCount: z.number().int().min(1).max(60).optional(),
   itemKinds: z.array(z.string()).max(9).optional(),
+  /** Practice tests: relative weight per item kind, e.g. { multipleChoice: 7, freeText: 3 }. Even split when absent. */
+  kindMix: z.record(z.string(), z.number().min(0).max(100)).optional(),
   difficulty: z.number().int().min(1).max(5).optional(),
   durationMinutes: z.number().int().min(3).max(120).optional(),
   theme: z.string().max(100).optional(),

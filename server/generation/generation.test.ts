@@ -450,6 +450,31 @@ describe('strict mode and the validation-failure path', () => {
       ])
   })
 
+  it('åk 6 strict study tests get free text ("Låt AI välja" and "Flerval + eget svar"), even when the model skips it', async () => {
+    const t = await setup({ school: { stage: 'grundskola', year: 6 } })
+    // A model that prefers multiple choice whenever it may choose.
+    const { ai, calls } = scriptedAi(t.db, {
+      item: (k, n, req) => fakeItem(kindsOf(req).length === 1 ? k : 'multipleChoice', n, { sourceSegmentIds: ['s1'] }),
+    })
+    const base = { type: 'practiceTest', sourceMode: 'strict', studySetId: SET_ID }
+    for (const [extra, want] of [
+      [{ questionCount: 4 }, 1],
+      [
+        { questionCount: 10, itemKinds: ['multipleChoice', 'freeText'], kindMix: { multipleChoice: 7, freeText: 3 } },
+        3,
+      ],
+    ] as const) {
+      expect((await post(t, `/learners/${t.learnerId}/generate`, { ...base, ...extra })).statusCode).toBe(202)
+      const { resultId, error } = await runNext(t.db, generationJobHandlers({ ai, loadMaterial }), 'artifact.generate')
+      expect(error).toBeUndefined()
+      const items = (await loadArtifact(t.db, resultId!))!.artifact.sections.flatMap((s) => s.items)
+      expect(items).toHaveLength(extra.questionCount)
+      expect(items.filter((i) => i.kind === 'freeText')).toHaveLength(want)
+      expect(items.every((i) => i.sources.some((s) => s.kind === 'upload'))).toBe(true)
+    }
+    expect(calls.filter((c) => kindsOf(c).join() === 'freeText')).toHaveLength(2) // one top-up per test
+  })
+
   it('stores a draft with the report and fails the job when the repair also fails', async () => {
     const t = await setup()
     const { ai, calls } = scriptedAi(t.db) // never cites segments
@@ -939,6 +964,20 @@ describe('practice tests, repair and recovery', () => {
     const task = itemsTask({ count: 10, kinds: ['multipleChoice', 'numeric'], ramp: [2, 3], quota: slots[0]!.quota })
     expect(task).toContain('första uppgiften difficulty 2, sista 3')
     expect(task).toMatch(/5 st flerval, 5 st numeriskt svar/)
+  })
+
+  it('practice tests honour a kind mix (Flerval + eget svar ~70/30, free text last in each part)', () => {
+    const r = resolved('practiceTest', {
+      questionCount: 20,
+      itemKinds: ['multipleChoice', 'freeText'],
+      kindMix: { multipleChoice: 7, freeText: 3 },
+    })
+    const slots = blueprint(r)
+    expect(slots.map((s) => s.quota)).toEqual([
+      { multipleChoice: 7, freeText: 3 },
+      { multipleChoice: 7, freeText: 3 },
+    ])
+    expect(itemsTask({ count: 10, kinds: r.itemKinds, quota: slots[0]!.quota })).toContain('fritt svar sist')
   })
 
   it('early learners never get free text outside writing tasks', () => {

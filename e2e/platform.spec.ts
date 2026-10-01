@@ -169,12 +169,17 @@ test('generation with parent approval, then the learner plays it', async ({ page
   await expect(page.getByRole('textbox', { name: 'Vuxenkod' })).toBeVisible()
 })
 
-test('study upload: image + PDF, strict practice test, approval, learner list', async ({ page }) => {
+test('study upload: image + PDF, strict test with free text, approval, learner answers', async ({ page }) => {
   const png = await sharp({ create: { width: 320, height: 240, channels: 3, background: '#cfe8ff' } })
     .png()
     .toBuffer()
   await openAdult(page)
   await page.getByRole('link', { name: 'Jack', exact: true }).click()
+  // Free text is for årskurs 4 and up: Jack moves up a few years for this test.
+  await page.getByRole('link', { name: 'Profil och stöd' }).click()
+  await page.getByLabel('Skola och årskurs').selectOption({ label: 'Årskurs 4' })
+  await page.getByRole('button', { name: 'Spara profilen' }).click()
+  await expect(page.getByText('Sparat.')).toBeVisible()
   await page.getByRole('navigation', { name: 'Elevens sidor' }).getByRole('link', { name: 'Studiematerial' }).click()
   await page.getByLabel('Titel (valfri)').fill('Djur i skogen')
   await page.getByLabel('Välj filer').setInputFiles([
@@ -191,6 +196,7 @@ test('study upload: image + PDF, strict practice test, approval, learner list', 
     .click()
   await page.getByRole('button', { name: 'Skapa övningsprov' }).click()
   await page.getByRole('radio', { name: /Bara från materialet/ }).check()
+  await page.getByRole('radio', { name: 'Flerval + eget svar' }).check()
   await page.getByLabel('Antal frågor').fill('4')
   await page.getByRole('button', { name: 'Skapa provet' }).click()
   await expect(page.getByText('Väntar på godkännande')).toBeVisible({ timeout: 60_000 })
@@ -199,9 +205,27 @@ test('study upload: image + PDF, strict practice test, approval, learner list', 
   await expect(page.getByText('Godkänt', { exact: true })).toBeVisible()
 
   await enterLearner(page, 'Jack')
-  await expect(page.getByRole('link', { name: /Nya uppdrag.*2 uppdrag väntar/ })).toBeVisible()
-  await page.getByRole('link', { name: /Nya uppdrag/ }).click()
-  await expect(page.getByRole('main').getByRole('listitem')).toHaveCount(2)
+  await page
+    .getByRole('link', { name: /Addition/ })
+    .first()
+    .click()
+  // Free text is graded by the (mock) AI against the material: answering with the quoted words covers the key point.
+  const main = page.getByRole('main')
+  let freeTexts = 0
+  for (let i = 0; i < 4; i++) {
+    await expect(main.getByRole('progressbar', { name: `Uppgift ${i + 1} av 4` })).toBeVisible()
+    if (await main.locator('textarea').isVisible()) {
+      const prompt = (await main.getByRole('heading', { level: 2 }).textContent()) ?? ''
+      await main.locator('textarea').fill(`Texten handlar om ${/"([^"]+)"/.exec(prompt)?.[1]}.`)
+      await main.getByRole('button', { name: 'Svara' }).click()
+      await expect(main.getByText('Det här fanns med')).toBeVisible()
+      freeTexts++
+    } else await answerItem(page)
+    await main.getByRole('button', { name: /^(Nästa|Se resultat)$/ }).click()
+  }
+  expect(freeTexts).toBeGreaterThan(0)
+  await expect(page.getByRole('heading', { name: /^Du klarade \d+ av 4$/ })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Dina egna svar' })).toBeVisible()
 })
 
 test('middle learner: free-text request, approved by the adult, is playable', async ({ page }) => {

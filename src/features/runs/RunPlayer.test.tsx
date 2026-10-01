@@ -80,7 +80,15 @@ describe('RunPlayer', () => {
             message: 'Bra förklarat!',
             done: true,
             revealed: false,
-            ai: { keyPointsMet: [0], feedback: 'Tydligt!', score: 1 },
+            ai: {
+              keyPointsMet: [0],
+              feedback: 'Tydligt!',
+              score: 0.75,
+              keyPoints: [
+                { point: 'Talen läggs ihop', verdict: 'met', evidence: 'lägger ihop' },
+                { point: 'Summan blir större', verdict: 'partly' },
+              ],
+            },
           }
         return {
           itemId,
@@ -118,6 +126,11 @@ describe('RunPlayer', () => {
     await userEvent.type(screen.getByLabelText('Ditt svar'), 'Man lägger ihop.')
     await userEvent.click(screen.getByRole('button', { name: 'Svara' }))
     expect(await screen.findByText('Tydligt!')).toBeInTheDocument()
+    expect(screen.getByText('Det här fanns med')).toBeInTheDocument()
+    expect(screen.getByText('Talen läggs ihop')).toBeInTheDocument()
+    expect(screen.getByText('Det här kan du lägga till')).toBeInTheDocument()
+    expect(screen.getByText('(finns delvis med)')).toBeInTheDocument()
+    expect(hasFel()).toBe(false)
     await userEvent.click(screen.getByRole('button', { name: /Se resultat/ }))
     expect(await screen.findByRole('heading', { name: 'Du klarade 1 av 2' })).toBeInTheDocument()
     expect(screen.getByText('Bra kämpat!')).toBeInTheDocument()
@@ -289,9 +302,62 @@ describe('RunHistory', () => {
       },
     })
     render(<RunHistory learnerId={L} variant="adult" />)
-    expect(await screen.findByText('AI-bedömd')).toBeInTheDocument()
+    expect(await screen.findByText('AI-bedömt')).toBeInTheDocument()
     expect(await screen.findByText('Matte')).toBeInTheDocument()
     expect(screen.getByRole('cell', { name: '4' })).toBeInTheDocument()
     expect(screen.getByRole('cell', { name: 'Plus' })).toBeInTheDocument()
+  })
+})
+
+describe('AI-graded free text', () => {
+  const ai = {
+    keyPointsMet: [0],
+    feedback: 'Bra början!',
+    score: 0.5,
+    keyPoints: [
+      { point: 'Räven bor i skogen', verdict: 'met' as const, evidence: 'räven bor i skogen' },
+      { point: 'Räven äter möss', verdict: 'missing' as const },
+    ],
+  }
+
+  it('history shows the AI verdict per key point and lets the adult override it', async () => {
+    let correct = false
+    const calls = mockApi({
+      [`GET ${R}`]: () => [
+        {
+          id: RUN,
+          artifactId: ART,
+          artifactVersion: 1,
+          feedback: 'end',
+          state: 'finished',
+          startedAt: '2026-10-01T10:00:00Z',
+          finishedAt: null,
+          summary,
+          answers: [
+            {
+              itemId: 'i2',
+              attempt: 1,
+              answer: { text: 'Räven bor i skogen.' },
+              correct,
+              score: correct ? 1 : 0.5,
+              revealed: false,
+              assessedBy: correct ? 'adult' : 'ai',
+              feedback: { ai },
+              at: '',
+            },
+          ],
+        },
+      ],
+      [`GET /artifacts/${ART}`]: { artifact: { id: ART, title: 'Matte', sections: [{ items: [free] }] } },
+      [`POST ${R}/${RUN}/override`]: () => ((correct = true), {}),
+    })
+    render(<RunHistory learnerId={L} variant="adult" />)
+    expect(await screen.findByText('AI-bedömt')).toBeInTheDocument()
+    expect(screen.getByText('Finns med')).toBeInTheDocument()
+    expect(screen.getByText('Saknas')).toBeInTheDocument()
+    expect(screen.getByText(/räven bor i skogen”/)).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Räkna som klar' }))
+    expect(calls.find((c) => c.path.endsWith('/override'))!.body).toEqual({ itemId: 'i2', done: true })
+    expect(await screen.findByText('Ändrat av vuxen')).toBeInTheDocument()
   })
 })

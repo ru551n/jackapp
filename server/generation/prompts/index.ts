@@ -225,6 +225,7 @@ export function sourceBlock(mode: SourceMode, m: ProcessedStudyMaterial | undefi
     strict: [
       'Källläge STRIKT: varje uppgift och varje fakta får BARA komma från studiematerialet nedan.',
       'Varje uppgift MÅSTE ange sourceSegmentIds med minst ett segment-id som uppgiften bygger på.',
+      'Fritt svar: varje punkt i rubric ska stå i de segment som anges i sourceSegmentIds (ange alla segment som punkterna bygger på).',
       'Hitta aldrig på fakta som inte står i materialet. Läroplanen används inte som källa.',
       'Ett tema eller elevens intressen får bara färga ordvalet (t.ex. namn och miljö i frågan), aldrig tillföra fakta. Rätt svar ska stå i materialet.',
     ],
@@ -337,6 +338,7 @@ export function itemsTask(opts: {
     quota.length > 1
       ? `Fördelning: ${quota.map(([k, n]) => `${n} st ${KIND_SV[k as ItemKind].split(' (')[0]}`).join(', ')}.`
       : '',
+    quota.length > 1 && opts.quota?.freeText ? 'Lägg uppgifterna med fritt svar sist i denna del.' : '',
     opts.ramp
       ? opts.ramp[0] === opts.ramp[1]
         ? `Svårighetsgrad (difficulty) ${opts.ramp[0]} för alla uppgifter i denna del.`
