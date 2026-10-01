@@ -1,0 +1,122 @@
+.page {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-2);
+  grid-template-columns: minmax(0, 1.6fr) minmax(16rem, 1fr);
+  align-items: start;
+}
+@media (max-width: 760px), (orientation: portrait) {
+  .page {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.mapBox {
+  background: var(--paper);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+.map {
+  display: block;
+  width: 100%;
+  aspect-ratio: 1;
+  max-height: 75dvh;
+  margin: 0 auto;
+  background: var(--paper-strong);
+  cursor: crosshair;
+}
+.water {
+  fill: var(--accent-soft);
+}
+.park {
+  fill: var(--ok-soft);
+}
+.grid line {
+  stroke: var(--line);
+  stroke-width: 0.15;
+}
+.station {
+  cursor: pointer;
+  outline: none;
+}
+.station:focus-visible circle:nth-child(2) {
+  stroke: var(--accent);
+  stroke-width: 1;
+}
+.dot {
+  fill: var(--paper);
+  stroke: var(--ink);
+  stroke-width: 0.9;
+}
+.dotSel {
+  fill: var(--gate);
+  stroke: var(--ink);
+  stroke-width: 0.9;
+}
+.label {
+  font-size: 3.6px;
+  font-weight: 700;
+  fill: var(--ink);
+  paint-order: stroke;
+  stroke: var(--paper);
+  stroke-width: 0.8px;
+}
+.side {
+  display: grid;
+  gap: var(--space-2);
+}
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+.row > * {
+  flex: 1 1 9rem;
+}
+.icon {
+  width: calc(var(--sprite-w, 1.4) * 1.6rem);
+  height: 1.6rem;
+}
+.sign {
+  display: grid;
+  gap: 0.25rem;
+  padding: var(--space-2);
+  border-radius: var(--radius-sm);
+  background: var(--sign);
+  color: var(--sign-ink);
+  font-size: 1.2rem;
+}
+.sign strong {
+  font-size: 1.6rem;
+}
+.panel {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-2);
+  background: var(--paper);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+.names {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(7rem, 1fr));
+  gap: var(--space-1);
+}
+.custom {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  align-items: end;
+}
+.custom label {
+  display: grid;
+  gap: 0.25rem;
+  flex: 1 1 10rem;
+}
+.custom input {
+  min-height: 3.5rem;
+  font-size: 1.2rem;
+  padding: 0 0.75rem;
+  border: 2px solid var(--line);
+  border-radius: var(--radius-sm);
+}
