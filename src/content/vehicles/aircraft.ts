@@ -28,7 +28,7 @@ export const AIRCRAFT: Vehicle[] = [
   {
     id: 'a320',
     name: 'Airbus A320',
-    shortName: 'Airbus A320',
+    shortName: 'A320',
     category: 'airliner',
     country: 'Europa (Airbus)',
     swedish: false,
@@ -161,7 +161,7 @@ export const AIRCRAFT: Vehicle[] = [
   {
     id: 'a380',
     name: 'Airbus A380',
-    shortName: 'Airbus A380',
+    shortName: 'A380',
     category: 'airliner',
     country: 'Europa (Airbus)',
     swedish: false,
