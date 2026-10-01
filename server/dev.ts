@@ -53,6 +53,7 @@ await worker.start()
 const app = await buildApp({
   ctx: { env, db, readiness: [...ai.readiness, ...jobs.readiness], ai, jobs, loadArtifactVersion },
   logger: { level: 'warn' },
+  webDistDir: process.env.WEB_DIST_DIR,
 })
 await app.listen({ port: env.PORT, host: '127.0.0.1' })
 log.info({ port: env.PORT, ai: ai.status().map((s) => `${s.capability}:${s.configured}`) }, 'dev server ready')

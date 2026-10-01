@@ -76,6 +76,30 @@ function item(kind: string, n: number, skill: string) {
   }
 }
 
+const SEGMENT = /^\[([^\]]+)\] \(sida \d+, [^)]+\) (.+)$/gm
+
+/** Strict source mode: true/false items quoting the longest uploaded segments, each citing its segment. */
+function grounded(out: { items: Record<string, unknown>[] }, system: string, kinds: string[]) {
+  const segs = [...system.matchAll(SEGMENT)].map((m) => ({ id: m[1]!, text: m[2]!.trim() }))
+  if (!segs.length) return out
+  segs.sort((a, b) => b.text.length - a.text.length)
+  out.items = out.items.map((item, i) => {
+    const seg = segs[i % segs.length]!
+    if (!kinds.includes('trueFalse')) return { ...item, sourceSegmentIds: [seg.id] }
+    return {
+      kind: 'trueFalse',
+      prompt: `Sant eller falskt: ${seg.text.replace(/[.!?]$/, '')}.`,
+      answer: true,
+      difficulty: 2,
+      skills: item.skills,
+      hints: ['Läs texten en gång till.'],
+      explanation: `Det står i texten: ${seg.text}`,
+      sourceSegmentIds: [seg.id],
+    }
+  })
+  return out
+}
+
 let counter = 0
 
 export const devMockText: MockChatHandler = (req) => {
@@ -95,13 +119,14 @@ export const devMockText: MockChatHandler = (req) => {
     case 'artifact_items': {
       const kinds = kindsOf(js.properties.items.items)
       const skill = ADD.exec(req.system ?? '')?.[1] ?? SKILL
-      return {
+      const out = {
         title: 'Addition',
         items: Array.from({ length: js.properties.items.minItems }, () => {
           const n = counter++
           return item(kinds[n % kinds.length]!, n, skill)
         }),
       }
+      return (req.system ?? '').includes('Källläge STRIKT') ? grounded(out, req.system!, kinds) : out
     }
     default:
       return req.json ? sample(req.json.jsonSchema) : 'Mock-svar.'
