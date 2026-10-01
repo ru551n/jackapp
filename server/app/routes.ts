@@ -6,6 +6,7 @@ import { imageRoutes } from '../images/routes'
 import { jobRoutes } from '../jobs/routes'
 import { learnerRoutes } from '../learners/routes'
 import { studyRoutes } from '../study/routes'
+import { runRoutes } from '../runs/routes'
 
 // Route registry: each domain exports one RouteModule and adds one line here.
 export const ROUTE_MODULES: RouteModule[] = [
@@ -16,4 +17,5 @@ export const ROUTE_MODULES: RouteModule[] = [
   curriculumRoutes,
   imageRoutes,
   studyRoutes,
+  runRoutes,
 ]
