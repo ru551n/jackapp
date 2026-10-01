@@ -24,5 +24,5 @@ export async function completeMission(page: Page, area: string) {
   await page.getByRole('link', { name: new RegExp(area) }).click()
   await page.getByRole('link', { name: 'Starta uppdrag' }).click()
   for (let i = 0; i < 4; i++) await solveCurrent(page)
-  await expect(page.getByRole('heading', { name: /Klart!/ })).toBeVisible()
+  await expect(page.getByRole('heading', { name: /Bra jobbat!/ })).toBeVisible()
 }

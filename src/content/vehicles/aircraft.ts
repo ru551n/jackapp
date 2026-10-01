@@ -93,7 +93,7 @@ export const AIRCRAFT: Vehicle[] = [
   },
   {
     id: 'b737',
-    name: 'Boeing 737',
+    name: 'Boeing 737-800',
     shortName: 'Boeing 737',
     category: 'airliner',
     country: 'USA',

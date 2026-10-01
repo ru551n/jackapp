@@ -51,7 +51,7 @@ export const boardingOrder: Generator = {
       skill: 'air.numbers',
       level,
       theme: 'airport',
-      prompt: 'Passagerarna går ombord. Tryck på raderna, minst först.',
+      prompt: 'Passagerarna går ombord. Tryck på raderna, minsta först.',
       scene: { kind: 'row', items: row(count, 'passenger', false), label: 'Passagerare i kö' },
       task: { kind: 'order', items, answer: sorted.map(String) },
       hints: [
