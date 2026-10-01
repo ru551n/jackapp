@@ -1,6 +1,6 @@
 import { useEffect, useRef, type ReactNode } from 'react'
 import { Link } from 'react-router'
-import { paths } from '../app/paths'
+import { usePaths } from '../app/paths'
 import { Icon } from './Icon'
 import styles from './Shell.module.css'
 
@@ -16,6 +16,7 @@ let firstScreen = true
 
 /** Consistent frame for every screen: home button top-left, title, content. */
 export function Shell({ title, home = true, right, children }: ShellProps) {
+  const paths = usePaths()
   const titleRef = useRef<HTMLHeadingElement>(null)
   // Announce screen changes: page title, and focus on the heading (except on first load).
   useEffect(() => {

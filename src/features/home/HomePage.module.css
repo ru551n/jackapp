@@ -28,8 +28,8 @@
 }
 
 .art {
-  height: 5rem;
-  width: calc(5rem * var(--sprite-w, 1));
+  height: calc(5rem * var(--visual-scale, 1));
+  width: calc(5rem * var(--visual-scale, 1) * var(--sprite-w, 1));
   max-width: 100%;
   margin-bottom: 0.4rem;
 }
@@ -57,7 +57,7 @@
   text-align: right;
 }
 
-/* Deliberately small and quiet so it does not compete with the destinations. */
+/* Deliberately quiet so it does not compete with the destinations (still a 44 px target). */
 .parent {
   color: var(--ink-soft);
   font-size: 0.85rem;

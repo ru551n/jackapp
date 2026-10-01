@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import { paths } from '../../app/paths'
+import { usePaths } from '../../app/paths'
 import { VehicleArt } from '../../art/vehicles'
 import { missionsLeftText } from '../../core/swedish'
 import type { AreaId, Vehicle } from '../../core/types'
@@ -10,6 +10,7 @@ import styles from './DonePanel.module.css'
 
 /** "Klart!" — a calm, complete ending with a predictable next step. */
 export function DonePanel({ area, unlocked, onAgain }: { area: AreaId; unlocked: Vehicle[]; onAgain: () => void }) {
+  const paths = usePaths()
   const missions = useAppState((s) => s.missions)
   const upcoming = nextUnlock(area, missions)
   const headingRef = useRef<HTMLHeadingElement>(null)

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { isUnlocked, newlyUnlocked, nextUnlock, VEHICLES } from '../content/vehicles'
-import { defaultState, loadState, saveState, STORAGE_KEY } from './state'
-import { actions, getState } from './store'
+import { defaultState, LEGACY_KEY, learnerKey, loadState, saveState } from './state'
+import { actions, getState, selectLearner } from './store'
 
 describe('persistence', () => {
   it('round-trips state through storage', () => {
@@ -10,20 +10,20 @@ describe('persistence', () => {
     s.settings.freePlayEnabled = true
     s.parentPin = '2468'
     s.freePlay.line = { vehicle: 'tram', stations: [{ id: 'a', name: 'Bron', x: 10, y: 20 }] }
-    saveState(s)
-    expect(loadState()).toEqual(s)
+    saveState(s, learnerKey('a'))
+    expect(loadState(localStorage, learnerKey('a'))).toEqual(s)
   })
 
   it('falls back to defaults on corrupt or foreign data', () => {
-    localStorage.setItem(STORAGE_KEY, '{not json')
+    localStorage.setItem(LEGACY_KEY, '{not json')
     expect(loadState()).toEqual(defaultState())
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ version: 99 }))
+    localStorage.setItem(LEGACY_KEY, JSON.stringify({ version: 99 }))
     expect(loadState()).toEqual(defaultState())
   })
 
   it('survives wrongly shaped fields without crashing', () => {
     localStorage.setItem(
-      STORAGE_KEY,
+      LEGACY_KEY,
       JSON.stringify({
         version: 1,
         progress: null,
@@ -54,7 +54,7 @@ describe('persistence', () => {
   })
 
   it('fills in fields added after the data was saved', () => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ version: 1, settings: { sound: true } }))
+    localStorage.setItem(LEGACY_KEY, JSON.stringify({ version: 1, settings: { sound: true } }))
     const s = loadState()
     expect(s.settings).toEqual({ ...defaultState().settings, sound: true })
     expect(s.missions).toEqual(defaultState().missions)
@@ -62,13 +62,29 @@ describe('persistence', () => {
 })
 
 describe('actions', () => {
-  it('record answers per skill and persist', () => {
+  it('record answers per skill and persist under the learner key', () => {
+    selectLearner('a')
     actions._replace(defaultState())
     actions.recordAnswer('math.add', 'math.add:x', 0, 0)
     actions.recordAnswer('math.add', 'math.add:y', 2, 2)
     expect(getState().progress['math.add']).toMatchObject({ attempts: 2, firstTry: 1, hintsUsed: 2 })
     expect(getState().recentQuestionIds).toEqual(['math.add:x', 'math.add:y'])
-    expect(JSON.parse(localStorage.getItem(STORAGE_KEY)!).progress['math.add'].attempts).toBe(2)
+    expect(JSON.parse(localStorage.getItem(learnerKey('a'))!).progress['math.add'].attempts).toBe(2)
+    expect(localStorage.getItem(LEGACY_KEY)).toBeNull()
+    selectLearner(undefined)
+  })
+
+  it('keeps each learner separate and never persists without a learner', () => {
+    selectLearner(undefined)
+    actions.addMission('stationen')
+    expect(localStorage.length).toBe(0)
+    selectLearner('a')
+    actions.addMission('tunnelbanan')
+    selectLearner('b')
+    expect(getState().missions.tunnelbanan).toBe(0)
+    selectLearner('a')
+    expect(getState().missions.tunnelbanan).toBe(1)
+    selectLearner(undefined)
   })
 
   it('tracks English separately from Swedish reading', () => {

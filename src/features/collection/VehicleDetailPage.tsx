@@ -1,5 +1,5 @@
 import { useParams } from 'react-router'
-import { paths } from '../../app/paths'
+import { usePaths } from '../../app/paths'
 import { VehicleArt } from '../../art/vehicles'
 import { isUnlocked, vehicleById } from '../../content/vehicles'
 import type { Vehicle, VehicleCategory } from '../../core/types'
@@ -35,6 +35,7 @@ function specRows(v: Vehicle): [string, string][] {
 }
 
 export function VehicleDetailPage() {
+  const paths = usePaths()
   const { id = '' } = useParams()
   const missions = useAppState((s) => s.missions)
   const vehicle = vehicleById(id)

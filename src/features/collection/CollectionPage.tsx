@@ -1,6 +1,6 @@
 import { Link } from 'react-router'
 import type { Vehicle } from '../../core/types'
-import { paths } from '../../app/paths'
+import { usePaths } from '../../app/paths'
 import { VehicleArt } from '../../art/vehicles'
 import { isUnlocked, VEHICLES } from '../../content/vehicles'
 import { useAppState } from '../../store/store'
@@ -9,6 +9,7 @@ import styles from './Collection.module.css'
 import { lockedHint, nextIds, SECTIONS } from './remaining'
 
 export function CollectionPage() {
+  const paths = usePaths()
   const missions = useAppState((s) => s.missions)
   const next = nextIds(VEHICLES, missions)
   const have = VEHICLES.filter((v) => isUnlocked(v, missions)).length
@@ -49,6 +50,7 @@ export function CollectionPage() {
 }
 
 function LockedCard({ v, hint, prominent }: { v: Vehicle; hint: string; prominent: boolean }) {
+  const paths = usePaths()
   const body = (
     <>
       <div aria-hidden="true" className={styles.lockedArt}>

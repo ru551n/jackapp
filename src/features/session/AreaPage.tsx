@@ -1,5 +1,5 @@
 import { Navigate, useParams } from 'react-router'
-import { paths } from '../../app/paths'
+import { usePaths } from '../../app/paths'
 import { Sprite } from '../../art/sprites'
 import { areaById } from '../../core/catalog'
 import { missionsLeftText } from '../../core/swedish'
@@ -13,6 +13,7 @@ import styles from './AreaPage.module.css'
 
 /** The "Start" step: one obvious action. */
 export function AreaPage() {
+  const paths = usePaths()
   const { area: areaParam = '' } = useParams()
   const area = areaById(areaParam)
   const missions = useAppState((s) => s.missions)

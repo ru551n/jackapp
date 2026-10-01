@@ -1,8 +1,10 @@
 import { expect, test } from '@playwright/test'
-import { completeMission } from './helpers.ts'
+import { completeMission, HOME, LEARNER_ID, mockLearnerApi } from './helpers.ts'
+
+test.beforeEach(({ page }) => mockLearnerApi(page))
 
 test('home shows the transport destinations and no free play by default', async ({ page }) => {
-  await page.goto('./')
+  await page.goto(HOME)
   await expect(page.getByRole('heading', { name: 'Mitt äventyr' })).toBeVisible()
   for (const name of ['Stationen', 'Tunnelbanan', 'Spårvagnen', 'Flygplatsen', 'Engelska', 'Min samling']) {
     await expect(page.getByRole('link', { name: new RegExp(name) })).toBeVisible()
@@ -20,6 +22,9 @@ for (const area of ['Stationen', 'Tunnelbanan', 'Spårvagnen', 'Flygplatsen', 'E
 test('progress survives a reload', async ({ page }) => {
   await completeMission(page, 'Flygplatsen')
   await page.reload()
-  const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('jackapp:v1')!).missions.flygplatsen)
+  const saved = await page.evaluate(
+    (id) => JSON.parse(localStorage.getItem(`jackapp:v1:${id}`)!).missions.flygplatsen,
+    LEARNER_ID,
+  )
   expect(saved).toBe(1)
 })

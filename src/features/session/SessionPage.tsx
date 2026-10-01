@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Navigate, useParams } from 'react-router'
-import { paths } from '../../app/paths'
+import { usePaths } from '../../app/paths'
 import { areaById, type AreaInfo } from '../../core/catalog'
 import { hashSeed } from '../../core/rng'
 import type { AreaId, Question, SkillId, Vehicle } from '../../core/types'
@@ -46,6 +46,7 @@ function startRun(area: AreaId): Run {
 }
 
 export function SessionPage() {
+  const paths = usePaths()
   const { area: areaParam = '' } = useParams()
   const area = areaById(areaParam)
   if (!area) return <Navigate to={paths.home} replace />

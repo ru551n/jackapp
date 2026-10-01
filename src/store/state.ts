@@ -1,6 +1,9 @@
 import type { AppState } from '../core/types'
 
-export const STORAGE_KEY = 'jackapp:v1'
+/** The original single-child key. Read for migration only; never written or deleted by the learner area. */
+export const LEGACY_KEY = 'jackapp:v1'
+/** Per-learner progress on this device. */
+export const learnerKey = (learnerId: string) => `${LEGACY_KEY}:${learnerId}`
 
 export const defaultState = (): AppState => ({
   version: 1,
@@ -20,10 +23,13 @@ const count = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) && v 
  * Load from localStorage. Every field is shape-checked and falls back to its default, so damaged
  * data can never lock the child out of the app.
  */
-export function loadState(storage: Pick<Storage, 'getItem'> | undefined = globalThis.localStorage): AppState {
+export function loadState(
+  storage: Pick<Storage, 'getItem'> | undefined = globalThis.localStorage,
+  key = LEGACY_KEY,
+): AppState {
   const base = defaultState()
   try {
-    const raw = storage?.getItem(STORAGE_KEY)
+    const raw = storage?.getItem(key)
     if (!raw) return base
     const p: unknown = JSON.parse(raw)
     if (!isObj(p) || p.version !== 1) return base
@@ -56,9 +62,13 @@ export function loadState(storage: Pick<Storage, 'getItem'> | undefined = global
   }
 }
 
-export function saveState(state: AppState, storage: Pick<Storage, 'setItem'> | undefined = globalThis.localStorage) {
+export function saveState(
+  state: AppState,
+  key: string,
+  storage: Pick<Storage, 'setItem'> | undefined = globalThis.localStorage,
+) {
   try {
-    storage?.setItem(STORAGE_KEY, JSON.stringify(state))
+    storage?.setItem(key, JSON.stringify(state))
   } catch {
     // Storage full or blocked (private mode): the app keeps working in memory.
   }

@@ -1,0 +1,340 @@
+/* Learner area. Early screens reuse the existing Shell and components; these styles cover the shared
+   request/run pieces and the denser middle and upper dashboards. Band sizing lives in global.css. */
+
+.root {
+  min-height: 100dvh;
+}
+
+.waiting {
+  min-height: 100dvh;
+  display: grid;
+  place-content: center;
+  gap: var(--space-2);
+  text-align: center;
+  padding: var(--space-3);
+}
+
+.plainLink {
+  display: inline-block;
+  padding: 0.8rem;
+  color: var(--accent);
+}
+
+/* ---- Middle/upper frame ---- */
+
+.bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-2);
+  background: var(--sign);
+  color: var(--sign-ink);
+}
+
+.bar :focus-visible {
+  outline-color: var(--sign-ink);
+}
+
+.who {
+  font-weight: 700;
+}
+
+.nav {
+  display: flex;
+  gap: var(--space-1);
+}
+
+.nav a {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--tap);
+  padding: 0 1rem;
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.12);
+  color: var(--sign-ink);
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.main {
+  width: 100%;
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: var(--space-3) var(--space-2) var(--space-4);
+}
+
+.title {
+  font-size: 1.6rem;
+  margin-bottom: var(--space-2);
+  outline: none;
+}
+
+.grid {
+  display: grid;
+  gap: var(--space-2);
+  grid-template-columns: repeat(auto-fit, minmax(min(22rem, 100%), 1fr));
+  align-items: start;
+}
+
+.wide {
+  grid-column: 1 / -1;
+}
+
+/* ---- Panels and lists ---- */
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  background: var(--paper);
+  border: 2px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+
+.panelTitle {
+  font-size: 1.2rem;
+}
+
+.lead {
+  font-size: 1.3rem;
+  font-weight: 700;
+}
+
+.muted {
+  color: var(--ink-soft);
+}
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.step {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.4rem;
+  padding: var(--space-2);
+  border-radius: var(--radius-sm);
+  background: var(--paper-strong);
+  border: 1px solid var(--line);
+}
+
+.item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-1);
+  min-height: var(--tap);
+  padding: 0.5rem var(--space-2);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line);
+  background: var(--paper-strong);
+  color: var(--ink);
+  text-decoration: none;
+}
+
+a.item:hover {
+  border-color: var(--accent);
+}
+
+.columns {
+  columns: 16rem;
+  padding-left: 1.2rem;
+}
+
+details summary {
+  cursor: pointer;
+  padding: 0.6rem 0;
+}
+
+/* ---- Chips and forms ---- */
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.chip {
+  min-height: 2.75rem;
+  padding: 0.3rem 1rem;
+  border-radius: 999px;
+  border: 2px solid var(--accent);
+  background: var(--paper);
+  color: var(--accent);
+  cursor: pointer;
+}
+
+.chip[aria-pressed='true'] {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.form label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  font-weight: 700;
+}
+
+.fields {
+  display: grid;
+  gap: var(--space-2);
+  grid-template-columns: repeat(auto-fit, minmax(min(12rem, 100%), 1fr));
+}
+
+.label {
+  font-weight: 700;
+}
+
+.input,
+.textarea {
+  font: inherit;
+  font-weight: 400;
+  min-height: 2.75rem;
+  padding: 0.5rem 0.75rem;
+  border: 2px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--paper);
+  color: var(--ink);
+}
+
+.textarea {
+  resize: vertical;
+}
+
+.fieldset {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-2);
+}
+
+.form .check {
+  flex-direction: row;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 400;
+  min-height: 2.75rem;
+}
+
+.check input {
+  width: 1.4rem;
+  height: 1.4rem;
+}
+
+.progress {
+  width: 100%;
+  height: 1.2rem;
+  accent-color: var(--accent);
+}
+
+/* ---- Guided (picture) choices ---- */
+
+.guided {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  align-items: flex-start;
+}
+
+.question {
+  font-size: 1.5rem;
+}
+
+.choices,
+.cards {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  display: grid;
+  gap: var(--space-2);
+  grid-template-columns: repeat(auto-fill, minmax(min(13rem, 100%), 1fr));
+}
+
+.choice,
+.missionCard {
+  width: 100%;
+  min-height: 10rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: var(--space-2);
+  background: var(--paper);
+  border: 3px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  color: var(--ink);
+  font-size: 1.3rem;
+  font-weight: 700;
+  text-align: center;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.choice:hover,
+.missionCard:hover {
+  border-color: var(--accent);
+}
+
+.choiceArt {
+  height: calc(4.5rem * var(--visual-scale, 1));
+  width: calc(4.5rem * var(--visual-scale, 1) * var(--sprite-w, 1));
+  max-width: 100%;
+}
+
+[data-band='middle'] .choice {
+  min-height: 4rem;
+  font-size: 1.1rem;
+}
+
+.unlock {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.unlockArt {
+  height: 4rem;
+  width: auto;
+}
+
+.slot {
+  padding: var(--space-3);
+  border: 2px dashed var(--line);
+  border-radius: var(--radius);
+  color: var(--ink-soft);
+  text-align: center;
+}
+
+/* Reduced text: secondary lines are hidden, the essentials stay. */
+[data-text='minimal'] [data-secondary] {
+  display: none;
+}
