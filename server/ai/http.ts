@@ -52,6 +52,13 @@ async function classify(res: Response): Promise<AiError> {
   const s = res.status
   const detail = `HTTP ${s}${providerCode}`
   if (s === 401 || s === 403) return new AiError('ai_auth', { status: s, detail })
+  // An exhausted quota/credit balance is not a temporary rate limit: retrying cannot help.
+  if (s === 429 && /quota|credit|billing/i.test(providerCode))
+    return new AiError('ai_config', {
+      status: s,
+      detail,
+      message: 'AI-tjänstens kvot eller krediter är slut. En administratör behöver kontrollera kontot.',
+    })
   if (s === 429) {
     const ra = Number(res.headers.get('retry-after'))
     return new AiError('ai_rate_limited', { status: s, detail, retryAfterMs: ra > 0 ? ra * 1000 : undefined })

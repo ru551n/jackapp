@@ -122,6 +122,13 @@ describe('OpenAI', () => {
     expect((aborted as Error).name).toBe('AbortError')
   })
 
+  it('treats an exhausted quota as a non-retryable admin problem, not a rate limit', async () => {
+    const ai = await aiWith(openai, () => ({ status: 429, json: { error: { code: 'credit_balance_exhausted' } } }))
+    const err = await caught(ai.text!.generate(ask))
+    expect(err).toMatchObject({ code: 'ai_config', retryable: false, detail: 'HTTP 429 credit_balance_exhausted' })
+    expect(err.message).toMatch(/kvot eller krediter/)
+  })
+
   it('never logs prompts or keys', async () => {
     const lines: unknown[] = []
     const log = { info: (o: unknown) => lines.push(o), warn: (o: unknown) => lines.push(o) }
