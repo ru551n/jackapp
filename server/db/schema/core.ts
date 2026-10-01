@@ -1,22 +1,8 @@
-import { index, jsonb, pgEnum, pgTable, primaryKey, text, timestamp, uuid } from 'drizzle-orm/pg-core'
+import { jsonb, pgTable, timestamp, uuid } from 'drizzle-orm/pg-core'
 import type { LearnerProfileInput } from '../../../shared/contracts'
 
-// Core identity and ownership. Domain modules own their own schema files (see schema/index.ts).
-
-export const users = pgTable(
-  'users',
-  {
-    id: uuid('id').primaryKey().defaultRandom(),
-    /** OIDC issuer + subject is the stable identity; never a password. */
-    oidcIssuer: text('oidc_issuer').notNull(),
-    oidcSubject: text('oidc_subject').notNull(),
-    displayName: text('display_name').notNull(),
-    email: text('email'),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-    lastLoginAt: timestamp('last_login_at', { withTimezone: true }),
-  },
-  (t) => [index('users_oidc_idx').on(t.oidcIssuer, t.oidcSubject)],
-)
+// Core household data. There are no user accounts: access control is the reverse proxy's job
+// (e.g. Caddy + Authentik forward auth). Domain modules own their own schema files.
 
 export const learners = pgTable('learners', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -25,21 +11,3 @@ export const learners = pgTable('learners', {
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 })
-
-export const learnerRole = pgEnum('learner_role', ['owner', 'editor', 'viewer'])
-
-/** Many adults may share a learner. Authorization always goes through this table. */
-export const learnerAccess = pgTable(
-  'learner_access',
-  {
-    learnerId: uuid('learner_id')
-      .notNull()
-      .references(() => learners.id, { onDelete: 'cascade' }),
-    userId: uuid('user_id')
-      .notNull()
-      .references(() => users.id, { onDelete: 'cascade' }),
-    role: learnerRole('role').notNull(),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-  },
-  (t) => [primaryKey({ columns: [t.learnerId, t.userId] })],
-)
