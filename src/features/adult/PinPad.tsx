@@ -49,11 +49,11 @@ export function PinPad({
             {d}
           </button>
         ))}
-        <button type="button" aria-label="Sudda" onClick={() => setPin(pin.slice(0, -1))}>
-          ⌫
-        </button>
         <button type="button" onClick={() => set(pin + 0)}>
           0
+        </button>
+        <button type="button" aria-label="Sudda" onClick={() => setPin(pin.slice(0, -1))}>
+          ⌫
         </button>
       </div>
       <div>

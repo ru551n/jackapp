@@ -81,6 +81,11 @@ button {
   outline-offset: 3px;
 }
 
+/* Headings focused in code on screen change: no ring unless reached by keyboard. */
+[tabindex='-1']:focus:not(:focus-visible) {
+  outline: none;
+}
+
 .visually-hidden {
   position: absolute;
   width: 1px;
