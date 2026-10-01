@@ -4,6 +4,7 @@ import { paths } from '../../app/paths'
 import { Button } from '../../ui/Button'
 import { Shell } from '../../ui/Shell'
 import { Dashboard } from './Dashboard'
+import { About } from './About'
 import { DataPanel } from './DataPanel'
 import { Gate } from './Gate'
 import { Settings } from './Settings'
@@ -26,6 +27,7 @@ export function ParentPage() {
             <Dashboard />
             <Settings />
             <DataPanel />
+            <About />
           </>
         ) : (
           <Gate onUnlock={() => setOpen(true)} />
