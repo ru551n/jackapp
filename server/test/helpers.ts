@@ -20,7 +20,11 @@ export const TEST_PIN = '2468'
  * A household PIN (TEST_PIN) is set so the gate is closed by default; `pin: null` = first run.
  */
 export async function createTestApp(
-  opts: { readiness?: ReadinessCheck[]; pin?: string | null; ctx?: Partial<Omit<AppContext, 'env' | 'db' | 'log'>> } = {},
+  opts: {
+    readiness?: ReadinessCheck[]
+    pin?: string | null
+    ctx?: Partial<Omit<AppContext, 'env' | 'db' | 'log'>>
+  } = {},
 ) {
   const handle = await createTestDb()
   if (opts.pin !== null) await storePin(handle.db, opts.pin ?? TEST_PIN)
