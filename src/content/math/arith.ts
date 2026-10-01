@@ -1,7 +1,7 @@
 import { numberWord } from '../../core/swedish'
 import type { Generator, Level, Question, Scene } from '../../core/types'
-import { numberChoices, wrongIds } from '../helpers'
-import { CARRIAGES, PASSENGERS, PLANES, Qty, grouped, items, qty, type Thing } from './kit'
+import { choiceCount, numberChoices, wrongIds } from '../helpers'
+import { CARRIAGES, MAX_BY_LEVEL, PASSENGERS, PLANES, Qty, items, qty, type Thing } from './kit'
 
 type Op = 'add' | 'sub'
 
@@ -14,6 +14,8 @@ interface Story {
 }
 
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
+const upTo = (from: number, n: number, step: 1 | -1) =>
+  Array.from({ length: n }, (_, i) => from + step * (i + 1)).join(', ')
 
 const ADD: Story[] = [
   {
@@ -27,7 +29,7 @@ const ADD: Story[] = [
     key: 'passengers',
     thing: PASSENGERS,
     story: (a, b) =>
-      `${Qty(PASSENGERS, a)} väntar på plattan. ${Qty(PASSENGERS, b)} kliver på. Hur många resenärer är det nu?`,
+      `${Qty(PASSENGERS, a)} väntar på perrongen. ${Qty(PASSENGERS, b)} kliver på. Hur många resenärer är det nu?`,
     done: (n) => `Ja! Nu är det ${qty(PASSENGERS, n)}.`,
   },
   {
@@ -61,14 +63,19 @@ const SUB: Story[] = [
   },
 ]
 
-/** Largest total (add) / starting quantity (sub) per level. */
-const LIMIT: Record<Level, number> = { 1: 5, 2: 6, 3: 10, 4: 10, 5: 20 }
+/**
+ * Presentation per level (same numeric range with or without extra support):
+ * L1 pictures, L2 pictures + numbers, L3 pictures + equation, L4 equation + pictures,
+ * L5 equation + count-on aid (extra support: full pictures + equation).
+ */
+type Form = 'pics' | 'nums' | 'pic-eq' | 'eq-pic' | 'eq-aid'
+const FORMS: Record<Level, Form> = { 1: 'pics', 2: 'nums', 3: 'pic-eq', 4: 'eq-pic', 5: 'eq-aid' }
 
 function build(op: Op, s: Story, { rng, level, support }: Parameters<Generator['generate']>[0]): Question {
   const extra = support === 'extra'
-  const max = level === 5 && extra ? 10 : LIMIT[level]
-  const total = rng.int(level === 1 ? 3 : 4, max) // sum (add) or start (sub)
-  const b = rng.int(1, Math.min(total - 1, level === 5 ? 9 : 5))
+  const max = MAX_BY_LEVEL[level]
+  const total = rng.int(level + 2, max) // sum (add) or start (sub)
+  const b = rng.int(1, Math.min(total - 2, level === 5 ? 6 : 5)) // keeps a >= 2 and answer >= 2
   const a = op === 'add' ? total - b : total
   const answer = op === 'add' ? total : total - b
   const sign = op === 'add' ? '+' : '−'
@@ -103,43 +110,57 @@ function build(op: Op, s: Story, { rng, level, support }: Parameters<Generator['
           direction: 'column',
           scenes: [pics, { kind: 'group', direction: 'row', scenes: [num(a), { kind: 'text', text: '−' }, num(b)] }],
         }
+  // Light aid: the first term as a number, the second as pictures to count on / back.
+  const aid: Scene = {
+    kind: 'group',
+    direction: 'row',
+    scenes: [
+      num(a),
+      { kind: 'text', text: sign },
+      { kind: 'row', items: items(t, b, op === 'add' ? 'arriving' : 'leaving', 1) },
+    ],
+  }
 
-  // Picture -> symbol progression. Extra support always brings pictures back.
-  const lvl = extra && level >= 4 ? 3 : level
-  const scene: Scene =
-    lvl <= 1
-      ? pics
-      : lvl === 2
-        ? withNumbers
-        : lvl === 3
-          ? { kind: 'group', direction: 'column', scenes: [pics, equation] }
-          : lvl === 4
-            ? { kind: 'group', direction: 'column', scenes: [equation, pics] } // symbols first, pictures as support
-            : equation
+  const form: Form = extra && level === 5 ? 'pic-eq' : FORMS[level]
+  const scenes: Record<Form, Scene> = {
+    pics,
+    nums: withNumbers,
+    'pic-eq': { kind: 'group', direction: 'column', scenes: [pics, equation] },
+    'eq-pic': { kind: 'group', direction: 'column', scenes: [equation, pics] },
+    'eq-aid': { kind: 'group', direction: 'column', scenes: [equation, aid] },
+  }
 
-  const symbolic = level === 5 && !extra
+  const symbolic = form === 'eq-aid'
   const spoken = `${numberWord(a, 'ett')} ${op === 'add' ? 'plus' : 'minus'} ${numberWord(b, 'ett')}`
-  const choices = numberChoices(rng, answer, level === 1 || extra ? 2 : 3, 1, Math.max(max, answer + 1))
+  const choices = numberChoices(rng, answer, choiceCount(level, support), 1, max)
+  const cue =
+    op === 'add'
+      ? `Börja på ${a} och räkna vidare: ${upTo(a, b, 1)}.`
+      : `Börja på ${a} och räkna bakåt: ${upTo(a, b, -1)}.`
   const hintScene: Scene =
     op === 'add'
-      ? { kind: 'row', items: grouped(t, total, total <= 6 ? 2 : 5), label: `Tillsammans ${qty(t, total)}` }
-      : { kind: 'row', items: items(t, answer), label: `${Qty(t, answer)} kvar` }
+      ? { kind: 'row', items: [...items(t, a, undefined, 0), ...items(t, b, 'arriving', 1)] }
+      : { kind: 'row', items: items(t, answer) }
 
   return {
-    id: `math.${op}.${s.key}:${a}${sign}${b}:L${level}`,
+    id: `math.${op}.${s.key}:${a}${sign}${b}:${form}`,
     skill: op === 'add' ? 'math.add' : 'math.sub',
     level,
     theme: t.theme,
-    prompt: symbolic ? `Hur mycket är ${a} ${sign} ${b}?` : s.story(a, b),
-    speech: symbolic ? `Hur mycket är ${spoken}?` : undefined,
-    scene,
+    prompt: symbolic ? `Hur mycket blir ${a} ${sign} ${b}?` : s.story(a, b),
+    speech: symbolic ? `Hur mycket blir ${spoken}?` : undefined,
+    scene: scenes[form],
     task: { kind: 'choice', choices, answer: String(answer) },
     hints: [
       {
-        text: op === 'add' ? 'Titta på alla tillsammans. Räkna dem.' : 'Titta på dem som är kvar. Räkna dem.',
+        text: `${op === 'add' ? 'Titta på alla tillsammans.' : 'Titta på dem som är kvar.'} ${cue}`,
         scene: hintScene,
       },
-      { text: `Räkna en i taget. ${cap(spoken)} är…`, eliminate: wrongIds(choices, String(answer)) },
+      {
+        text: `${cap(spoken)}. ${a}, ${op === 'add' ? upTo(a, b, 1) : upTo(a, b, -1)}. Det blir ${answer}.`,
+        // only with 3+ choices; never implies something was taken away
+        ...(choices.length > 2 && { eliminate: wrongIds(choices, String(answer)) }),
+      },
     ],
     success: s.done(answer),
   }

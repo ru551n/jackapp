@@ -37,5 +37,13 @@ export const items = (t: Thing, n: number, state?: SceneItem['state'], group?: n
 export const grouped = (t: Thing, n: number, size: number): SceneItem[] =>
   items(t, n).map((it, i) => ({ ...it, group: Math.floor(i / size) }))
 
-/** Largest quantity used per level (guideline in docs/content-guide.md). */
+/** Shared numeric range per level for count/compare/oneMoreLess/sequence/arith (docs/content-guide.md). */
 export const MAX_BY_LEVEL: Record<Level, number> = { 1: 5, 2: 6, 3: 8, 4: 10, 5: 12 }
+/** Smallest starting quantity per level, so higher levels never open on a trivial 1-2 items. */
+export const MIN_BY_LEVEL: Record<Level, number> = { 1: 2, 2: 3, 3: 4, 4: 5, 5: 6 }
+/** Max quantity when extra support also shows fewer items. */
+export const EXTRA_MAX = 8
+
+/** Item row grouped in pairs for extra support, otherwise plain. */
+export const supportRow = (t: Thing, n: number, support: 'normal' | 'extra') =>
+  support === 'extra' ? grouped(t, n, 2) : items(t, n)
