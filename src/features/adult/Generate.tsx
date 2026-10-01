@@ -1,6 +1,7 @@
 import { useCallback, useState, type FormEvent } from 'react'
 import { Link, useLocation } from 'react-router'
 import type { CurriculumRef, JobStatus, SourceMode, SupportPreferences } from '../../../shared/contracts'
+import { jobsChanged } from '../../api/useCreationJobs'
 import { Button } from '../../ui/Button'
 import {
   adultApi,
@@ -143,6 +144,7 @@ export function Generate() {
     try {
       const r = await adultApi.post<{ jobId: string }>(`/learners/${learner.id}/generate`, req)
       setJobId(r.jobId)
+      jobsChanged()
     } catch (err) {
       setMsg(errorText(err))
     }
@@ -387,6 +389,12 @@ export function Generate() {
         </p>
         {/* Job status lives in the sticky bar so it stays in view below a long form. */}
         {jobId && <JobProgress key={jobId} jobId={jobId} onDone={onDone} />}
+        {busy && (
+          <p className={s.muted}>
+            Läggs i kön – du kan lämna sidan, du hittar den under{' '}
+            <Link to={`/vuxen/elev/${learner.id}/material`}>Material</Link>.
+          </p>
+        )}
         {result?.state === 'completed' && result.resultId && (
           <Link to={`/vuxen/elev/${learner.id}/material/${result.resultId}`}>Öppna materialet</Link>
         )}

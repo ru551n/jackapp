@@ -11,6 +11,7 @@ import {
   type SkillsResponse,
   type SystemStatus,
 } from './api'
+import { ActiveCount } from './Creations'
 import { AGE_BAND, formatDate, schoolLabel, UNNAMED_SKILL } from './labels'
 import { Page } from './Page'
 import { NewPin } from './PinPad'
@@ -81,7 +82,10 @@ function LearnerCard({ l }: { l: LearnerListItem }) {
       <Highlights id={l.id} />
       <nav aria-label={`Genvägar för ${l.displayName}`} className={s.links}>
         <Link to={`${base}/skapa`}>Skapa material</Link>
-        <Link to={`${base}/material`}>Material</Link>
+        <Link to={`${base}/material`}>
+          Material
+          <ActiveCount learnerId={l.id} />
+        </Link>
         <Link to={base}>Profil och stöd</Link>
       </nav>
     </li>
@@ -169,6 +173,7 @@ export function Overview() {
         <aside className={s.stack}>
           <StatusPanel />
           <ChangePin />
+          <Link to="/vuxen/pagar">Pågår och klart</Link>
           <Link to="/vuxen/om">Om appen: tack och licenser</Link>
         </aside>
       </div>

@@ -209,4 +209,27 @@ describe('GET /learners/:id/jobs', () => {
     expect(list.at(-1)!.state).toBe('queued')
     expect(list[0]!.error).toMatchObject({ learnerMessage: 'Det gick inte.', adultMessage: 'Det gick inte.' })
   })
+
+  it('GET /jobs is adult-only and covers every learner in the household', async () => {
+    const t = await createTestApp()
+    close = t.close
+    const a = await seedLearner(t.db)
+    const b = await seedLearner(t.db)
+    const payload = { request: request(a.id, { topic: 'Bråk' }), createdBy: 'adult' }
+    await t.db.insert(jobs).values([
+      { type: 'artifact.generate', learnerId: a.id, createdAt: at(1), payload },
+      { type: 'artifact.generate', learnerId: b.id, createdAt: at(2), payload, state: 'completed' },
+      { type: 'curriculum.sync', createdAt: at(3), payload: {} },
+    ])
+    expect((await t.app.inject('/api/v1/jobs')).statusCode).toBe(403)
+    const all = z.array(CreationJob).parse((await t.app.inject({ url: '/api/v1/jobs', headers: asAdult })).json())
+    expect(all.map((j) => [j.learnerId, j.state])).toEqual([
+      [b.id, 'completed'],
+      [a.id, 'queued'],
+    ])
+    const active = z
+      .array(CreationJob)
+      .parse((await t.app.inject({ url: '/api/v1/jobs?active=1', headers: asAdult })).json())
+    expect(active.map((j) => j.learnerId)).toEqual([a.id])
+  })
 })

@@ -34,12 +34,16 @@ const str = (v: unknown) => (typeof v === 'string' && v.trim() ? v : undefined)
 const obj = (v: unknown) => (typeof v === 'object' && v !== null ? (v as Record<string, unknown>) : {})
 
 /**
- * The learner's creation jobs, newest first: all active plus the last RECENT_CREATIONS. Adults see
- * every creation job; learners only the material they asked for themselves (createdBy 'learner').
+ * Creation jobs (one learner, or the household when `learnerId` is undefined), newest first: all active
+ * plus the last RECENT_CREATIONS. Adults see every creation job; learners only what they asked for.
  */
-export async function listCreations(db: Db, learnerId: string, opts: { adult: boolean; activeOnly?: boolean }) {
+export async function listCreations(
+  db: Db,
+  learnerId: string | undefined,
+  opts: { adult: boolean; activeOnly?: boolean },
+) {
   const scope = and(
-    eq(jobs.learnerId, learnerId),
+    learnerId ? eq(jobs.learnerId, learnerId) : undefined,
     opts.adult
       ? inArray(jobs.type, CREATION_TYPES)
       : and(eq(jobs.type, 'artifact.generate'), sql`${jobs.payload}->>'createdBy' = 'learner'`),
@@ -67,7 +71,7 @@ export async function listCreations(db: Db, learnerId: string, opts: { adult: bo
       ? await db
           .select({ id: artifacts.id, title: artifacts.title, approval: artifacts.approval })
           .from(artifacts)
-          .where(and(inArray(artifacts.id, aIds), eq(artifacts.learnerId, learnerId)))
+          .where(inArray(artifacts.id, aIds))
       : []
     ).map((a) => [a.id, a]),
   )
@@ -101,6 +105,7 @@ export async function listCreations(db: Db, learnerId: string, opts: { adult: bo
     const createdBy = str(r.payload.createdBy) as CreationJob['createdBy']
     return {
       id: st.id,
+      ...(r.learnerId && { learnerId: r.learnerId }),
       type: r.type as CreationJob['type'],
       state: st.state,
       progress: st.progress,
@@ -174,6 +179,13 @@ export const jobRoutes: RouteModule = (app, ctx) => {
     await requireLearner(ctx.db, id)
     const { active } = ListQuery.parse(req.query)
     return listCreations(ctx.db, id, { adult: !!req.gate?.adult, activeOnly: active === '1' })
+  })
+
+  /** Household-wide creation jobs for the adult header indicator and `/vuxen/pagar`. */
+  app.get('/jobs', async (req) => {
+    requireAdult(req)
+    const { active } = ListQuery.parse(req.query)
+    return listCreations(ctx.db, undefined, { adult: true, activeOnly: active === '1' })
   })
 
   app.post('/jobs/:id/cancel', async (req) => {

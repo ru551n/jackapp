@@ -6,6 +6,7 @@ import { Button } from '../../../ui/Button'
 import { learnerApi, type LearnerRequest } from '../api'
 import { useFetch, useLearner, useSubjects } from '../context'
 import { Frame } from '../Frame'
+import { OnTheWay } from '../OnTheWay'
 import { MaterialPage } from '../MaterialPage'
 import { Creator, FreeRequest, RequestPage } from '../requests'
 import { Library, Panel, PathsProgress, StudySets, YearSubjects } from '../sections'
@@ -49,6 +50,7 @@ function UpperHome() {
   return (
     <Frame title="Översikt" home={false}>
       <div className={styles.grid}>
+        <OnTheWay />
         <Panel title="Plugga">
           {allowed ? (
             <Creator>

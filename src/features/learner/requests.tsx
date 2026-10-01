@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactNode } from 'react'
 import { useLocation } from 'react-router'
 import { usePaths } from '../../app/paths'
 import { ApiRequestError } from '../../api/client'
+import { jobsChanged } from '../../api/useCreationJobs'
 import { useJob } from '../../api/useJob'
 import { Sprite } from '../../art/sprites'
 import type { SpriteId } from '../../core/types'
@@ -36,7 +37,10 @@ export function Creator({
   const submit: Submit = (call, kind = 'artifact') => {
     setState('sending')
     call().then(
-      (r) => setState({ jobId: r.jobId, kind }),
+      (r) => {
+        setState({ jobId: r.jobId, kind })
+        jobsChanged()
+      },
       () => setState('failed'),
     )
   }
@@ -70,6 +74,9 @@ function Working({ progress, step }: { progress?: number; step?: string }) {
       <p className={styles.lead}>{flags.band === 'upper' ? 'Skapar materialet …' : 'Vi gör ditt uppdrag …'}</p>
       <progress className={styles.progress} value={progress ?? 0} max={1} aria-label="Hur långt det har kommit" />
       {flags.band !== 'early' && step && <p className={styles.muted}>{step}</p>}
+      {flags.band !== 'early' && (
+        <p className={styles.muted}>Du kan gå härifrån. Det syns under På gång på startsidan.</p>
+      )}
     </section>
   )
 }

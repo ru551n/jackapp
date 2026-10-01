@@ -4,6 +4,7 @@ import { LinkButton } from '../../../ui/Button'
 import type { Subject } from '../api'
 import { useLearner, useSubjects } from '../context'
 import { Frame } from '../Frame'
+import { OnTheWay } from '../OnTheWay'
 import { MaterialPage } from '../MaterialPage'
 import { RequestPage, type Option } from '../requests'
 import { Library, Panel, PathsProgress, StudySets, Today, YearSubjects } from '../sections'
@@ -81,6 +82,7 @@ function MiddleHome() {
     <Frame title={`Hej ${learner.displayName}!`} home={false}>
       <div className={styles.grid}>
         <Today />
+        <OnTheWay />
         <Panel title="Önska något nytt">
           <p data-secondary>Skriv vad du vill lära dig, eller välj steg för steg.</p>
           {learner.learnerRequestsAllowed ? (

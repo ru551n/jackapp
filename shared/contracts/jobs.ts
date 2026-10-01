@@ -50,12 +50,13 @@ export const CreationJobType = z.enum(['artifact.generate', 'artifact.regenerate
 export type CreationJobType = z.infer<typeof CreationJobType>
 
 /**
- * GET /learners/:id/jobs — one entry per creation job. Never the raw payload: `title` is derived
+ * GET /learners/:id/jobs and GET /jobs (household, adult) — one entry per creation job. Never the raw payload: `title` is derived
  * (material title, instructions excerpt, type label or study set title). Learners get learnerMessage only.
  */
 export const CreationJob = z.object({
   id: z.string().uuid(),
   type: CreationJobType,
+  learnerId: z.string().uuid().optional(),
   state: JobState,
   progress: z.number().min(0).max(1),
   step: z.string().max(200).optional(),

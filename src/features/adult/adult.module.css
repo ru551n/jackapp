@@ -228,6 +228,17 @@ details > summary {
   display: grid;
   gap: 0.3rem;
 }
+.creating {
+  margin-right: 0.5rem;
+  white-space: nowrap;
+}
+.rowNote {
+  grid-column: 1 / -1;
+}
+.tabs .badge,
+.links .badge {
+  margin-left: 0.35rem;
+}
 .list {
   list-style: none;
   margin: 0;

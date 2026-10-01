@@ -2,6 +2,7 @@ import { Link, NavLink, Outlet, useLocation, useParams } from 'react-router'
 import { ageBand } from '../../../shared/contracts'
 import { paths, useResource, type LearnerProfile } from './api'
 import type { LearnerContext } from './context'
+import { ActiveCount } from './Creations'
 import { Page } from './Page'
 import { AGE_BAND, schoolLabel } from './labels'
 import s from './adult.module.css'
@@ -37,6 +38,7 @@ export function LearnerLayout() {
         {TABS.map(([p, label]) => (
           <NavLink key={p} to={p ? `/vuxen/elev/${id}/${p}` : `/vuxen/elev/${id}`} end={!p}>
             {label}
+            {p === 'material' && <ActiveCount learnerId={id} />}
           </NavLink>
         ))}
       </nav>

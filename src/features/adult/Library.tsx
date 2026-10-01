@@ -2,6 +2,7 @@ import { Link, useSearchParams } from 'react-router'
 import { paths, useResource, type ArtifactSummary, type Subject } from './api'
 import { Field } from './fields'
 import { useLearner } from './context'
+import { Creations } from './Creations'
 import { APPROVAL, ARTIFACT_TYPE, formatDate } from './labels'
 import s from './adult.module.css'
 
@@ -25,6 +26,7 @@ export function Library() {
 
   return (
     <div className={s.stack}>
+      <Creations onFinished={list.reload} />
       <div className={s.formGrid} role="group" aria-label="Filter">
         <Field label="Typ">
           {(id) => (

@@ -4,6 +4,7 @@ import { ApiRequestError } from '../../api/client'
 import { About } from './About'
 import { ADULT_REQUIRED_EVENT, adultApi, paths, useResource, type GateState } from './api'
 import { ArtifactView } from './ArtifactView'
+import { HouseholdJobs } from './Creations'
 import { Generate } from './Generate'
 import { LearnerLayout } from './LearnerLayout'
 import { Library } from './Library'
@@ -97,6 +98,7 @@ export function AdultArea() {
         <Route index element={<Overview />} />
         <Route path="ny" element={<NewLearner />} />
         <Route path="om" element={<About />} />
+        <Route path="pagar" element={<HouseholdJobs />} />
         <Route path="elev/:id" element={<LearnerLayout />}>
           <Route index element={<ProfileEditor />} />
           <Route path="skapa" element={<Generate />} />
