@@ -180,3 +180,12 @@
   font-weight: 700;
   color: var(--hint);
 }
+
+@media (max-width: 600px) {
+  .choice {
+    min-height: 8rem;
+  }
+  .prompt {
+    font-size: 1.35rem;
+  }
+}

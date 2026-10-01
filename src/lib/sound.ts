@@ -4,6 +4,7 @@ let ctx: AudioContext | undefined
 export function playSoftChime() {
   try {
     ctx ??= new AudioContext()
+    void ctx.resume() // Safari starts contexts suspended
     const now = ctx.currentTime
     const gain = ctx.createGain()
     gain.gain.setValueAtTime(0.0001, now)
