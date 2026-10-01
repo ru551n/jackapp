@@ -137,8 +137,15 @@ test('generation with parent approval, then the learner plays it', async ({ page
   await page.getByLabel('Vad vill du skapa?').fill('Skapa 6 plusuppgifter med tåg som tema, lite text.')
   await page.getByRole('button', { name: 'Skapa', exact: true }).click()
   await expect(page.getByText(/Väntar på att få börja|Arbetar|Klart\./).first()).toBeVisible()
-  await page.getByRole('link', { name: 'Öppna materialet' }).click({ timeout: 60_000 })
-  await expect(page.getByText('Väntar på godkännande')).toBeVisible()
+  // Leave the page at once: the job keeps going and turns up under Material.
+  await page
+    .getByRole('navigation', { name: 'Elevens sidor' })
+    .getByRole('link', { name: /^Material/ })
+    .click()
+  const queue = page.getByRole('region', { name: 'Pågår och klart' })
+  await expect(queue.getByText('Klar – väntar på godkännande')).toBeVisible({ timeout: 60_000 })
+  await queue.getByRole('link').first().click()
+  await expect(page.getByRole('article').getByText('Väntar på godkännande')).toBeVisible()
   await expect(page.getByText('Materialet klarade kontrollen.')).toBeVisible()
 
   // Not visible to the learner before approval; entering the learner area locks the adult gate.
@@ -248,7 +255,16 @@ test('middle learner: free-text request, approved by the adult, is playable', as
   const ready = page.getByText('Ditt uppdrag är klart!')
   const waits = page.getByText('En vuxen tittar på uppdraget först.')
   await expect(ready.or(waits)).toBeVisible({ timeout: 60_000 })
-  if (await waits.isVisible()) {
+  const waiting = await waits.isVisible()
+  // The request stays visible on the home under "På gång".
+  await page.getByRole('status').getByRole('link', { name: 'Hem' }).click()
+  const onTheWay = page.getByRole('region', { name: 'På gång' })
+  await expect(
+    waiting
+      ? onTheWay.getByText('En vuxen tittar på det först')
+      : onTheWay.getByRole('link', { name: 'Klart – öppna' }),
+  ).toBeVisible()
+  if (waiting) {
     await openAdult(page)
     await page.getByRole('link', { name: '1 material väntar på godkännande' }).click()
     await page
@@ -262,7 +278,7 @@ test('middle learner: free-text request, approved by the adult, is playable', as
       .getByRole('link', { name: /Addition/ })
       .first()
       .click()
-  } else await page.getByRole('link', { name: 'Starta' }).click()
+  } else await onTheWay.getByRole('link', { name: 'Klart – öppna' }).click()
   await playRun(page)
   await expect(page.getByRole('heading', { name: /^Du klarade \d+ av \d+$/ })).toBeVisible()
 })

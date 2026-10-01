@@ -3,6 +3,7 @@ import { paths, useResource, type ArtifactSummary, type Subject } from './api'
 import { Field } from './fields'
 import { useLearner } from './context'
 import { Creations } from './Creations'
+import { jobsChanged } from '../../api/useCreationJobs'
 import { APPROVAL, ARTIFACT_TYPE, formatDate } from './labels'
 import s from './adult.module.css'
 
@@ -26,7 +27,12 @@ export function Library() {
 
   return (
     <div className={s.stack}>
-      <Creations onFinished={list.reload} />
+      <Creations
+        onFinished={() => {
+          list.reload()
+          jobsChanged() // badges and the header indicator
+        }}
+      />
       <div className={s.formGrid} role="group" aria-label="Filter">
         <Field label="Typ">
           {(id) => (
