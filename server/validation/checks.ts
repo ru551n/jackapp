@@ -89,7 +89,7 @@ function itemTexts(item: Item): string[] {
 }
 
 /** Plain-Swedish labels for adult-facing messages (same wording as the adult UI). */
-const TYPE_SV: Record<Artifact['type'], string> = {
+export const TYPE_SV: Record<Artifact['type'], string> = {
   practiceTest: 'Övningsprov',
   exercises: 'Övningar',
   lesson: 'Lektion',

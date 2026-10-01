@@ -32,12 +32,23 @@ failed ──retry (adult)──► queued   (attempts reset to 0)
 
 ## HTTP
 
-| Route                          | Who   | Result                                   |
-| ------------------------------ | ----- | ---------------------------------------- |
-| `GET /api/v1/jobs/:id`         | any   | `JobStatus` (`error` only when `failed`) |
-| `GET /api/v1/jobs/:id/events`  | any   | SSE stream (below)                       |
-| `POST /api/v1/jobs/:id/cancel` | adult | `JobStatus`; 404 unknown                 |
-| `POST /api/v1/jobs/:id/retry`  | adult | `JobStatus`; 409 unless `failed`         |
+| Route                           | Who   | Result                                   |
+| ------------------------------- | ----- | ---------------------------------------- |
+| `GET /api/v1/jobs/:id`          | any   | `JobStatus` (`error` only when `failed`) |
+| `GET /api/v1/jobs/:id/events`   | any   | SSE stream (below)                       |
+| `POST /api/v1/jobs/:id/cancel`  | adult | `JobStatus`; 404 unknown                 |
+| `POST /api/v1/jobs/:id/retry`   | adult | `JobStatus`; 409 unless `failed`         |
+| `GET /api/v1/learners/:id/jobs` | any   | `CreationJob[]` (below)                  |
+
+### Creation list (`GET /api/v1/learners/:id/jobs`)
+
+Feeds "Pågår och klart" (adult Material page) and "På gång" (learner home), so material being made survives navigation.
+
+- Types: `artifact.generate`, `artifact.regenerateItem`, `study.process`. Every active job plus the last 20, newest first. `?active=1` returns only queued/processing jobs (used for badges).
+- Each entry has a derived `title` (the material's title once it exists, otherwise an instructions excerpt, the type label plus topic, or the study set title). The raw payload is never returned.
+- Completed artifact jobs carry `artifactId` and the material's current `approval`.
+- Adults see every creation job and the `adultMessage`. Learners see only `artifact.generate` jobs they asked for themselves (`createdBy: 'learner'`), and `error.adultMessage` is replaced by the `learnerMessage`. Adult-made material stays out of the learner's list until it is approved and shows up in their library.
+- The web clients poll the list every 3 s while something is active (no SSE per row).
 
 ### SSE contract
 

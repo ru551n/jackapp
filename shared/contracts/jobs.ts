@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { ApprovalState } from './content'
 
 // Background jobs (Postgres-backed queue, executed by the worker service).
 
@@ -43,3 +44,30 @@ export const JobStatus = z.object({
   updatedAt: z.string(),
 })
 export type JobStatus = z.infer<typeof JobStatus>
+
+/** Job types that create material for a learner (listed under "Pågår och klart"). */
+export const CreationJobType = z.enum(['artifact.generate', 'artifact.regenerateItem', 'study.process'])
+export type CreationJobType = z.infer<typeof CreationJobType>
+
+/**
+ * GET /learners/:id/jobs — one entry per creation job. Never the raw payload: `title` is derived
+ * (material title, instructions excerpt, type label or study set title). Learners get learnerMessage only.
+ */
+export const CreationJob = z.object({
+  id: z.string().uuid(),
+  type: CreationJobType,
+  state: JobState,
+  progress: z.number().min(0).max(1),
+  step: z.string().max(200).optional(),
+  title: z.string().max(120),
+  createdBy: z.enum(['adult', 'learner', 'system']).optional(),
+  resultId: z.string().optional(),
+  /** The material it made or changed (artifact jobs). */
+  artifactId: z.string().uuid().optional(),
+  /** The material's current approval, once it exists. */
+  approval: ApprovalState.optional(),
+  error: JobError.optional(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+})
+export type CreationJob = z.infer<typeof CreationJob>
