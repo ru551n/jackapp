@@ -62,4 +62,6 @@ export const SPRITE_NAMES: Record<SpriteId, string> = {
   jet: 'jaktflygplan',
   signal: 'signal',
   station: 'station',
+  bus: 'buss',
+  car: 'bil',
 }
