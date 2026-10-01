@@ -1,4 +1,14 @@
-import type { Choice, Question, Rng, SceneItem, SpriteId, Support, Theme, Tint } from '../../core/types'
+import type {
+  VehicleCategory,
+  Choice,
+  Question,
+  Rng,
+  SceneItem,
+  SpriteId,
+  Support,
+  Theme,
+  Tint,
+} from '../../core/types'
 
 /** The single English vocabulary used by every generator in this area. */
 export interface Noun {
@@ -167,3 +177,12 @@ export const choiceCount = (level: number, support: Support) =>
 export type Color = (typeof COLORS)[number]
 export const colourPic = (c: Color, n: Noun): Choice =>
   picChoice(`${c.tint}:${n.en}`, `${c.sv} ${n.sv}`, { sprite: n.sprite, tint: c.tint })
+
+/** One English word per vehicle category, shown lightly on collection cards ("Tåg — train"). */
+export const CATEGORY_WORD: Record<VehicleCategory, string> = {
+  train: 'train',
+  metro: 'metro',
+  tram: 'tram',
+  airliner: 'plane',
+  fighter: 'jet',
+}

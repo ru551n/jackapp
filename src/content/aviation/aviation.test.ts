@@ -24,9 +24,15 @@ const byId = (id: string) => AIRCRAFT.find((v) => v.id === id)!
 const seeds = Array.from({ length: 60 }, (_, i) => i + 1)
 
 describe('aircraft', () => {
-  it('has the twelve ids in the fixed unlock order', () => {
+  it('has the twelve ids; fighters unlock via Flygplatsen, airliners via Engelska, in order', () => {
     expect(AIRCRAFT.map((v) => v.id)).toEqual(ORDER)
-    AIRCRAFT.forEach((v, i) => expect(v.unlock).toEqual({ area: 'flygplatsen', missions: i + 1 }))
+    for (const [area, category] of [
+      ['flygplatsen', 'fighter'],
+      ['engelska', 'airliner'],
+    ] as const) {
+      const track = AIRCRAFT.filter((v) => v.category === category)
+      track.forEach((v, i) => expect(v.unlock, v.id).toEqual({ area, missions: i + 1 }))
+    }
   })
   it('has art for every aircraft', () => {
     for (const v of AIRCRAFT) expect(AIRCRAFT_ART[v.id], v.id).toBeDefined()

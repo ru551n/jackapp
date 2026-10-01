@@ -5,6 +5,7 @@ import { isUnlocked, vehicleById } from '../../content/vehicles'
 import type { Vehicle, VehicleCategory } from '../../core/types'
 import { useAppState } from '../../store/store'
 import { LinkButton } from '../../ui/Button'
+import { CATEGORY_WORD } from '../../content/english/vocab'
 import { Shell } from '../../ui/Shell'
 import { SpeakButton } from '../../ui/SpeakButton'
 import styles from './Collection.module.css'
@@ -64,6 +65,9 @@ export function VehicleDetailPage() {
           <h2 className={styles.vehicleName}>{vehicle.name}</h2>
           <p className={styles.meta}>
             {CATEGORY_NAME[vehicle.category]} · {vehicle.country}
+          </p>
+          <p className={styles.meta}>
+            På engelska: <span lang="en">{CATEGORY_WORD[vehicle.category]}</span>
           </p>
         </header>
         <ul className={styles.facts}>

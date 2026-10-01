@@ -35,7 +35,7 @@ export const AIRCRAFT: Vehicle[] = [
     facts: ['A320 är ett passagerarflygplan.', 'A320 har två motorer under vingarna.', 'A320 flög första gången 1987.'],
     specs: { firstYear: 1987, engines: 2, lengthM: 37.57, wingspanM: 35.8 },
     sources: ['https://sv.wikipedia.org/wiki/Airbus_A320', 'https://en.wikipedia.org/wiki/Airbus_A320_family'],
-    unlock: { area: 'flygplatsen', missions: 2 },
+    unlock: { area: 'engelska', missions: 1 },
   },
   {
     id: 'viggen',
@@ -52,7 +52,7 @@ export const AIRCRAFT: Vehicle[] = [
     ],
     specs: { firstYear: 1967, engines: 1, lengthM: 16.4, wingspanM: 10.6, topSpeedKmh: 2231 },
     sources: ['https://sv.wikipedia.org/wiki/Saab_37_Viggen', 'https://en.wikipedia.org/wiki/Saab_37_Viggen'],
-    unlock: { area: 'flygplatsen', missions: 3 },
+    unlock: { area: 'flygplatsen', missions: 2 },
   },
   {
     id: 'f16',
@@ -67,7 +67,7 @@ export const AIRCRAFT: Vehicle[] = [
       'https://sv.wikipedia.org/wiki/F-16_Fighting_Falcon',
       'https://en.wikipedia.org/wiki/General_Dynamics_F-16_Fighting_Falcon',
     ],
-    unlock: { area: 'flygplatsen', missions: 4 },
+    unlock: { area: 'flygplatsen', missions: 3 },
   },
   {
     id: 'draken',
@@ -84,7 +84,7 @@ export const AIRCRAFT: Vehicle[] = [
     ],
     specs: { firstYear: 1955, engines: 1, lengthM: 15.34, wingspanM: 9.42 },
     sources: ['https://sv.wikipedia.org/wiki/Saab_35_Draken', 'https://en.wikipedia.org/wiki/Saab_35_Draken'],
-    unlock: { area: 'flygplatsen', missions: 5 },
+    unlock: { area: 'flygplatsen', missions: 4 },
   },
   {
     id: 'b737',
@@ -100,7 +100,7 @@ export const AIRCRAFT: Vehicle[] = [
     ],
     specs: { firstYear: 1967, engines: 2, lengthM: 39.5, wingspanM: 34.3 },
     sources: ['https://sv.wikipedia.org/wiki/Boeing_737', 'https://en.wikipedia.org/wiki/Boeing_737_Next_Generation'],
-    unlock: { area: 'flygplatsen', missions: 6 },
+    unlock: { area: 'engelska', missions: 2 },
   },
   {
     id: 'rafale',
@@ -112,7 +112,7 @@ export const AIRCRAFT: Vehicle[] = [
     facts: ['Rafale kommer från Frankrike.', 'Rafale har två motorer.', 'Rafale har små vingar nära stora vingarna.'],
     specs: { firstYear: 1986, engines: 2, lengthM: 15.27, wingspanM: 10.8, topSpeedKmh: 2205 },
     sources: ['https://sv.wikipedia.org/wiki/Dassault_Rafale'],
-    unlock: { area: 'flygplatsen', missions: 7 },
+    unlock: { area: 'flygplatsen', missions: 5 },
   },
   {
     id: 'saab340',
@@ -128,7 +128,7 @@ export const AIRCRAFT: Vehicle[] = [
     ],
     specs: { firstYear: 1983, engines: 2, lengthM: 19.73, wingspanM: 21.44, topSpeedKmh: 523 },
     sources: ['https://sv.wikipedia.org/wiki/Saab_340'],
-    unlock: { area: 'flygplatsen', missions: 8 },
+    unlock: { area: 'engelska', missions: 3 },
   },
   {
     id: 'typhoon',
@@ -144,7 +144,7 @@ export const AIRCRAFT: Vehicle[] = [
     ],
     specs: { firstYear: 1994, engines: 2, lengthM: 15.96, wingspanM: 10.95, topSpeedKmh: 2495 },
     sources: ['https://sv.wikipedia.org/wiki/Eurofighter_Typhoon'],
-    unlock: { area: 'flygplatsen', missions: 9 },
+    unlock: { area: 'flygplatsen', missions: 6 },
   },
   {
     id: 'fa18',
@@ -156,7 +156,7 @@ export const AIRCRAFT: Vehicle[] = [
     facts: ['F/A-18 kommer från USA.', 'F/A-18 har två motorer.', 'F/A-18 har två stjärtfenor som lutar utåt.'],
     specs: { firstYear: 1978, engines: 2, lengthM: 17.1, wingspanM: 12.3 },
     sources: ['https://sv.wikipedia.org/wiki/F/A-18_Hornet'],
-    unlock: { area: 'flygplatsen', missions: 10 },
+    unlock: { area: 'flygplatsen', missions: 7 },
   },
   {
     id: 'a380',
@@ -172,7 +172,7 @@ export const AIRCRAFT: Vehicle[] = [
     ],
     specs: { firstYear: 2005, engines: 4, lengthM: 72.7, wingspanM: 79.8, topSpeedKmh: 953 },
     sources: ['https://sv.wikipedia.org/wiki/Airbus_A380'],
-    unlock: { area: 'flygplatsen', missions: 11 },
+    unlock: { area: 'engelska', missions: 4 },
   },
   {
     id: 'f15',
@@ -188,6 +188,6 @@ export const AIRCRAFT: Vehicle[] = [
     ],
     specs: { firstYear: 1972, engines: 2, lengthM: 19.44, wingspanM: 13 },
     sources: ['https://sv.wikipedia.org/wiki/F-15_Eagle'],
-    unlock: { area: 'flygplatsen', missions: 12 },
+    unlock: { area: 'flygplatsen', missions: 8 },
   },
 ]
