@@ -131,7 +131,7 @@ export function RunPlayer({
     return () => {
       live = false
     }
-  }, [base, artifactId, variant])
+  }, [base, artifactId, variant, learnerId])
 
   // Each step starts with focus on its heading (no scrolling jumps).
   useEffect(() => headingRef.current?.focus({ preventScroll: true }), [index, run])
