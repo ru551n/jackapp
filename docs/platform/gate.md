@@ -26,11 +26,13 @@ Locking only clears this device's cookie. Changing the PIN does not revoke other
 
 ## Forgotten PIN
 
-There is no web reset. The host administrator runs, with `DATABASE_URL` set:
+There is no web reset. The host administrator runs, in the Docker Compose deployment (the `app` container already has `DATABASE_URL`):
 
 ```sh
-npm run gate:reset-pin
+docker compose exec app node dist-server/gate-reset-pin.js
 ```
+
+From a source checkout (dev dependencies installed), with `DATABASE_URL` set: `npm run gate:reset-pin`.
 
 This clears the PIN; the app is then in first-run state and the next adult creates a new one.
 

@@ -1,7 +1,8 @@
 import { createDb } from '../db/client'
 import { storePin } from './pin'
 
-// Host-admin reset of a forgotten household PIN: `npm run gate:reset-pin` (needs DATABASE_URL).
+// Host-admin reset of a forgotten household PIN (needs DATABASE_URL):
+//   docker compose exec app node dist-server/gate-reset-pin.js   (dev: npm run gate:reset-pin)
 // Clears the PIN; the next adult to open the app creates a new one. Never exposed over the web.
 
 const url = process.env.DATABASE_URL

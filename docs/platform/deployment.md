@@ -57,6 +57,16 @@ docker compose logs migrate       # "migrations complete"
 
 Take a backup first. Migrations only move forward; to roll back, restore the backup with the old version.
 
+## Admin commands
+
+The runtime image has no `tsx` or dev dependencies; admin tools are bundled into `dist-server/`:
+
+```bash
+docker compose exec app node dist-server/gate-reset-pin.js   # forgotten household PIN (gate.md)
+```
+
+`server/app/bundle.test.ts` builds the bundle and checks that every entrypoint and every file read at runtime (curriculum data via `import.meta.url`, migrations via the working directory) is present.
+
 ## Health and readiness
 
 - `GET /health`: the process is up (liveness).
