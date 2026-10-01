@@ -86,3 +86,7 @@ All state is one JSON object in `localStorage['jackapp:v1']`: per-skill progress
 ## Audio
 
 Optional and never automatic. A "Lyssna" button reads the prompt with the browser's Swedish voice (`speechSynthesis`, `sv-SE`). English tasks add "Hör på engelska" (`en-GB`). Buttons are hidden when speech is unsupported or turned off. Voice quality depends on the device: iOS, Android, Windows and macOS ship Swedish voices, while some Linux browsers do not. Every task is solvable without sound.
+
+## Ljud och röster
+
+Uppläsningen använder förgenererade Piper-klipp (svenska: Alma, engelska: Cori), sedan Piper i appen för ny text och till sist enhetens röst. `npm run speech` bygger klippen; se [docs/audio.md](docs/audio.md) för hur det funkar, hur man byter röst samt licenser och tack.

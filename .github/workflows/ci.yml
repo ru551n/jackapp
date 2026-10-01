@@ -12,7 +12,16 @@ jobs:
         with:
           node-version: 22
           cache: npm
+      - uses: astral-sh/setup-uv@v6
       - run: npm ci
+      - run: node scripts/speech/collect.mjs
+      - uses: actions/cache@v4
+        with:
+          path: |
+            .voices
+            public/audio
+          key: speech-${{ hashFiles('scripts/speech/voices.json', '.speech/phrases.json') }}
+          restore-keys: speech-
       - run: npm run check
       - run: npm run build
       - run: npx playwright install --with-deps chromium
