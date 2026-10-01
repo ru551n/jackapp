@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { createRng } from '../../core/rng'
 import type { Level, Scene, SceneItem } from '../../core/types'
 import { MATH_GENERATORS } from './index'
+import { MAX_BY_LEVEL, MIN_BY_LEVEL } from './kit'
 
 const SEEDS = Array.from({ length: 60 }, (_, i) => i * 104729 + 3)
 
@@ -23,33 +24,56 @@ function* questions(prefix: string) {
           }
 }
 
+const countRows = (s?: Scene) => rowsOf(s).flat().length
+
 describe('addition and subtraction', () => {
   for (const op of ['add', 'sub'] as const) {
-    it(`math.${op}: answer matches the depicted quantities`, () => {
+    it(`math.${op}: answer, range, pictures and hints`, () => {
       for (const { q, level, support } of questions(`math.${op}.`)) {
-        const m = q.id.match(/:(\d+)([+−])(\d+):L(\d)$/)!
+        const m = q.id.match(/:(\d+)([+−])(\d+):([a-z-]+)$/)!
         const a = Number(m[1])
         const b = Number(m[3])
+        const form = m[4]
         const answer = op === 'add' ? a + b : a - b
+        const top = op === 'add' ? answer : a
+        const choices = q.task.kind === 'choice' ? q.task.choices : []
         expect(q.task.kind === 'choice' && q.task.answer, q.id).toBe(String(answer))
-        expect(answer, q.id).toBeGreaterThanOrEqual(1)
-        const rows = rowsOf(q.scene).flat()
-        if (rows.length) {
-          const leaving = rows.filter((i) => i.state === 'leaving').length
-          if (op === 'add') expect(rows.length, q.id).toBe(a + b)
-          else {
-            expect(rows.length, q.id).toBe(a)
-            expect(leaving, q.id).toBe(b)
-          }
+        // same numeric range with and without extra support
+        expect(top, q.id).toBeLessThanOrEqual(MAX_BY_LEVEL[level])
+        expect(top, q.id).toBeGreaterThanOrEqual(level + 2)
+        expect(a, q.id).toBeGreaterThanOrEqual(2)
+        expect(answer, q.id).toBeGreaterThanOrEqual(2)
+        // pictures at L1-L4 and with extra support; L5 normal keeps only a count-on aid
+        const full = countRows(q.scene) === top
+        if (level <= 4 || support === 'extra') expect(full, q.id).toBe(true)
+        else {
+          expect(form, q.id).toBe('eq-aid')
+          expect(countRows(q.scene), q.id).toBe(b)
         }
-        // picture-first levels always show pictures; symbolic L5 only without extra support
-        if (level <= 3 || support === 'extra') expect(rows.length, q.id).toBeGreaterThan(0)
-        if (level === 5 && support === 'normal') expect(rows.length, q.id).toBe(0)
         if (level >= 3) expect(hasEquation(q.scene), q.id).toBe(true)
-        if (level <= 2) expect(a + b <= 6 || op === 'sub', q.id).toBe(true)
+        if (op === 'sub' && full)
+          expect(
+            rowsOf(q.scene)
+              .flat()
+              .filter((i) => i.state === 'leaving').length,
+            q.id,
+          ).toBe(b)
+        // first miss must scaffold: a picture and a counting cue, never an elimination with 2 choices
+        expect(q.hints[0].scene, q.id).toBeDefined()
+        expect(q.hints[0].eliminate, q.id).toBeUndefined()
+        expect(q.hints[0].text, q.id).toMatch(/Börja på \d+ och räkna/)
+        if (choices.length <= 2) expect(q.hints[1].eliminate, q.id).toBeUndefined()
+        expect(q.prompt, q.id).not.toContain('Hur mycket är')
       }
     })
   }
+  it('range grows with level and ids name the shown form', () => {
+    for (const level of [1, 2, 3, 4, 5] as const) {
+      const ids = new Set<string>()
+      for (const { q, level: l } of questions('math.add.carriages')) if (l === level) ids.add(q.id.split(':')[2])
+      expect(ids.size).toBeGreaterThan(0)
+    }
+  })
 })
 
 describe('one more / one less', () => {
@@ -89,6 +113,27 @@ describe('counting and comparing', () => {
       const [x, y] = [Number(m[1]), Number(m[2])]
       const want = (m[3] === 'most' ? x > y : x < y) ? '1' : '2'
       expect(q.task.kind === 'choice' && q.task.answer, q.id).toBe(want)
+    }
+  })
+})
+
+describe('shared range', () => {
+  it('count/oneMoreLess/compare stay in range and never start trivially', () => {
+    for (const { q, level, gen } of questions('math.')) {
+      if (gen.id.startsWith('math.add') || gen.id.startsWith('math.sub') || gen.id.startsWith('math.sequence')) continue
+      const rows = rowsOf(q.scene).flat().length
+      expect(rows, q.id).toBeLessThanOrEqual(MAX_BY_LEVEL[level])
+      const start = q.id.match(/:(\d+)(?:->|v|$)/)
+      if (start && !gen.id.includes('compare'))
+        expect(Number(start[1]), q.id).toBeGreaterThanOrEqual(MIN_BY_LEVEL[level])
+      expect(q.prompt, q.id).not.toMatch(/plattan|plattform|ställ dem|färre resen/i)
+      expect(JSON.stringify(q), q.id).not.toMatch(/(med|har) (1|en) vagn\b.*tunnelbanetåg|tunnelbanetåg med 1 vagn/)
+    }
+  })
+  it('compare keeps a gap of 2 at L1-2', () => {
+    for (const { q, level } of questions('math.compare.')) {
+      const m = q.id.match(/:(\d+)v(\d+):/)!
+      if (level <= 2) expect(Math.abs(Number(m[1]) - Number(m[2])), q.id).toBeGreaterThanOrEqual(2)
     }
   })
 })
