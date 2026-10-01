@@ -7,7 +7,7 @@ import { FeaturesEnv } from '../config/features'
 import { LimitsEnv } from '../config/limits'
 import type { Db } from '../db/client'
 import { imageGenerationDays } from '../db/schema'
-import { defineJobHandler, type EnqueueInput, type JobHandler } from '../jobs'
+import { defineJobHandler, registerJobPayload, type EnqueueInput, type JobHandler } from '../jobs'
 import { altText, buildImagePrompt, ImageJobPayload, screenRequest, type ImagePurpose, type ImageStyle } from './prompt'
 
 // AI illustrations (docs/platform/images.md): the image.generate job, daily cap, artifact media slots.
@@ -15,6 +15,8 @@ import { altText, buildImagePrompt, ImageJobPayload, screenRequest, type ImagePu
 export * from './prompt'
 
 export const IMAGE_SIZE = '1024x1024'
+
+registerJobPayload('image.generate', ImageJobPayload)
 
 export function imageSettings(env: NodeJS.ProcessEnv = process.env) {
   return {
@@ -98,7 +100,7 @@ export interface ImageJobDeps {
 export function imageJobHandler(deps: ImageJobDeps): JobHandler {
   const env = deps.env ?? process.env
   return defineJobHandler('image.generate', async (job, { db, signal, progress, fail }) => {
-    // Validated here, not via registerJobPayload: server/jobs tests enqueue this type with {} payloads.
+    // Also validated at enqueue (registerJobPayload); parsed again as defence in depth.
     const parsed = ImageJobPayload.safeParse(job.payload)
     if (!parsed.success) return fail('invalid_payload', 'Bildförfrågan är ogiltig.', false)
     const p = parsed.data
@@ -140,6 +142,8 @@ export interface IllustrationSlot {
   description: string
   purpose: ImagePurpose
   count?: number
+  /** The item the slot belongs to (generation's illustration requests). */
+  itemId?: string
 }
 
 export interface IllustrationOptions {
@@ -174,7 +178,7 @@ export async function illustrationJobsFor(slots: IllustrationSlot[], opts: Illus
         count: slot.count,
         learnerId: opts.learnerId,
         artifactId: slot.artifactId,
-        target: { path: slot.path },
+        target: { path: slot.path, itemId: slot.itemId },
       },
     })
     out.push({ slot, jobId: id })

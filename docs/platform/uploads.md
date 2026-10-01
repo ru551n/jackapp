@@ -14,7 +14,7 @@ POST upload ──► uploading ──► queued ──claim──► processing
                  ▼                                            └──(retention)──► originals purged
 ```
 
-1. **Upload** (adult): the request is streamed part by part to `DATA_DIR/uploads/<setId>/<n>.upload`, hashing (sha256) and counting bytes on the way. Each file is then typed by **magic bytes** (JPEG, PNG, WEBP, PDF; the name and client mime type are ignored). A PDF becomes one page per PDF page (`pdfinfo` counts them). Pages are numbered in upload order. Any rejection deletes the set row and its directory.
+1. **Upload** (adult, or an allowed older learner): the request is streamed part by part to `DATA_DIR/uploads/<setId>/<n>.upload`, hashing (sha256) and counting bytes on the way. Each file is then typed by **magic bytes** (JPEG, PNG, WEBP, PDF; the name and client mime type are ignored). A PDF becomes one page per PDF page (`pdfinfo` counts them). Pages are numbered in upload order. Any rejection deletes the set row and its directory.
 2. **Queue**: the set becomes `queued` and `study.process` is enqueued with `dedupeKey: study.process:<setId>`. The response is `201 { set, jobId }`; the UI follows `GET /api/v1/jobs/:jobId/events`.
 3. **Process** (worker), per page in order, with progress `Läser sida 3 av 12`:
    - Cache lookup on `(sha256 of source file, pdfPage or 0)` in `study_page_extractions`. A hit skips rendering and vision entirely.
@@ -33,13 +33,15 @@ All under `/api/v1/learners/:id/study-sets`.
 
 | Route                    | Who    | Does                                                                                                                       |
 | ------------------------ | ------ | -------------------------------------------------------------------------------------------------------------------------- |
-| `POST /`                 | adult  | multipart upload (`files` parts in order, optional `title` field) → `201 { set, jobId }`                                   |
+| `POST /`                 | adult¹ | multipart upload (`files` parts in order, optional `title` field) → `201 { set, jobId }`                                   |
 | `GET /`                  | anyone | `StudySet[]`, newest first                                                                                                 |
 | `GET /:setId`            | anyone | `{ set, jobId }`                                                                                                           |
 | `PATCH /:setId/pages`    | adult  | `{ order: [4, 1, 2, 3] }` (current page numbers in new order); only while `queued` or `failed`, else `409 not_reorderable` |
 | `POST /:setId/reprocess` | adult  | `202 { set, jobId }` for a `failed` set whose originals still exist, else `409 not_reprocessable`                          |
 | `DELETE /:setId`         | adult  | `204`; cancels the job, removes rows, originals and extraction-cache rows no other page uses                               |
 | `GET /:setId/material`   | anyone | `ProcessedStudyMaterial`; adults also get `provenance` (method, models, pages, cached pages). `409 not_ready` before ready |
+
+¹ Also a learner in the **middle or upper age band** whose profile has `generation.learnerRequestsAllowed`, so an older student can photograph their own textbook pages. The same size and page limits apply, and reorder, reprocess and delete stay adult-only. Early-band learners (förskoleklass to year 3) never upload: an adult does it for them. Rationale: those learners may already request generated material, and material from their own book is the safer input.
 
 The reorder takes a row lock on the set; the worker's `queued → processing` update waits for it, so a reorder either lands before processing reads the pages or is refused.
 

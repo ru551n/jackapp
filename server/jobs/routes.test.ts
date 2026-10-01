@@ -16,7 +16,7 @@ describe('job routes', () => {
   it('returns status, 404s unknown ids and 400s bad ids', async () => {
     const t = await createTestApp()
     close = t.close
-    const { id } = await enqueue(t.db, { type: 'research.run', payload: {} })
+    const { id } = await enqueue(t.db, { type: 'curriculum.sync', payload: {} })
     const r = await t.app.inject(`/api/v1/jobs/${id}`)
     expect(JobStatus.parse(r.json())).toMatchObject({ id, state: 'queued' })
     expect((await t.app.inject(`/api/v1/jobs/${crypto.randomUUID()}`)).statusCode).toBe(404)
@@ -26,7 +26,7 @@ describe('job routes', () => {
   it('cancel and retry are adult-only', async () => {
     const t = await createTestApp()
     close = t.close
-    const { id } = await enqueue(t.db, { type: 'research.run', payload: {} })
+    const { id } = await enqueue(t.db, { type: 'curriculum.sync', payload: {} })
     expect((await t.app.inject({ method: 'POST', url: `/api/v1/jobs/${id}/cancel` })).statusCode).toBe(403)
     expect((await t.app.inject({ method: 'POST', url: `/api/v1/jobs/${id}/retry`, headers: asAdult })).statusCode).toBe(
       409,
@@ -34,8 +34,8 @@ describe('job routes', () => {
     const c = await t.app.inject({ method: 'POST', url: `/api/v1/jobs/${id}/cancel`, headers: asAdult })
     expect(c.json()).toMatchObject({ state: 'cancelled' })
 
-    const b = await enqueue(t.db, { type: 'research.run', payload: {} })
-    const job = (await claim(t.db, 'w', ['research.run']))!
+    const b = await enqueue(t.db, { type: 'curriculum.sync', payload: {} })
+    const job = (await claim(t.db, 'w', ['curriculum.sync']))!
     await failAttempt(t.db, job, 'w', { code: 'x', learnerMessage: 'l', adultMessage: 'a', retryable: false })
     const r = await t.app.inject({ method: 'POST', url: `/api/v1/jobs/${b.id}/retry`, headers: asAdult })
     expect(r.json()).toMatchObject({ state: 'queued', attempts: 0 })
@@ -44,10 +44,10 @@ describe('job routes', () => {
   it('streams state and progress over SSE and closes when finished', async () => {
     const t = await createTestApp()
     close = t.close
-    const { id } = await enqueue(t.db, { type: 'artifact.generate', payload: {} })
+    const { id } = await enqueue(t.db, { type: 'curriculum.sync', payload: {} })
     const res = t.app.inject(`/api/v1/jobs/${id}/events`)
     setTimeout(async () => {
-      await claim(t.db, 'w', ['artifact.generate'])
+      await claim(t.db, 'w', ['curriculum.sync'])
       await new Promise((r) => setTimeout(r, 1200))
       await progressWriter(t.db, id, 'w')(0.5, 'Halvvägs')
       await new Promise((r) => setTimeout(r, 1200))

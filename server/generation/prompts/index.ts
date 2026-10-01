@@ -10,7 +10,7 @@ import type {
 
 // Versioned prompt building blocks (docs/platform/generation.md#prompt-architecture).
 // Bump PROMPT_VERSION whenever wording changes; it is stored on every artifact version.
-export const PROMPT_VERSION = 'generation/v1'
+export const PROMPT_VERSION = 'generation/v3'
 
 export interface OfferedRef {
   /** Local id the model may cite, e.g. "C1". */
@@ -40,6 +40,28 @@ export interface PromptInput {
   feedback: 'immediate' | 'end'
   durationMinutes: number
   includeImages: boolean
+  /** Required skill tags (learning paths, remediation). */
+  skills?: string[]
+  /** Web research brief (useWebResearch); sources are cited as W1..Wn. */
+  research?: ResearchContext
+}
+
+export interface ResearchContext {
+  summary: string
+  keyPoints: { text: string; sources: number[] }[]
+  sources: { title: string; publisher?: string }[]
+}
+
+/** Checked web brief; items cite its sources as W1..Wn (never in strict mode). */
+export function researchBlock(r: ResearchContext): string {
+  return [
+    'Webbresearch (sammanfattad ur källorna nedan). Använd den för fakta som inte finns i materialet eller läroplanen.',
+    'Ange webSourceIds (t.ex. ["W1"]) när en uppgift bygger på en webbkälla. Hitta inte på andra id.',
+    `Sammanfattning: ${r.summary}`,
+    ...r.keyPoints.map((k) => `- ${k.text} (${k.sources.map((n) => `W${n}`).join(', ')})`),
+    'Källor:',
+    ...r.sources.map((s, i) => `- W${i + 1}: ${s.title}${s.publisher ? ` (${s.publisher})` : ''}`),
+  ].join('\n')
 }
 
 const STAGE = { forskoleklass: 'förskoleklass', grundskola: 'grundskolan', gymnasieskola: 'gymnasiet' } as const
@@ -185,7 +207,9 @@ export function settingsBlock(p: PromptInput): string {
     `Ungefärlig tid för hela passet: ${p.durationMinutes} minuter.`,
     p.subjectCode ? `Ämneskod: ${p.subjectCode}.` : '',
     p.topic ? `Område: ${p.topic}.` : '',
-    'skills: korta färdighetstaggar i formatet "ämne.område.delmoment", t.ex. "math.multiplication.tables-6-9".',
+    p.skills?.length
+      ? `skills: varje uppgift ska ha en av dessa färdighetstaggar, eller en finare undertagg av den (t.ex. "${p.skills[0]}.delmoment"): ${p.skills.join(', ')}.`
+      : 'skills: korta färdighetstaggar i formatet "ämne.område.delmoment", t.ex. "math.multiplication.tables-6-9".',
     p.includeImages ? 'Föreslå illustrationer (fältet illustration) där bilder hjälper.' : '',
   ]
     .filter(Boolean)
@@ -204,6 +228,7 @@ export function buildSystemPrompt(p: PromptInput): string {
     languageBlock(p.subjectCode, p.material),
     p.sourceMode === 'strict' && p.material ? '' : curriculumBlock(p.curriculum),
     sourceBlock(p.sourceMode, p.material),
+    p.research && p.sourceMode !== 'strict' ? researchBlock(p.research) : '',
     safetyBlock(),
   ]
     .filter(Boolean)

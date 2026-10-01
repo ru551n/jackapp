@@ -25,6 +25,8 @@ const r = await researchBrief(db, ai, { topic, language: 'sv', school })
 const media: MediaRef[] = await findLicensedImages(db, { query: 'Saab 37 Viggen', count: 2, preferFactual: true })
 ```
 
+Generation calls `researchBrief` for `useWebResearch` requests (generation.md) and enqueues `asset.fetch` for illustration slots that need real imagery (images.md).
+
 Jobs: `research.run` `{ topic, language?, school? }` → `resultId` = brief id. `asset.fetch` `{ query, count?, preferFactual? }` → first asset id.
 
 Routes:

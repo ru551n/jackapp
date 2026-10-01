@@ -185,12 +185,14 @@ const owned = (id: string, workerId: string) =>
   and(eq(jobs.id, id), eq(jobs.state, 'processing'), eq(jobs.lockedBy, workerId))
 const unlock = { lockedBy: null, lockedAt: null, heartbeatAt: null, updatedAt: sql`now()` }
 
-/** Mark a claimed job completed. No-op if it was cancelled or taken over meanwhile. */
-export async function complete(db: Db, id: string, workerId: string, resultId?: string) {
-  await db
+/** Mark a claimed job completed. False (no-op) if it was cancelled or taken over meanwhile. */
+export async function complete(db: Db, id: string, workerId: string, resultId?: string): Promise<boolean> {
+  const rows = await db
     .update(jobs)
     .set({ ...unlock, state: 'completed', progress: 1, resultId: resultId ?? null, finishedAt: sql`now()` })
     .where(owned(id, workerId))
+    .returning({ id: jobs.id })
+  return rows.length > 0
 }
 
 /** Exponential backoff with jitter: base·2^(attempt-1), capped, scaled by [0.5, 1). */

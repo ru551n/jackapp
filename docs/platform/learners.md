@@ -52,4 +52,17 @@ The old web app stored everything in `localStorage['jackapp:v1']` (`AppState` v1
 | `lastPracticed` (ms) | `last_practiced_at` | timestamptz                              |
 | —                    | `import_id`         | the `legacy_progress` row it came from   |
 
-Skipped skill keys are returned in `skipped` and still exist in the raw copy. Missions, sessions, settings and the free-play line live only in the raw copy for now; collection unlocks are derived from missions, as before. Turning this into `SkillEvidence` is the adaptive module's job.
+Skipped skill keys are returned in `skipped` and still exist in the raw copy.
+
+**Old settings** are mapped into the profile only when the adult opts in with `?applySettings=true`. By default nothing changes and the response lists what would change, so the UI can ask first: `settings: { applied, changes: [{ field, from, to }] }`.
+
+| Old `settings`    | Profile field           | Note                                                   |
+| ----------------- | ----------------------- | ------------------------------------------------------ |
+| `freePlayEnabled` | `freePlayEnabled`       |                                                        |
+| `sound`           | `support.sound`         |                                                        |
+| `speech`          | `support.readAloud`     | the "Lyssna" button; speech never autoplays            |
+| `motion`          | `support.reducedMotion` | `reduced` → true, `full` → false, `system` → no change |
+
+Only fields that differ and have the right type are listed. Settings apply even when the payload itself was already imported (`created: false`).
+
+Missions, sessions and the free-play line live only in the raw copy for now; collection unlocks are derived from missions, as before. Turning this into `SkillEvidence` is the adaptive module's job.

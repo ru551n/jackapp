@@ -12,7 +12,7 @@ import { AiError, type AiServices } from '../ai'
 import { subjectsFor } from '../curriculum/service'
 import type { Db } from '../db/client'
 import { learners } from '../db/schema'
-import { defineJobHandler, type JobHandler, type JobTools } from '../jobs'
+import { defineJobHandler, registerJobPayload, type JobHandler, type JobTools } from '../jobs'
 import {
   defaultMaterialLoader,
   generateArtifact,
@@ -24,6 +24,8 @@ import {
 import { describeItem } from './items'
 import { PROMPT_VERSION, TRANSFORM_SV, transformContext, type TransformKind } from './prompts'
 import { interpretInstructions, resolveRequest, scrubRequest, type ResolvedRequest } from './request'
+import { loadBrief, researchBrief, type BriefResult, type ResearchOptions } from '../research/brief'
+import { enqueueIllustrations } from './media'
 import { addVersion, approvalFor, createArtifact, loadArtifact, type StoredArtifact } from './store'
 
 // Job payloads and handlers: artifact.generate (new + transforms) and artifact.regenerateItem.
@@ -49,16 +51,20 @@ export const GeneratePayload = z.union([
 export type GeneratePayload = z.infer<typeof GeneratePayload>
 export const RegenerateItemPayload = z.object({ artifactId: z.string().uuid(), itemId: z.string().max(60) })
 
-// Not registered with registerJobPayload: queue/route tests enqueue these types with `{}` payloads.
-// Handlers parse their payload instead.
+registerJobPayload('artifact.generate', GeneratePayload)
+registerJobPayload('artifact.regenerateItem', RegenerateItemPayload)
+// Handlers parse again (defence in depth: rows may predate a schema change).
 
 export interface GenerationDeps {
-  ai: Pick<AiServices, 'text'>
+  /** `text` is required; `research` enables useWebResearch. */
+  ai: Pick<AiServices, 'text'> & Partial<AiServices>
   /** Wire to server/study/material.ts `loadProcessedMaterial` (never re-runs vision). */
   loadMaterial?: MaterialLoader
   validate?: EngineDeps['validate']
   /** Server-only metadata stored on versions, e.g. parseAiConfig(env).text?.provider. */
   providerKind?: string
+  /** Web research options (tests inject a fetcher and env). */
+  research?: Omit<ResearchOptions, 'signal'>
 }
 
 /** After a change to an existing artifact: invalid → draft; a draft that became valid follows the policy. */
@@ -89,6 +95,37 @@ async function material(deps: GenerationDeps, db: Db, r: ResolvedRequest, tools:
   if (!m) tools.fail('material_unavailable', 'Studiematerialet är inte färdigbehandlat ännu.', true)
   return m
 }
+
+/**
+ * Web research for `useWebResearch` (not in strict mode). Null when the feature is off or not
+ * configured; any research failure only means generating without it.
+ */
+async function research(deps: GenerationDeps, r: ResolvedRequest, m: Material, tools: JobTools) {
+  if (!r.useWebResearch || r.sourceMode === 'strict') return undefined
+  const topic = (r.topic ?? m?.topic ?? r.instructions)?.slice(0, 200)
+  if (!topic || topic.trim().length < 2) return undefined
+  await tools.progress(0.08, 'Söker på webben')
+  try {
+    return (
+      (await researchBrief(
+        tools.db,
+        deps.ai as AiServices,
+        { topic, school: r.school },
+        { ...deps.research, signal: tools.signal },
+      )) ?? undefined
+    )
+  } catch (e) {
+    if (tools.signal.aborted) throw e
+    tools.log.warn({ err: { name: (e as Error).name } }, 'web research failed; generating without it')
+    return undefined
+  }
+}
+
+/** Stored brief of an earlier generation (transforms and item regeneration never search again). */
+const storedResearch = (db: Db, r: ResolvedRequest): Promise<BriefResult | undefined> =>
+  r.researchBriefId ? loadBrief(db, r.researchBriefId) : Promise.resolve(undefined)
+
+type Material = Awaited<ReturnType<typeof material>>
 
 /** Transforms adjust the stored resolved request; no re-interpretation and no vision. */
 export function applyTransform(r: ResolvedRequest, kind: TransformKind, theme?: string): ResolvedRequest {
@@ -167,9 +204,11 @@ export function generationJobHandlers(deps: GenerationDeps): JobHandler[] {
       }
       const resolved = resolveRequest(request, explicit, interpreted, profile)
       const m = await material(deps, tools.db, resolved, tools)
+      const web = await research(deps, resolved, m, tools)
+      if (web) resolved.researchBriefId = web.briefId
       const g = await generateArtifact(
         eng,
-        { request: resolved, profile, material: m },
+        { request: resolved, profile, material: m, research: web },
         { id: crypto.randomUUID(), learnerId: request.learnerId, createdBy, version: 1 },
       )
       const a = { ...g.artifact, approval: approvalFor(profile.generation.approval, g.ok) }
@@ -179,6 +218,14 @@ export function generationJobHandlers(deps: GenerationDeps): JobHandler[] {
         jobId: job.id,
       })
       if (!g.ok) tools.fail('validation_failed', validationFailedMessage(a, true), false)
+      await enqueueIllustrations(
+        tools.db,
+        deps.ai,
+        { artifact: a, illustrations: g.illustrations },
+        resolved,
+        profile,
+        tools.log,
+      )
       return a.id
     })
   })
@@ -193,7 +240,13 @@ export function generationJobHandlers(deps: GenerationDeps): JobHandler[] {
     const request = applyTransform(stored.row.request as ResolvedRequest, t.kind, t.theme)
     const m = await material(deps, tools.db, request, tools)
     const prev = stored.artifact
-    const p: Prepared = { request, profile, material: m, extraContext: transformContext(t.kind, previousVersion(prev)) }
+    const p: Prepared = {
+      request,
+      profile,
+      material: m,
+      research: await storedResearch(tools.db, request),
+      extraContext: transformContext(t.kind, previousVersion(prev)),
+    }
     if (t.kind === 'more') p.avoid = prev.sections.flatMap((s) => s.items.map((i) => i.prompt.slice(0, 120)))
     const isNew = t.kind === 'more'
     const g = await generateArtifact(eng, p, {
@@ -207,13 +260,34 @@ export function generationJobHandlers(deps: GenerationDeps): JobHandler[] {
       const a = { ...g.artifact, approval: approvalFor(policy, g.ok) }
       await createArtifact(tools.db, a, request, { ...meta('transform:more', g.model), illustrations: g.illustrations })
       if (!g.ok) tools.fail('validation_failed', validationFailedMessage(a, true), false)
+      await enqueueIllustrations(
+        tools.db,
+        deps.ai,
+        { artifact: a, illustrations: g.illustrations },
+        request,
+        profile,
+        tools.log,
+      )
       return a.id
     }
     const keep = prev.approval === 'draft'
     const a = { ...g.artifact, createdAt: prev.createdAt, approval: nextApproval(prev.approval, g.ok, policy) }
     if (!g.ok && !keep) tools.fail('validation_failed', validationFailedMessage(a, false), false)
-    await addVersion(tools.db, a, { ...meta(`transform:${t.kind}`, g.model), illustrations: g.illustrations }, request)
+    const saved = await addVersion(
+      tools.db,
+      a,
+      { ...meta(`transform:${t.kind}`, g.model), illustrations: g.illustrations },
+      request,
+    )
     if (!g.ok) tools.fail('validation_failed', validationFailedMessage(a, true), false)
+    await enqueueIllustrations(
+      tools.db,
+      deps.ai,
+      { artifact: saved!, illustrations: g.illustrations },
+      request,
+      profile,
+      tools.log,
+    )
     return a.id
   }
 
@@ -225,14 +299,25 @@ export function generationJobHandlers(deps: GenerationDeps): JobHandler[] {
       const profile = await profileOf(tools.db, stored.row.learnerId, tools)
       const request = stored.row.request as ResolvedRequest
       const m = await material(deps, tools.db, request, tools)
-      const r = await regenerateItem(eng, { request, profile, material: m }, stored.artifact, itemId)
+      const research = await storedResearch(tools.db, request)
+      const r = await regenerateItem(eng, { request, profile, material: m, research }, stored.artifact, itemId)
       const prev = stored.artifact
       const a = { ...r.artifact, approval: nextApproval(prev.approval, r.ok, profile.generation.approval) }
       if (!r.ok && prev.approval !== 'draft') tools.fail('validation_failed', validationFailedMessage(a, false), false)
       const illustrations = [...stored.illustrations.filter((i) => i.itemId !== itemId)]
       if (r.illustration) illustrations.push(r.illustration)
-      await addVersion(tools.db, a, { ...meta('regenerateItem', r.model), illustrations })
+      const saved = await addVersion(tools.db, a, { ...meta('regenerateItem', r.model), illustrations })
       if (!r.ok) tools.fail('validation_failed', validationFailedMessage(a, true), false)
+      // Only the new item's illustration: the others already had their chance.
+      const mine = illustrations.filter((i) => i.itemId === itemId)
+      await enqueueIllustrations(
+        tools.db,
+        deps.ai,
+        { artifact: saved!, illustrations: mine },
+        request,
+        profile,
+        tools.log,
+      )
       return a.id
     })
   })

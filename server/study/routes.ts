@@ -6,6 +6,7 @@ import { join } from 'node:path'
 import { pipeline } from 'node:stream/promises'
 import { and, desc, eq, inArray, isNull, notExists } from 'drizzle-orm'
 import { z } from 'zod'
+import { ageBand } from '../../shared/contracts'
 import { loadProcessedMaterial } from './material'
 import type { RouteModule } from '../app/context'
 import { parseEnv } from '../config/env'
@@ -60,10 +61,14 @@ export const studyRoutes: RouteModule = async (app, ctx) => {
   await app.register(async (s) => {
     await s.register(multipart, { throwFileSizeLimit: false })
 
-    /** Upload one ordered study set (adult). Files are streamed to DATA_DIR/uploads/<setId>/. */
+    /**
+     * Upload one ordered study set. Files are streamed to DATA_DIR/uploads/<setId>/. Adults always;
+     * middle/upper-band learners whose profile allows learner requests may upload too (same limits).
+     */
     s.post('/learners/:id/study-sets', async (req, reply) => {
-      requireAdult(req)
       const learner = await requireLearner(db, LearnerParams.parse(req.params).id)
+      if (ageBand(learner.profile.school) === 'early' || !learner.profile.generation.learnerRequestsAllowed)
+        requireAdult(req)
       if (!req.isMultipart()) throw err(400, 'invalid_request', 'Skicka filerna som ett formulär (multipart).')
       const lim = parseEnv(LimitsEnv)
       const [set] = await db

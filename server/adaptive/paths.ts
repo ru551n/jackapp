@@ -8,7 +8,7 @@ import type { Db } from '../db/client'
 import { jobs, learningPaths, skillReviews, type StoredMilestone } from '../db/schema'
 import { requireLearner } from '../gate/guards'
 import { promptProfile } from '../learners/profile'
-import { defineJobHandler, enqueue, JobFailure } from '../jobs'
+import { defineJobHandler, enqueue, JobFailure, registerJobPayload } from '../jobs'
 import { loadObs, MIN_ANSWERS, skillLabel, skillStates } from './skills'
 import { practiceRequest, remediationRequest, syncReviews, typicalDifficulty } from './steps'
 
@@ -34,7 +34,7 @@ export const PathInput = z.object({
 })
 export const PlanPathPayload = PathInput.extend({ learnerId: z.string().uuid() })
 export type PlanPathPayload = z.infer<typeof PlanPathPayload>
-// Not registered via registerJobPayload: the route validates input and the handler parses the payload.
+registerJobPayload('path.plan', PlanPathPayload)
 
 /** What the model may return. Deterministic checks (`checkPlan`) run after schema parsing. */
 export const PlanOutput = z.object({
@@ -197,9 +197,11 @@ async function enqueueMilestone(db: Db, path: PathRow, m: StoredMilestone, learn
           skills: m.skills,
           subjectCode: path.subjectCode ?? undefined,
         })
+  // Every field adaptive set is explicit: interpreting `instructions` must not override it.
+  const explicit = Object.keys(request).filter((k) => request[k as keyof typeof request] !== undefined)
   const r = await enqueue(db, {
     type: 'artifact.generate',
-    payload: { request },
+    payload: { request, explicit, createdBy: 'system' },
     learnerId: learner.id,
     dedupeKey: `path:${path.id}:${m.id}`,
   })

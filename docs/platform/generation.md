@@ -76,6 +76,7 @@ The model never produces contract items directly. `items.ts` defines a smaller s
 - `curriculum` SourceRefs and `curriculumRefs`.
 - A `model` source when nothing else applies.
 - It also trims choices to `support.maxChoices`, always keeping the correct ones.
+- **Skills:** when the request has `skills` (learning paths, remediation, reviews), the prompt asks for those tags, and `itemSkills` enforces them: an item keeps the model's tags that equal or refine a requested tag (only the finest of a chain, since the adaptive roll-up would otherwise count one answer twice); an item with none of them gets the requested tags.
 
 ### Blueprint (sections)
 
@@ -101,6 +102,13 @@ Body length depends on the age band (early 40, middle 90, upper 160 words per ba
 
 The processed material comes from `ProcessedStudyMaterial`, loaded through a `MaterialLoader`. Vision is never re-run, not even for transforms. If a `studySetId` is given but no processed material exists yet, the job fails with `material_unavailable`, which is retryable.
 
+## Web research (`useWebResearch`)
+
+In `extended` and `sourceAndCurriculum` mode, a request with `useWebResearch: true` first calls `researchBrief` (`server/research`) on the topic (else the material's topic, else the instructions). It returns `null` when `FEATURE_WEB_RESEARCH` is off or `AI_RESEARCH_PROVIDER`/`AI_TEXT_PROVIDER` is missing; then, and when research fails for any other reason, the artifact is generated without it (logged, never a job failure). Strict mode never researches.
+
+- The checked brief goes into the system prompt (`researchBlock`) with its sources numbered `W1…Wn`. Items cite them in `webSourceIds`; `toItem` turns valid ids into `web` SourceRefs and drops unknown ones.
+- The brief id is stored in the artifact's resolved request (`artifacts.request.researchBriefId`), so every version made from it (transforms, item regeneration) reuses the same brief via `loadBrief` and never searches again. The adult view of `GET /artifacts/:id` returns `researchBriefIds` for `GET /research/provenance?briefIds=…`.
+
 ## Validation, repair and approval
 
 1. `validateArtifact(artifact, { request, material })` from `server/validation` is authoritative. The engine merges in its own `localIssues` (`strict_source`, and `answer_missing` when an answer id is not among the choices).
@@ -124,7 +132,7 @@ The rules for changing an existing artifact (edit, item regeneration, transform)
 | ------------------------------------------------------------- | -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `POST /api/v1/learners/:id/generate`                          | adult/learner¹ | `202 { jobId }`. The body is a `GenerationRequest` (`learnerId` is taken from the path)                                                                                                                                                                                                         |
 | `GET /api/v1/learners/:id/artifacts?type=&approval=&subject=` | any            | Summaries. Learners see only `approved`                                                                                                                                                                                                                                                         |
-| `GET /api/v1/artifacts/:artifactId`                           | any            | Adult: `{ artifact, requestedIllustrations }`. Learner: `404` unless approved; returns `{ artifact }` without the validation report, run through `forLearner` (no answers, rubrics or explanations) when `feedback=end`                                                                         |
+| `GET /api/v1/artifacts/:artifactId`                           | any            | Adult: `{ artifact, requestedIllustrations, researchBriefIds, assetIds }` (the ids feed `GET /research/provenance`). Learner: `404` unless approved; returns `{ artifact }` without the validation report, run through `forLearner` (no answers, rubrics or explanations) when `feedback=end`   |
 | `GET /api/v1/artifacts/:artifactId/versions`                  | adult          | Version history (version, origin, validation, createdAt)                                                                                                                                                                                                                                        |
 | `POST /api/v1/artifacts/:artifactId/approve` / `reject`       | adult          | The artifact. Approve returns `409` while validation fails                                                                                                                                                                                                                                      |
 | `PATCH /api/v1/artifacts/:artifactId`                         | adult          | `{ title?, sections?: [{ index, title?, body? }], items?: { [itemId]: fields }, removeItems?: [] }` creates a new version. Returns `400` for contract breaks or unknown items, and `422` for failed validation                                                                                  |
@@ -133,6 +141,18 @@ The rules for changing an existing artifact (edit, item regeneration, transform)
 
 ¹ A learner may use this route only with `learnerRequestsAllowed`.
 
-## Illustrations (hook)
+## Illustrations
 
-Items may suggest an illustration. The suggestion is stored per version as `{ itemId, description }` (`artifact_versions.illustrations`), because `MediaRef` cannot express a placeholder. `requestedIllustrations(stored)` returns the suggestions for items that have no media yet. The image domain fills an item by adding a `MediaRef` to it in a new version. This module never calls the image capability itself.
+Items may suggest an illustration. The suggestion is stored per version as `{ itemId, description }` (`artifact_versions.illustrations`), because `MediaRef` cannot express a placeholder. `requestedIllustrations(stored)` returns the suggestions for items that have no media yet.
+
+Code: `media.ts`. The flow, when the request has `includeImages` or the resolved support has `visualSupport: 'high'`:
+
+1. **Enqueue** (`enqueueIllustrations`, at the end of `artifact.generate`, transforms and `artifact.regenerateItem`, only for a valid stored version): each open request (at most `MAX_ILLUSTRATIONS` = 12 per version) becomes a slot `sections.S.items.I` with its `itemId`, screened with `screenRequest` (`server/images`):
+   - decorative → `image.generate` via `illustrationJobsFor`, only when image generation is available;
+   - `factual_reference` (real aircraft, maps, finds, …) → `asset.fetch` (`findLicensedImages`, licensed images only), only when `FEATURE_EXTERNAL_ASSETS` is on;
+   - `unsafe_content` → nothing.
+     Enqueue problems (queue full) are logged; generation never fails because of images.
+2. **Apply** (`applyJobMedia`, the worker's completion hook for both job types, see below): loads the asset (`resultId`), checks that the request still stands (the item exists and its current illustration request has the same description; a transform or edit that changed it makes the job a no-op), finds the item's current path by `itemId`, inserts the media with `applyGeneratedMedia`, revalidates and stores a **new version** (`origin: 'media'`). The version is stored only if the artifact's version did not change in between (`addVersion(..., { expectVersion, keepApproval: true })`, retried up to 3 times), so concurrent image jobs never overwrite each other and an approval given meanwhile is kept. Already-present media (a replayed completion) produce no version, and media that would turn a valid artifact invalid are not applied.
+3. **Failure:** a failed image or asset job changes nothing: the artifact stays usable without the picture, and the request stays open (`requestedIllustrations`).
+
+**Completion hook design.** `JobHandler.onCompleted(job, resultId, { db, log })` (`server/jobs/runtime.ts`) runs once after `complete()` actually marked the job completed: never after a failure, cancel or lost lock. Its errors are logged and never change the job. The hooks are composed in `server/worker/handlers.ts` (`ON_COMPLETED`), the one module that already imports every domain, so `images` and `research` never import `generation` (no cycles). Runs started on an earlier version keep that version.

@@ -28,6 +28,8 @@ const Common = {
   curriculumIds: z.array(z.string()).max(6).optional(),
   /** Segment ids from the study material. */
   sourceSegmentIds: z.array(z.string()).max(6).optional(),
+  /** Web research source ids ("W1", ...) the item's facts come from. */
+  webSourceIds: z.array(z.string()).max(5).optional(),
   /** Short description of a helpful illustration (hook for the image domain). */
   illustration: z.string().max(300).optional(),
 }
@@ -108,6 +110,21 @@ export interface ItemContext {
   material?: ProcessedStudyMaterial
   maxChoices: number
   includeHints: boolean
+  /** Web research sources by local id ("W1" → web SourceRef). */
+  web?: Map<string, SourceRef>
+  /** GenerationRequest.skills: every item carries these tags or finer ones. */
+  skills?: string[]
+}
+
+/**
+ * Item tags under the requested skills: the model's tags that equal or refine a requested tag
+ * (only the finest of a chain: roll-up would count one answer twice), else the requested tags.
+ */
+export function itemSkills(model: string[], required?: string[]): string[] {
+  if (!required?.length) return model
+  const fits = [...new Set(model.filter((s) => required.some((t) => s === t || s.startsWith(`${t}.`))))]
+  const finest = fits.filter((s) => !fits.some((o) => o.startsWith(`${s}.`)))
+  return (finest.length ? finest : required).slice(0, 6)
 }
 
 const choice = (text: string, i: number) => ({ id: `c${i + 1}`, text })
@@ -138,6 +155,10 @@ export function toItem(g: GenItem, id: string, ctx: ItemContext): { item: Item; 
         ]
       : []
   })
+  for (const w of new Set(g.webSourceIds)) {
+    const ref = ctx.web?.get(w)
+    if (ref) sources.push(ref)
+  }
   for (const ref of curriculumRefs) sources.push({ kind: 'curriculum', ref })
   if (!sources.length) sources.push({ kind: 'model', capability: 'text' })
 
@@ -149,7 +170,7 @@ export function toItem(g: GenItem, id: string, ctx: ItemContext): { item: Item; 
     hints: ctx.includeHints ? (g.hints ?? []) : [],
     explanation: g.explanation,
     difficulty: g.difficulty,
-    skills: g.skills,
+    skills: itemSkills(g.skills, ctx.skills),
     sources,
     curriculumRefs,
   }

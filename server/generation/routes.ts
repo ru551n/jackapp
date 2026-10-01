@@ -43,6 +43,21 @@ export const EditBody = z.object({
 
 const TransformBody = z.object({ kind: TransformKindSchema, theme: z.string().min(1).max(100).optional() })
 
+/** Every asset the artifact shows (section, item and choice media), deduplicated. */
+export const mediaAssetIds = (a: Artifact) => [
+  ...new Set(
+    a.sections
+      .flatMap((s) => [
+        ...s.media,
+        ...s.items.flatMap((i) => [
+          ...i.media,
+          ...('choices' in i ? i.choices : i.kind === 'ordering' ? i.items : []).flatMap((c) => c.media ?? []),
+        ]),
+      ])
+      .map((m) => m.assetId),
+  ),
+]
+
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v)
 const notFound = () => new HttpError(404, 'not_found', 'Hittades inte.')
 
@@ -119,7 +134,16 @@ export const generationRoutes: RouteModule = (app, ctx) => {
 
   app.get('/artifacts/:artifactId', async (req) => {
     const s = await load(Params.parse(req.params).artifactId)
-    if (req.gate?.adult) return { artifact: s.artifact, requestedIllustrations: requestedIllustrations(s) }
+    if (req.gate?.adult) {
+      // For GET /research/provenance?briefIds=…&assetIds=…
+      const briefId = (s.row.request as ResolvedRequest).researchBriefId
+      return {
+        artifact: s.artifact,
+        requestedIllustrations: requestedIllustrations(s),
+        researchBriefIds: briefId ? [briefId] : [],
+        assetIds: mediaAssetIds(s.artifact),
+      }
+    }
     if (s.artifact.approval !== 'approved') throw notFound()
     if (s.artifact.feedback === 'end') return { artifact: forLearner(s.artifact) }
     const { validation: _v, ...artifact } = s.artifact

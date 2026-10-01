@@ -231,4 +231,36 @@ describe('legacy import', () => {
     ])
       expect((await post(bad)).statusCode).toBe(400)
   })
+
+  it('reports old settings by default and applies them only with ?applySettings=true', async () => {
+    const { app, db } = await setup()
+    const l = await seedLearner(db)
+    const url = `/api/v1/learners/${l.id}/legacy-import`
+    const payload = { version: 1, settings: { sound: true, speech: false, motion: 'reduced', freePlayEnabled: true } }
+    const changes = [
+      { field: 'freePlayEnabled', from: false, to: true },
+      { field: 'support.sound', from: false, to: true },
+      { field: 'support.readAloud', from: true, to: false },
+      { field: 'support.reducedMotion', from: false, to: true },
+    ]
+    const dry = await app.inject({ method: 'POST', url, headers: asAdult, payload })
+    expect(dry.json().settings).toEqual({ applied: false, changes })
+    const profile = async () => (await app.inject({ url: `/api/v1/learners/${l.id}`, headers: asAdult })).json()
+    expect(await profile()).toMatchObject({ freePlayEnabled: false, support: { sound: false, readAloud: true } })
+
+    // Same payload again (import deduped) with opt-in: settings still apply.
+    const r = await app.inject({ method: 'POST', url: `${url}?applySettings=true`, headers: asAdult, payload })
+    expect(r.statusCode).toBe(200)
+    expect(r.json().settings).toEqual({ applied: true, changes })
+    expect(await profile()).toMatchObject({
+      freePlayEnabled: true,
+      support: { sound: true, readAloud: false, reducedMotion: true },
+    })
+    // Nothing left to change; 'system' motion and wrong types are ignored.
+    const again = await app.inject({ method: 'POST', url: `${url}?applySettings=true`, headers: asAdult, payload })
+    expect(again.json().settings).toEqual({ applied: false, changes: [] })
+    const odd = { version: 1, settings: { motion: 'system', sound: 'yes' } }
+    const r2 = await app.inject({ method: 'POST', url: `${url}?applySettings=true`, headers: asAdult, payload: odd })
+    expect(r2.json().settings.changes).toEqual([])
+  })
 })

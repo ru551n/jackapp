@@ -67,4 +67,4 @@ Prompts are written in English, because image models follow English best. The sc
   - `sections.N` and `sections.N.items.M` append, up to 6 and 4 media
   - `sections.N.items.M.choices.K` (or `.items.K` for ordering items) sets the media
   - Missing paths, full slots and duplicate assets are skipped.
-- The orchestrator wires completed jobs (`resultId` → `toMediaRef`) and the payload's `target.path` into the generation storage.
+- Slots carry an optional `itemId` (`target: { path, itemId }`), so a finished image still finds its item after edits. Generation enqueues the slots and applies finished jobs as new versions through the worker's completion hook: see [generation.md](generation.md#illustrations).

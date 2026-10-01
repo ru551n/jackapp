@@ -189,7 +189,7 @@ describe('remediation and next steps', () => {
     expect(r.instructions).toMatch(/Högst 2 svarsalternativ/)
     expect(r.instructions).toMatch(/Mycket lite text/)
     expect(r.instructions!.indexOf('enklare representation')).toBeLessThan(r.instructions!.indexOf('genomarbetat'))
-    expect(r.instructions).toContain('swedish.reading.comprehension')
+    expect(r.skills).toEqual(['swedish.reading.comprehension'])
 
     // Academic difficulty is independent of support: an advanced learner keeps reduced text.
     const n = remediationRequest(summary, profile({}))

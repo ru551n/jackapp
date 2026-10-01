@@ -1,3 +1,4 @@
+import { asc, eq } from 'drizzle-orm'
 import { z } from 'zod'
 import type { SchoolPosition, SourceRef } from '../../shared/contracts'
 import { AiError, type AiServices } from '../ai'
@@ -90,7 +91,7 @@ export async function researchBrief(
   ai: AiServices | undefined,
   input: ResearchInput,
   opts: ResearchOptions = {},
-): Promise<{ briefId: string; brief: ResearchBrief; sources: SourceRef[] } | null> {
+): Promise<BriefResult | null> {
   if (!researchEnabled(ai, opts.env)) return null
   const language = input.language ?? 'sv'
   const fetcher = opts.fetcher ?? safeFetch
@@ -175,4 +176,25 @@ export async function researchBrief(
     retrievedAt: g.retrievedAt,
   }))
   return { briefId, brief, sources }
+}
+
+export type BriefResult = { briefId: string; brief: ResearchBrief; sources: SourceRef[] }
+
+/** A stored brief with its sources in citation order (transforms reuse it instead of searching again). */
+export async function loadBrief(db: Db, briefId: string): Promise<BriefResult | undefined> {
+  const [b] = await db.select().from(researchBriefs).where(eq(researchBriefs.id, briefId))
+  if (!b) return undefined
+  const rows = await db
+    .select()
+    .from(researchSources)
+    .where(eq(researchSources.briefId, briefId))
+    .orderBy(asc(researchSources.index))
+  const sources: SourceRef[] = rows.map((r) => ({
+    kind: 'web',
+    url: r.url,
+    title: r.title,
+    publisher: r.publisher ?? undefined,
+    retrievedAt: r.retrievedAt.toISOString(),
+  }))
+  return { briefId, brief: b.brief, sources }
 }

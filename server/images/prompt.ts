@@ -16,6 +16,9 @@ export type ImageStyle = z.infer<typeof ImageStyle>
 /** `path` locates the media slot in an artifact: "sections.0", "sections.0.items.2" or "sections.0.items.2.choices.1". */
 export const MediaPath = z.string().regex(/^sections\.\d+(\.items\.\d+(\.(choices|items)\.\d+)?)?$/)
 
+/** Where a finished image goes: `path` in `artifactId`; `itemId` re-locates the item if it moved. */
+export const MediaTarget = z.object({ path: MediaPath, itemId: z.string().max(60).optional() })
+
 export const ImageJobPayload = z
   .object({
     purpose: ImagePurpose,
@@ -30,7 +33,7 @@ export const ImageJobPayload = z
     allowText: z.boolean().default(false),
     learnerId: z.string().uuid().optional(),
     artifactId: z.string().uuid().optional(),
-    target: z.object({ path: MediaPath }).optional(),
+    target: MediaTarget.optional(),
   })
   .refine((p) => p.purpose !== 'counting' || p.count !== undefined, { message: 'count krävs för räknebilder' })
 export type ImageJobPayload = z.infer<typeof ImageJobPayload>
