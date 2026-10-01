@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest'
 import { createRng } from '../core/rng'
 import type { Generator, Outcome, SkillProgress } from '../core/types'
 import { defaultState } from '../store/state'
-import { applyOutcome, newSkillProgress, outcomeFromMisses, supportFor, trendOf } from './adaptation'
+import { applyOutcome, newSkillProgress, outcomeFromMisses, RECENT_WINDOW, supportFor, trendOf } from './adaptation'
+import { AREAS } from '../core/catalog'
+import { AVAILABLE_SKILLS } from '../content'
 import { generatorsFor, nextQuestion, planSession, SESSION_LENGTH } from './session'
 
 const feed = (p: SkillProgress, outcomes: Outcome[]) => outcomes.reduce((acc, o) => applyOutcome(acc, o, 0, 1), p)
@@ -143,5 +145,50 @@ describe('rng', () => {
     expect(xs).toEqual(Array.from({ length: 50 }, () => b.int(2, 5)))
     expect(Math.min(...xs)).toBe(2)
     expect(Math.max(...xs)).toBe(5)
+  })
+})
+
+describe('engine boundaries', () => {
+  it('planSession filters unavailable skills and throws on an unknown area', () => {
+    const plan = planSession('tunnelbanan', defaultState(), ['math.add', 'read.words'])
+    expect(new Set(plan)).toEqual(new Set(['math.add']))
+    expect(planSession('tunnelbanan', defaultState(), [])).toEqual([])
+    expect(() => planSession('nope' as never, defaultState(), ['math.add'])).toThrow(/Unknown area/)
+  })
+
+  it('nextQuestion throws a clear error when a skill has no generator', () => {
+    expect(() => nextQuestion([], 'math.add', defaultState(), 1, [])).toThrow('No generator for math.add')
+  })
+
+  it('caps the recent window', () => {
+    const p = feed(newSkillProgress(), Array(20).fill('retry'))
+    expect(p.recent.length).toBeLessThanOrEqual(RECENT_WINDOW)
+    expect(p.attempts).toBe(20)
+  })
+
+  it('random outcome sequences keep the level in 1..5; a locked level never changes', () => {
+    const rng = createRng(123)
+    const outcomes: Outcome[] = ['first', 'retry', 'helped']
+    for (let run = 0; run < 200; run++) {
+      const start = rng.int(1, 5) as 1 | 2 | 3 | 4 | 5
+      const locked = run % 4 === 0
+      let p: SkillProgress = { ...newSkillProgress(start), levelLocked: locked }
+      for (let i = 0; i < 60; i++) {
+        // Bias toward a long first-try streak half the time so level 5 is reached.
+        p = applyOutcome(p, run % 2 ? 'first' : rng.pick(outcomes), 0, i)
+        expect(p.level).toBeGreaterThanOrEqual(1)
+        expect(p.level).toBeLessThanOrEqual(5)
+        if (locked) expect(p.level).toBe(start)
+        expect(p.recent.length).toBeLessThanOrEqual(RECENT_WINDOW)
+      }
+    }
+  })
+
+  it('English plans only en.* skills and Swedish areas never plan en.*', () => {
+    for (const a of AREAS) {
+      const plan = planSession(a.id, defaultState(), AVAILABLE_SKILLS)
+      expect(plan.length, a.id).toBeGreaterThan(0)
+      for (const skill of plan) expect(skill.startsWith('en.'), `${a.id}: ${skill}`).toBe(a.id === 'engelska')
+    }
   })
 })

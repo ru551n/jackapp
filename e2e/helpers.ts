@@ -1,10 +1,17 @@
 import { expect, type Page } from '@playwright/test'
 
-/** Answers the current question by trying choices in order until it is solved (like a child might). */
+const NOT_A_CHOICE = /^(Lyssna|Hör på engelska|Hör ordet|På svenska|Nästa|Klart)$/
+
+/**
+ * Solves the current question by clicking enabled choices in turn until the status panel offers
+ * "Nästa"/"Klart". Works for choice tasks (wrong picks get dimmed) and order tasks (placed and
+ * dimmed items are aria-disabled, so the next enabled one is tried).
+ */
 export async function solveCurrent(page: Page) {
-  const done = page.getByRole('status').getByRole('button', { name: /^(Nästa|Klart)$/ })
-  for (let attempt = 0; attempt < 12 && !(await done.isVisible()); attempt++) {
-    const open = page.locator('main button[class*="choice"]:not([aria-disabled="true"])')
+  const exercise = page.getByRole('main')
+  const done = exercise.getByRole('button', { name: /^(Nästa|Klart)$/ })
+  for (let attempt = 0; attempt < 40 && !(await done.isVisible()); attempt++) {
+    const open = exercise.getByRole('button', { disabled: false }).filter({ hasNotText: NOT_A_CHOICE })
     await open.first().click()
   }
   await expect(done).toBeVisible()
