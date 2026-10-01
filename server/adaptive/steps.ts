@@ -266,7 +266,11 @@ export async function nextSteps(db: Db, learnerId: string, now = new Date()): Pr
   const subjects = await subjectsFor(db, learner.profile.school).catch(() => [])
   const { stage, year } = learner.profile.school
   const yearText = stage === 'forskoleklass' ? 'förskoleklass' : `år ${year}`
-  for (const sub of subjects.filter((s) => !practised.has(s.code)).slice(0, steps.length ? 1 : 2))
+  const fresh = rankExplore(
+    subjects.filter((s) => !practised.has(s.code)),
+    learner.profile,
+  )
+  for (const sub of fresh.slice(0, steps.length ? 1 : 2))
     steps.push({
       kind: 'explore',
       title: `Prova ${sub.name}`,
@@ -275,6 +279,43 @@ export async function nextSteps(db: Db, learnerId: string, now = new Date()): Pr
       request: practiceRequest(profile, { type: 'exercises', topic: sub.name, subjectCode: sub.code }),
     })
   return steps.slice(0, 6)
+}
+
+const CORE = /^(svenska|matematik|engelska)$/i
+/** Interest words → subject names they point to. ponytail: small keyword table; extend as needed. */
+const INTEREST_SUBJECTS: [RegExp, RegExp][] = [
+  [/djur|natur|växt|skog|hav|fisk|insekt|dinosaur/i, /biologi/i],
+  [/rymd|planet|stjärn|magnet|ljus/i, /fysik/i],
+  [/experiment|kemi/i, /kemi/i],
+  [/fotboll|sport|idrott|simma|dans|hockey|ridning|cykel/i, /idrott/i],
+  [/rita|måla|konst|bild|serie/i, /^bild/i],
+  [/musik|sjunga|piano|gitarr|trumm/i, /musik/i],
+  [/historia|vikinga|riddare|pyramid|förr/i, /historia/i],
+  [/land|länder|karta|resa|vulkan|väder/i, /geografi/i],
+  [/bygga|robot|bil|lego|teknik|dator|programmer/i, /teknik/i],
+  [/läsa|böcker|bok|saga|skriva/i, /svenska/i],
+  [/räkna|siffror|matte/i, /matematik/i],
+  [/engelska|english|youtube|minecraft/i, /engelska/i],
+]
+
+/** Explore order: subjects matching the learner's interests, then the core subjects, then the rest. */
+export function rankExplore<T extends { name: string }>(
+  subjects: T[],
+  profile: Pick<Profile, 'interests' | 'themes'>,
+): T[] {
+  const likes = [...profile.interests, ...profile.themes]
+  const score = (s: T) => {
+    const liked = likes.some(
+      (w) =>
+        s.name.toLowerCase().includes(w.toLowerCase()) ||
+        INTEREST_SUBJECTS.some(([interest, subject]) => interest.test(w) && subject.test(s.name)),
+    )
+    return (liked ? 2 : 0) + (CORE.test(s.name) ? 1 : 0)
+  }
+  return subjects
+    .map((s, i) => ({ s, i, k: score(s) }))
+    .sort((a, b) => b.k - a.k || a.i - b.i)
+    .map((x) => x.s)
 }
 
 /** Learner-mode view: no adult notes or prompt drafts. */

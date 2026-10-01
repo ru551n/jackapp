@@ -17,6 +17,7 @@ import { getJob, jobsServices } from '../jobs'
 import { pdfPageCount, processDedupeKey, removeOriginals, sniff, toStudySet, uploadDir } from './service'
 
 const MB = 1024 * 1024
+const TOUCH_MS = 60_000
 const LearnerParams = z.object({ id: z.string().uuid() })
 const SetParams = z.object({ id: z.string().uuid(), setId: z.string().uuid() })
 const err = (status: number, code: string, message: string) => new HttpError(status, code, message)
@@ -82,6 +83,13 @@ export const studyRoutes: RouteModule = async (app, ctx) => {
         let title: string | undefined
         let total = 0
         let fileNo = 0
+        // Keep the row fresh while streaming so uploads.cleanup never takes a slow upload for dead.
+        let touched = Date.now()
+        const touch = async () => {
+          if (Date.now() - touched < TOUCH_MS) return
+          touched = Date.now()
+          await db.update(studySets).set({ updatedAt: new Date() }).where(eq(studySets.id, set!.id))
+        }
         const parts = req.parts({
           limits: { fileSize: lim.LIMIT_UPLOAD_FILE_MB * MB, files: lim.LIMIT_UPLOAD_PAGES, fields: 10 },
         })
@@ -99,6 +107,7 @@ export const studyRoutes: RouteModule = async (app, ctx) => {
               for await (const chunk of src) {
                 hash.update(chunk)
                 bytes += chunk.length
+                await touch()
                 if (total + bytes > lim.LIMIT_UPLOAD_TOTAL_MB * MB)
                   throw err(413, 'upload_too_large', `Materialet är större än ${lim.LIMIT_UPLOAD_TOTAL_MB} MB totalt.`)
                 yield chunk

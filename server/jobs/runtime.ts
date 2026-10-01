@@ -1,15 +1,16 @@
 import { hostname } from 'node:os'
-import { and, eq, inArray, ne, or, sql } from 'drizzle-orm'
+import { and, eq, inArray, sql } from 'drizzle-orm'
 import type { FastifyBaseLogger } from 'fastify'
 import pg from 'pg'
 import type { JobError, JobType } from '../../shared/contracts'
-import type { Db } from '../db/client'
+import { safeErr, type Db } from '../db/client'
 import { jobs, workerHeartbeats } from '../db/schema'
 import {
   claim,
   complete,
   DEFAULT_JOBS_ENV,
   enqueue,
+  backoffMs,
   failAttempt,
   JOBS_CHANNEL,
   progressWriter,
@@ -26,21 +27,35 @@ const LEARNER_MESSAGE = 'Det gick inte att skapa uppgiften just nu.'
 /** Thrown via `tools.fail(...)`; the only way a handler controls its JobError. */
 export class JobFailure extends Error {
   readonly jobError: JobError
-  constructor(code: string, adultMessage: string, retryable: boolean) {
+  /** Earliest retry (e.g. a provider's Retry-After); the requeue waits at least this long. */
+  readonly retryAfterMs?: number
+  constructor(code: string, adultMessage: string, retryable: boolean, retryAfterMs?: number) {
     super(adultMessage)
     this.jobError = { code, learnerMessage: LEARNER_MESSAGE, adultMessage, retryable }
+    this.retryAfterMs = retryAfterMs
   }
 }
 
+/** `retryAfterMs` of anything thrown (JobFailure, AiError, or their `.cause`), if any. */
+export function retryAfterOf(err: unknown): number {
+  for (
+    let c = err as { retryAfterMs?: unknown; cause?: unknown } | undefined, i = 0;
+    c && i < 5;
+    c = c.cause as typeof c, i++
+  )
+    if (typeof c.retryAfterMs === 'number' && c.retryAfterMs > 0) return c.retryAfterMs
+  return 0
+}
+
 /** Map anything thrown to a safe JobError: no stack traces or raw messages (they may carry secrets). */
-export function toJobError(err: unknown, signal?: AbortSignal): JobError {
+export function toJobError(err: unknown, signal?: AbortSignal, opts: { timeoutRetryable?: boolean } = {}): JobError {
   if (err instanceof JobFailure) return err.jobError
   if (signal?.aborted && signal.reason === 'timeout')
     return {
       code: 'timeout',
       learnerMessage: LEARNER_MESSAGE,
       adultMessage: 'Uppgiften tog för lång tid och avbröts.',
-      retryable: false,
+      retryable: opts.timeoutRetryable ?? false,
     }
   const name = err instanceof Error && /^[A-Za-z]{1,40}$/.test(err.name) ? err.name : 'okänt'
   return {
@@ -59,6 +74,11 @@ export interface JobTools {
   /** Coarse progress 0..1 plus a short Swedish step text. Throttled. */
   progress(p: number, step?: string): Promise<void>
   fail(code: string, adultMessage: string, retryable: boolean): never
+  /**
+   * Call right before a job's final writes, inside their transaction: throws if the job was
+   * aborted, cancelled, deleted or taken over. Locks the job row, so a concurrent cancel waits.
+   */
+  assertActive?(tx?: Db): Promise<void>
 }
 
 export interface JobHandler {
@@ -66,11 +86,15 @@ export interface JobHandler {
   /** Returns the id of the produced entity, if any. */
   run(job: JobRow, tools: JobTools): Promise<string | void>
   /**
-   * Completion hook: runs once after the job is marked completed (never after a failure, cancel or
-   * lost lock). Composed in server/worker/handlers.ts so domains don't import each other. Errors
-   * are logged and never change the job's state.
+   * Completion hook: part of the job, after `run` succeeds and before the job is marked completed,
+   * so it runs at least once (a crash re-runs the job). Must be idempotent. A throw fails the
+   * attempt as retryable. Composed in server/worker/handlers.ts so domains don't import each other.
    */
   onCompleted?(job: JobRow, resultId: string | undefined, tools: Pick<JobTools, 'db' | 'log'>): Promise<void>
+  /** Per-job timeout (default: the worker's `timeoutSeconds`). */
+  timeoutMs?(job: JobRow, db: Db): Promise<number>
+  /** Requeue on timeout (while attempts remain), e.g. when the handler keeps its progress. */
+  retryOnTimeout?: boolean
 }
 
 export function defineJobHandler(type: JobType, run: JobHandler['run']): JobHandler {
@@ -80,16 +104,59 @@ export function defineJobHandler(type: JobType, run: JobHandler['run']): JobHand
 /** Subscribes to a NOTIFY channel; returns an unsubscribe function. */
 export type Listener = (channel: string, onNotify: () => void) => Promise<() => Promise<void>>
 
-/** LISTEN on a dedicated pg connection (the pool can't hold one). */
-export function pgListener(databaseUrl: string, log?: FastifyBaseLogger): Listener {
+type ListenClient = Pick<pg.Client, 'connect' | 'query' | 'end' | 'on'>
+
+/**
+ * LISTEN on a dedicated pg connection (the pool can't hold one). A lost connection reconnects with
+ * exponential backoff (polling keeps jobs moving meanwhile); each (re)connect wakes the worker once.
+ */
+export function pgListener(
+  databaseUrl: string,
+  log?: Pick<FastifyBaseLogger, 'warn'>,
+  opts: { minMs?: number; maxMs?: number; client?: () => ListenClient } = {},
+): Listener {
+  const { minMs = 1000, maxMs = 30_000 } = opts
+  const newClient = opts.client ?? (() => new pg.Client({ connectionString: databaseUrl }))
   return async (channel, onNotify) => {
-    const client = new pg.Client({ connectionString: databaseUrl })
-    // ponytail: no reconnect; if this connection dies the polling fallback keeps jobs moving.
-    client.on('error', (e) => log?.warn({ err: { name: e.name } }, 'job listener connection lost; polling only'))
-    client.on('notification', (m) => m.channel === channel && onNotify())
-    await client.connect()
-    await client.query(`LISTEN ${channel}`)
-    return () => client.end()
+    let closed = false
+    let current: ListenClient | undefined
+    let timer: NodeJS.Timeout | undefined
+    let delay = minMs
+    const connect = async () => {
+      const c = newClient()
+      let dropped = false
+      const drop = (e?: Error) => {
+        if (dropped) return
+        dropped = true
+        c.end().catch(() => {})
+        if (closed) return
+        log?.warn(
+          { err: e ? safeErr(e) : { name: 'end' }, retryMs: delay },
+          'job listener connection lost; reconnecting',
+        )
+        timer = setTimeout(() => void connect().catch(() => {}), delay)
+        delay = Math.min(delay * 2, maxMs)
+      }
+      c.on('error', drop)
+      c.on('end', () => drop())
+      c.on('notification', (m: pg.Notification) => m.channel === channel && onNotify())
+      try {
+        await c.connect()
+        await c.query(`LISTEN ${channel}`)
+      } catch (e) {
+        drop(e as Error)
+        throw e
+      }
+      current = c
+      delay = minMs
+      onNotify() // catch up on anything sent while disconnected
+    }
+    await connect()
+    return async () => {
+      closed = true
+      clearTimeout(timer)
+      await current?.end()
+    }
   }
 }
 
@@ -117,6 +184,8 @@ export interface WorkerOptions {
   retentionDays?: number
   /** Only schedules whose type has a handler run. */
   schedules?: Schedule[]
+  /** Called after each successful DB heartbeat (the container healthcheck's liveness file). */
+  onHeartbeat?: () => void
 }
 
 export interface Worker {
@@ -142,7 +211,13 @@ export function createWorker(opts: WorkerOptions): Worker {
 
   const running = new Map<string, { ctrl: AbortController; done: Promise<void> }>()
   let stopping = false
-  let wake: () => void = () => {}
+  // A wake that arrives mid-claim is remembered, so the loop claims again instead of sleeping.
+  let pendingWake = false
+  let resolveWait: (() => void) | undefined
+  const wake = () => {
+    pendingWake = true
+    resolveWait?.()
+  }
   let loopDone: Promise<void> = Promise.resolve()
   let unlisten: (() => Promise<void>) | undefined
   const timers: NodeJS.Timeout[] = []
@@ -150,7 +225,9 @@ export function createWorker(opts: WorkerOptions): Worker {
   async function runJob(job: JobRow) {
     const ctrl = new AbortController()
     const jlog = log.child({ jobId: job.id, type: job.type })
-    const timer = setTimeout(() => ctrl.abort('timeout'), timeoutMs)
+    const handler = handlers.get(job.type)!
+    const ms = handler.timeoutMs ? await handler.timeoutMs(job, db).catch(() => timeoutMs) : timeoutMs
+    const timer = setTimeout(() => ctrl.abort('timeout'), ms)
     const aborted = new Promise<never>((_, reject) =>
       ctrl.signal.addEventListener('abort', () => reject(new Error('aborted')), { once: true }),
     )
@@ -163,27 +240,43 @@ export function createWorker(opts: WorkerOptions): Worker {
       fail: (code, msg, retryable) => {
         throw new JobFailure(code, msg, retryable)
       },
+      assertActive: async (tx = db) => {
+        ctrl.signal.throwIfAborted()
+        const [row] = await tx
+          .select({ id: jobs.id })
+          .from(jobs)
+          .where(and(eq(jobs.id, job.id), eq(jobs.state, 'processing'), eq(jobs.lockedBy, workerId)))
+          .for('update')
+        if (!row) {
+          ctrl.abort('cancelled')
+          ctrl.signal.throwIfAborted()
+        }
+      },
     }
     const done = (async () => {
       try {
-        const handler = handlers.get(job.type)!
         const resultId = (await Promise.race([handler.run(job, tools), aborted])) || undefined
+        if (handler.onCompleted) {
+          ctrl.signal.throwIfAborted()
+          await handler.onCompleted(job, resultId, tools).catch((e: unknown) => {
+            jlog.error({ err: safeErr(e) }, 'completion hook failed')
+            throw new JobFailure('completion_failed', 'Resultatet kunde inte sparas. Försöker igen.', true)
+          })
+        }
         if (!(await complete(db, job.id, workerId, resultId))) return
         jlog.info('job completed')
-        await handler
-          .onCompleted?.(job, resultId, tools)
-          .catch((e: Error) => jlog.error({ err: { name: e.name, message: e.message } }, 'completion hook failed'))
       } catch (err) {
         const reason = ctrl.signal.aborted ? ctrl.signal.reason : undefined
         if (reason === 'shutdown') await release(db, job.id, workerId)
         else if (reason !== 'cancelled') {
-          const e = toJobError(err, ctrl.signal)
-          const retry = await failAttempt(db, job, workerId, e)
-          jlog.warn({ code: e.code, retry, attempt: job.attempts }, 'job failed')
+          const e = toJobError(err, ctrl.signal, { timeoutRetryable: handler.retryOnTimeout })
+          const delay = Math.max(backoffMs(job.attempts), retryAfterOf(err))
+          const retry = await failAttempt(db, job, workerId, e, delay)
+          jlog.warn({ code: e.code, retry, attempt: job.attempts, delayMs: retry ? delay : undefined }, 'job failed')
         }
       }
     })()
-      .catch((e: Error) => jlog.error({ err: { name: e.name, message: e.message } }, 'job bookkeeping failed'))
+      .catch((e: unknown) => jlog.error({ err: safeErr(e) }, 'job bookkeeping failed'))
       .finally(() => {
         clearTimeout(timer)
         running.delete(job.id)
@@ -194,6 +287,7 @@ export function createWorker(opts: WorkerOptions): Worker {
 
   async function loop() {
     while (!stopping) {
+      pendingWake = false
       try {
         while (!stopping && running.size < concurrency) {
           const job = await claim(db, workerId, types)
@@ -201,12 +295,14 @@ export function createWorker(opts: WorkerOptions): Worker {
           await runJob(job)
         }
       } catch (e) {
-        log.error({ err: { name: (e as Error).name, message: (e as Error).message } }, 'job claim failed')
+        log.error({ err: safeErr(e) }, 'job claim failed')
       }
+      if (pendingWake || stopping) continue
       await new Promise<void>((resolve) => {
         const t = setTimeout(resolve, pollMs)
-        wake = () => (clearTimeout(t), resolve())
+        resolveWait = () => (clearTimeout(t), resolve())
       })
+      resolveWait = undefined
     }
   }
 
@@ -219,17 +315,17 @@ export function createWorker(opts: WorkerOptions): Worker {
         set: { beatAt: sql`now()`, info: { concurrency, active: running.size, types } },
       })
     const ids = [...running.keys()]
-    if (!ids.length) return
-    await db
-      .update(jobs)
-      .set({ heartbeatAt: sql`now()` })
-      .where(and(inArray(jobs.id, ids), eq(jobs.lockedBy, workerId), eq(jobs.state, 'processing')))
-    // Abort jobs that were cancelled or taken over meanwhile.
-    const gone = await db
-      .select({ id: jobs.id })
-      .from(jobs)
-      .where(and(inArray(jobs.id, ids), or(ne(jobs.state, 'processing'), ne(jobs.lockedBy, workerId))))
-    for (const { id } of gone) running.get(id)?.ctrl.abort('cancelled')
+    if (ids.length) {
+      const owned = await db
+        .update(jobs)
+        .set({ heartbeatAt: sql`now()` })
+        .where(and(inArray(jobs.id, ids), eq(jobs.lockedBy, workerId), eq(jobs.state, 'processing')))
+        .returning({ id: jobs.id })
+      // Abort jobs that were cancelled, deleted (e.g. learner cascade) or taken over meanwhile.
+      const still = new Set(owned.map((r) => r.id))
+      for (const id of ids) if (!still.has(id)) running.get(id)?.ctrl.abort('cancelled')
+    }
+    opts.onHeartbeat?.()
   }
 
   const lastScheduled = new Map<JobType, number>()
@@ -248,8 +344,7 @@ export function createWorker(opts: WorkerOptions): Worker {
   }
 
   const every = (ms: number, fn: () => Promise<void>, name: string) => {
-    const tick = () =>
-      fn().catch((e: Error) => log.error({ err: { name: e.name, message: e.message } }, `${name} failed`))
+    const tick = () => fn().catch((e: unknown) => log.error({ err: safeErr(e) }, `${name} failed`))
     timers.push(setInterval(tick, ms))
     return tick()
   }

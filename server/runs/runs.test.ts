@@ -19,6 +19,12 @@ vi.mock('../adaptive/evidence', async (orig) => {
   }
 })
 
+const adaptive = vi.hoisted(() => ({ calls: 0 }))
+vi.mock('../adaptive/paths', async (orig) => {
+  const m = await orig<typeof import('../adaptive/paths')>()
+  return { ...m, onEvidence: (...a: Parameters<typeof m.onEvidence>) => (adaptive.calls++, m.onEvidence(...a)) }
+})
+
 let close: (() => Promise<void>) | undefined
 afterEach(async () => {
   fail.evidence = false
@@ -134,6 +140,27 @@ async function setup(
 }
 
 describe('immediate feedback', () => {
+  it('runs the adaptive update only after answers that wrote evidence', async () => {
+    const t = await setup()
+    const run = await t.start(t.add(artifact(t.learner.id)))
+    adaptive.calls = 0
+    await t.answer(run.id, 'q1', 'a') // wrong, retry allowed: no evidence yet
+    expect(await t.evidence()).toHaveLength(0)
+    expect(adaptive.calls).toBe(0)
+    await t.answer(run.id, 'q1', 'b') // settled: evidence
+    expect((await t.evidence()).length).toBeGreaterThan(0)
+    expect(adaptive.calls).toBe(1)
+  })
+
+  it('counts only hints the child asked for as hints used', async () => {
+    const t = await setup()
+    const run = await t.start(t.add(artifact(t.learner.id)))
+    await t.call('POST', `/runs/${run.id}/hint`, { itemId: 'q1' }) // asked
+    await t.answer(run.id, 'q1', 'a') // wrong: the next hint comes with the retry message
+    await t.answer(run.id, 'q1', 'b')
+    expect(await t.evidence()).toMatchObject([{ itemId: 'q1', misses: 1, hintsUsed: 1 }])
+  })
+
   it('retries calmly with progressive hints, reveals after 3 tries (early band), records evidence once', async () => {
     const t = await setup()
     const a = t.add(artifact(t.learner.id))
@@ -155,7 +182,8 @@ describe('immediate feedback', () => {
       'item_done',
     )
     expect(await t.evidence()).toMatchObject([
-      { skill: 'sv.letters', correct: false, misses: 3, hintsUsed: 2, difficulty: 2, itemId: 'q1', artifactId: a.id },
+      // The two hints came with "Prova igen", not on request: not counted as using hints.
+      { skill: 'sv.letters', correct: false, misses: 3, hintsUsed: 0, difficulty: 2, itemId: 'q1', artifactId: a.id },
     ])
 
     const ok = await t.answer(run.id, 'q2', '2,5 kg')
@@ -176,9 +204,16 @@ describe('immediate feedback', () => {
     const summary = (await t.call('POST', `/runs/${run.id}/finish`)).json()
     expect(summary).toMatchObject({ answered: 2, total: 4, correct: 1, message: 'Du klarade 1 av 4. Bra kämpat!' })
     expect(summary.review.map((r: { itemId: string }) => r.itemId)).toEqual(['q1', 'q3', 'q4'])
-    expect(summary.skills).toContainEqual({ skill: 'ma.units', correct: 1, total: 1, note: 'Det här sitter bra.' })
+    expect(summary.skills).toContainEqual({
+      skill: 'ma.units',
+      label: 'enheter',
+      correct: 1,
+      total: 1,
+      note: 'Det här sitter bra.',
+    })
     expect(summary.skills).toContainEqual({
       skill: 'sv.letters',
+      label: 'bokstäver',
       correct: 0,
       total: 1,
       note: 'Värt att öva lite mer på.',

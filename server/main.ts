@@ -19,7 +19,7 @@ async function main() {
     fail(boot, err)
   }
   const { core } = cfg
-  const handle = createDb(core.DATABASE_URL)
+  const handle = createDb(core.DATABASE_URL, 10, boot)
   let ai
   try {
     ai = createAi(process.env, { db: handle.db, log: boot })

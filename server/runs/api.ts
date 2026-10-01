@@ -65,7 +65,14 @@ export const RunSummary = z.object({
   /** Non-punitive Swedish line, e.g. "Du klarade 7 av 10. Bra kämpat!" */
   message: z.string(),
   skills: z.array(
-    z.object({ skill: z.string(), correct: z.number().int(), total: z.number().int(), note: z.string() }),
+    z.object({
+      skill: z.string(),
+      /** Readable Swedish name of the skill (adaptive skillLabel); absent in older summaries. */
+      label: z.string().optional(),
+      correct: z.number().int(),
+      total: z.number().int(),
+      note: z.string(),
+    }),
   ),
   /** Items worth another look (not solved first time, revealed or skipped). */
   review: z.array(

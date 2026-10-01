@@ -4,7 +4,10 @@ import { asAdult, createTestApp } from '../test/helpers'
 import { claim, complete, enqueue, failAttempt, progressWriter } from './queue'
 
 let close: (() => Promise<void>) | undefined
-afterEach(async () => close?.())
+afterEach(async () => {
+  await close?.()
+  close = undefined
+})
 
 const parseSse = (body: string) =>
   body
@@ -60,5 +63,33 @@ describe('job routes', () => {
     expect(events[0]!.state).toBe('queued')
     expect(events.some((e) => e.state === 'processing' && e.progress === 0.5 && e.step === 'Halvvägs')).toBe(true)
     expect(events.at(-1)).toMatchObject({ state: 'completed', resultId: 'res' })
+  })
+
+  it('shows the adult failure message to adults only', async () => {
+    const t = await createTestApp()
+    close = t.close
+    const { id } = await enqueue(t.db, { type: 'curriculum.sync', payload: {} })
+    const job = (await claim(t.db, 'w', ['curriculum.sync']))!
+    const error = { code: 'x', learnerMessage: 'Det gick inte.', adultMessage: 'Intern detalj', retryable: false }
+    await failAttempt(t.db, job, 'w', error)
+    const kid = await t.app.inject(`/api/v1/jobs/${id}`)
+    expect(kid.json().error).toEqual({ ...error, adultMessage: 'Det gick inte.' })
+    expect((await t.app.inject(`/api/v1/jobs/${id}/events`)).body).not.toContain('Intern detalj')
+    expect((await t.app.inject({ url: `/api/v1/jobs/${id}`, headers: asAdult })).json().error).toEqual(error)
+  })
+
+  it('app.close() ends open SSE streams instead of hanging', async () => {
+    const t = await createTestApp()
+    const { id } = await enqueue(t.db, { type: 'curriculum.sync', payload: {} })
+    await t.app.listen({ port: 0, host: '127.0.0.1' })
+    const { port } = t.app.server.address() as { port: number }
+    const res = await fetch(`http://127.0.0.1:${port}/api/v1/jobs/${id}/events`)
+    const reader = res.body!.getReader()
+    await reader.read() // first status event
+    const closed = await Promise.race([
+      t.close().then(() => true),
+      new Promise((r) => setTimeout(() => r(false), 3000)),
+    ])
+    expect(closed).toBe(true)
   })
 })

@@ -1,11 +1,11 @@
 import { randomUUID } from 'node:crypto'
-import { and, eq, inArray } from 'drizzle-orm'
+import { and, desc, eq, inArray } from 'drizzle-orm'
 import { z } from 'zod'
 import { SubjectCode, type LearningPath } from '../../shared/contracts'
 import { AiError, type AiServices, type TextGeneration } from '../ai'
 import { suggestRefs } from '../curriculum/service'
 import type { Db } from '../db/client'
-import { jobs, learningPaths, skillReviews, type StoredMilestone } from '../db/schema'
+import { artifacts, learningPaths, skillReviews, type StoredMilestone } from '../db/schema'
 import { requireLearner } from '../gate/guards'
 import { promptProfile } from '../learners/profile'
 import { defineJobHandler, enqueue, JobFailure, registerJobPayload } from '../jobs'
@@ -92,7 +92,7 @@ const SYSTEM = [
 ].join('\n')
 
 function toJobFailure(e: unknown): never {
-  if (e instanceof AiError) throw new JobFailure(e.code, e.message, e.retryable)
+  if (e instanceof AiError) throw new JobFailure(e.code, e.message, e.retryable, e.retryAfterMs)
   throw e
 }
 
@@ -298,17 +298,21 @@ export async function onEvidence(db: Db, learnerId: string, now = new Date()): P
 
 // ---------- read model ----------
 
-/** Contract view: artifact ids come from completed generation jobs, reviews from skill_reviews. */
+/**
+ * Contract view: artifact ids via artifacts.job_id (survives the 14-day job prune), reviews from
+ * skill_reviews.
+ */
 export async function toLearningPaths(db: Db, rows: PathRow[]): Promise<LearningPath[]> {
   if (!rows.length) return []
   const jobIds = rows.flatMap((r) => r.milestones.flatMap((m) => (m.jobId ? [m.jobId] : [])))
-  const done = jobIds.length
+  const made = jobIds.length
     ? await db
-        .select({ id: jobs.id, resultId: jobs.resultId })
-        .from(jobs)
-        .where(and(inArray(jobs.id, jobIds), eq(jobs.state, 'completed')))
+        .select({ id: artifacts.id, jobId: artifacts.jobId })
+        .from(artifacts)
+        .where(inArray(artifacts.jobId, jobIds))
+        .orderBy(desc(artifacts.createdAt))
     : []
-  const artifact = new Map(done.map((j) => [j.id, j.resultId]))
+  const artifact = new Map(made.map((a) => [a.jobId, a.id])) // oldest wins if a job made several
   const reviews = await db.select().from(skillReviews).where(eq(skillReviews.learnerId, rows[0]!.learnerId))
   const uuid = z.string().uuid()
   return rows.map((r) => {

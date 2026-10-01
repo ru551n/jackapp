@@ -16,7 +16,7 @@ async function main() {
     fail(log, err)
   }
   log.level = config.core.LOG_LEVEL
-  const handle = createDb(config.core.DATABASE_URL, config.limits.WORKER_CONCURRENCY + 2)
+  const handle = createDb(config.core.DATABASE_URL, config.limits.WORKER_CONCURRENCY + 2, log)
   log.info(startupDiagnostics(config, { reachable: await dbReachable(handle.db) }), 'startup diagnostics')
 
   let ai
@@ -33,7 +33,7 @@ async function main() {
     log,
     handlers,
     // The job runtime runs until SIGTERM aborts `signal`, then drains in-flight jobs.
-    run: async ({ signal }) => {
+    run: async ({ signal, beat }) => {
       const runtime = createWorker({
         db: handle.db,
         log,
@@ -41,6 +41,7 @@ async function main() {
         concurrency: config.limits.WORKER_CONCURRENCY,
         timeoutSeconds: config.limits.LIMIT_JOB_TIMEOUT_SECONDS,
         listen: pgListener(config.core.DATABASE_URL, log),
+        onHeartbeat: beat, // the healthcheck file proves DB heartbeats, not just a live process
       })
       await runtime.start()
       await new Promise<void>((done) => signal.addEventListener('abort', () => done(), { once: true }))

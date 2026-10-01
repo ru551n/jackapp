@@ -1,4 +1,5 @@
-// Compose healthcheck for the worker: exit 0 when this container's heartbeat is fresh.
+// Compose healthcheck for the worker: exit 0 when this container wrote a DB heartbeat recently
+// (the runtime touches the file only after a successful heartbeat write; server/worker/start.ts).
 import { statSync } from 'node:fs'
 import { HEARTBEAT_MS, heartbeatPath } from './start'
 

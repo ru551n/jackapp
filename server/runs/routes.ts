@@ -1,8 +1,10 @@
 import { and, desc, eq, type SQL } from 'drizzle-orm'
+import type { FastifyRequest } from 'fastify'
 import { z } from 'zod'
 import { ageBand, type AgeBand, type Artifact, type Item, type SkillEvidence } from '../../shared/contracts'
 import { recordEvidence } from '../adaptive/evidence'
 import { onEvidence } from '../adaptive/paths'
+import { skillLabel } from '../adaptive/skills'
 import type { AppContext, RouteModule } from '../app/context'
 import type { Db } from '../db/client'
 import { runAnswers, runs } from '../db/schema'
@@ -76,6 +78,10 @@ function settled(item: Item, row: Pick<AnswerRow, 'attempt' | 'correct' | 'score
   } satisfies AnswerFeedback
 }
 
+/** Hints the child asked for (/hint). Hints attached to a retry message were not chosen, so they don't count. */
+const askedHints = (run: Run, itemId: string, rows: AnswerRow[]) =>
+  Math.max(0, (run.hintsShown[itemId] ?? 0) - rows.filter((r) => (r.feedback as AnswerFeedback | null)?.hint).length)
+
 function evidence(
   run: Run,
   art: Artifact,
@@ -110,7 +116,7 @@ function summarize(run: Run, items: Item[], rows: AnswerRow[]): RunSummary {
     const ok = its.filter(solved).length
     const note =
       ok === its.length ? 'Det här sitter bra.' : ok * 2 >= its.length ? 'På god väg.' : 'Värt att öva lite mer på.'
-    return { skill, correct: ok, total: its.length, note }
+    return { skill, label: skillLabel(skill), correct: ok, total: its.length, note }
   })
   const pending = (i: Item) => last(i)?.correct === null
   const firstTry = (i: Item) => solved(i) && (run.feedback === 'end' || last(i)!.attempt === 1)
@@ -202,9 +208,9 @@ export const runRoutes: RouteModule = (app, ctx: AppContext) => {
   }
 
   // After evidence was written: let adaptive paths/reviews react (best effort, never fails the answer).
-  const EVIDENCE_ROUTES = new Set(['/learners/:id/runs/:runId/answers', '/learners/:id/runs/:runId/finish'])
+  const wroteEvidence = new WeakSet<FastifyRequest>()
   app.addHook('onResponse', async (req, reply) => {
-    if (reply.statusCode >= 400 || !EVIDENCE_ROUTES.has(req.routeOptions.url?.replace(/^\/api\/v1/, '') ?? '')) return
+    if (reply.statusCode >= 400 || !wroteEvidence.has(req)) return
     const learnerId = (req.params as { id?: string }).id
     if (learnerId)
       await onEvidence(db, learnerId).catch((e: Error) => req.log.warn({ err: e.name }, 'adaptive update failed'))
@@ -349,7 +355,9 @@ export const runRoutes: RouteModule = (app, ctx: AppContext) => {
         await tx.update(runs).set({ hintsShown: hints }).where(eq(runs.id, runId))
       if (final) {
         const misses = run.feedback === 'end' ? (check!.correct ? 0 : 1) : check!.correct ? attempt - 1 : attempt
-        await recordEvidence(tx as unknown as Db, evidence(run, art, item, check!.correct, misses, hintsUsed))
+        const asked = askedHints(run, item.id, rows)
+        await recordEvidence(tx as unknown as Db, evidence(run, art, item, check!.correct, misses, asked))
+        wroteEvidence.add(req)
       }
       // A post-finish self-assessment updates the stored summary.
       if (run.state !== 'active')
@@ -400,15 +408,17 @@ export const runRoutes: RouteModule = (app, ctx: AppContext) => {
         const rows = g.get(item.id)
         const last = rows?.at(-1)
         if (!last || last.final || last.correct === null) continue
+        const asked = askedHints(run, item.id, rows!) // before the row's feedback is replaced below
         const end = run.feedback === 'end'
         const msg = end ? (last.correct ? MSG.correct : MSG.notFinished) : MSG.notFinished
         last.final = true
         last.feedback = { ...settled(item, last, msg), ai: (last.feedback as AnswerFeedback).ai }
         await tx.update(runAnswers).set({ final: true, feedback: last.feedback }).where(eq(runAnswers.id, last.id))
         const misses = end ? (last.correct ? 0 : 1) : last.attempt
-        ev.push(...evidence(run, art, item, last.correct, misses, run.hintsShown[item.id] ?? 0))
+        ev.push(...evidence(run, art, item, last.correct, misses, asked))
       }
       await recordEvidence(tx as unknown as Db, ev)
+      if (ev.length) wroteEvidence.add(req)
       const summary = summarize(run, items, [...g.values()].flat())
       await tx.update(runs).set({ state: 'finished', finishedAt: new Date(), summary }).where(eq(runs.id, runId))
       return summary

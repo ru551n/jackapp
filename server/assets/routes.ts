@@ -13,6 +13,7 @@ export const assetRoutes: RouteModule = (app, ctx) => {
       .header('content-type', found.row.mimeType)
       .header('cache-control', 'public, max-age=31536000, immutable')
       .header('x-content-type-options', 'nosniff')
+      .header('content-security-policy', "default-src 'none'; sandbox")
       .send(found.data)
   })
 }
