@@ -6,7 +6,7 @@ test.setTimeout(240_000)
 
 test('in-browser Piper speaks sv and en with no external requests', async ({ page }) => {
   const external: string[] = []
-  const origin = new URL('http://localhost:4173').origin
+  const origin = new URL(test.info().project.use.baseURL!).origin
   page.on('request', (r) => {
     if (!r.url().startsWith(origin) && !/^(data|blob):/.test(r.url())) external.push(r.url())
   })

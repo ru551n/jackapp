@@ -1,3 +1,4 @@
+import { RunPlayer } from '../runs'
 import { useState } from 'react'
 import { useParams } from 'react-router'
 import { usePaths } from '../../app/paths'
@@ -54,14 +55,17 @@ export function MaterialPage() {
   )
 }
 
-/**
- * Slot for `RunPlayer` from src/features/runs (not on this branch yet). Once merged, render:
- * <RunPlayer learnerId={learnerId} artifactId={artifactId} band={band} onFinish={onFinish} />
- */
+/** Runs the material with the shared player in the learner's band and presentation. */
 function RunSlot(props: { learnerId: string; artifactId: string; band: string; onFinish: () => void }) {
+  const { learner } = useLearner()
+  const variant = props.band === 'upper' ? 'upper' : props.band === 'middle' ? 'middle' : 'early'
   return (
-    <section className={styles.slot} data-slot="run-player" data-artifact={props.artifactId}>
-      <p>Uppdraget visas här.</p>
-    </section>
+    <RunPlayer
+      learnerId={props.learnerId}
+      artifactId={props.artifactId}
+      variant={variant}
+      presentation={learner.presentation}
+      onFinished={() => props.onFinish()}
+    />
   )
 }
