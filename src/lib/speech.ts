@@ -1,12 +1,17 @@
 import { useSyncExternalStore } from 'react'
 import type { SpeechLang } from '../core/types'
+import { isEngineSupported, synthesize as piperSynthesize } from './piper'
 import { speechKey } from './spoken'
 
-// Speech playback. Prefers pre-generated clips (public/audio, built with Piper: docs/audio.md) so
-// every device sounds the same; falls back to the browser's own voice. Never autoplays.
+// Speech playback, in order: bundled clip (public/audio, built with Piper: docs/audio.md) -> in-browser
+// Piper clip (cached) -> the device voice. Same voice everywhere. Never autoplays.
 
 const LOCALES: Record<SpeechLang, string> = { sv: 'sv-SE', en: 'en-GB' }
 const AUDIO_DIR = 'audio/'
+// Past this wait for the engine (first model load) the device voice speaks instead.
+const ENGINE_WAIT_MS = 4000
+// 1 sample of silence: played inside the tap so iOS lets us set the real src later.
+const SILENCE = 'data:audio/wav;base64,UklGRiYAAABXQVZFZm10IBAAAAABAAEAIlYAAESsAAACABAAZGF0YQIAAAAA'
 
 let clips = new Set<string>()
 let clipsLoaded = false
@@ -36,8 +41,9 @@ function voiceFor(lang: SpeechLang): SpeechSynthesisVoice | undefined {
   return exact ?? voices.find((v) => v.lang.toLowerCase().startsWith(lang))
 }
 
-/** True when this text can be spoken: a bundled clip, or a browser voice as fallback. */
-export const canSpeak = (text: string, lang: SpeechLang = 'sv') => hasClip(text, lang) || synthAvailable()
+/** True when this text can be spoken: a bundled clip, the Piper engine, or a browser voice. */
+export const canSpeak = (text: string, lang: SpeechLang = 'sv') =>
+  hasClip(text, lang) || isEngineSupported() || synthAvailable()
 
 /** Re-render when the clip manifest arrives. */
 export const useSpeechReady = () =>
@@ -50,9 +56,10 @@ export const useSpeechReady = () =>
   )
 
 /** Parent info: is natural Swedish speech available (bundled clips or an installed voice)? */
-export const hasSwedishSpeech = () => clips.size > 0 || (synthAvailable() && voiceFor('sv') !== undefined)
+export const hasSwedishSpeech = () =>
+  clips.size > 0 || isEngineSupported() || (synthAvailable() && voiceFor('sv') !== undefined)
 
-function synthesize(text: string, lang: SpeechLang) {
+function deviceSpeak(text: string, lang: SpeechLang) {
   if (!synthAvailable()) return
   const synth = window.speechSynthesis
   const u = new SpeechSynthesisUtterance(text)
@@ -63,18 +70,53 @@ function synthesize(text: string, lang: SpeechLang) {
   synth.speak(u)
 }
 
+let seq = 0
+
+/** Piper clip played on a gesture-created Audio element; any failure or a slow load -> device voice. */
+function playEngine(text: string, lang: SpeechLang) {
+  if (!isEngineSupported()) return deviceSpeak(text, lang)
+  const mine = seq
+  const audio = new Audio(SILENCE)
+  current = audio
+  audio.play().catch(() => {}) // unlocks the element for the later src swap (iOS)
+  const stale = () => mine !== seq
+  const timer = setTimeout(() => {
+    if (!stale()) deviceSpeak(text, lang)
+    seq++ // the late clip is cached for next time but must not play now
+  }, ENGINE_WAIT_MS)
+  piperSynthesize(text, lang).then(
+    (blob) => {
+      clearTimeout(timer)
+      if (stale()) return
+      const url = URL.createObjectURL(blob)
+      audio.onended = () => URL.revokeObjectURL(url)
+      audio.src = url
+      audio.play().catch(() => !stale() && deviceSpeak(text, lang))
+    },
+    () => {
+      clearTimeout(timer)
+      if (!stale()) deviceSpeak(text, lang)
+    },
+  )
+}
+
 export function speak(text: string, lang: SpeechLang = 'sv') {
   stopSpeaking()
-  if (!hasClip(text, lang)) return synthesize(text, lang)
+  if (!hasClip(text, lang)) return playEngine(text, lang)
   const audio = new Audio(`${AUDIO_DIR}${speechKey({ text, lang })}.mp3`)
   current = audio
   audio.play().catch(() => {
-    if (current === audio) synthesize(text, lang)
+    if (current === audio) deviceSpeak(text, lang)
   })
 }
 
 export function stopSpeaking() {
+  seq++
   current?.pause()
   current = null
   if (synthAvailable()) window.speechSynthesis.cancel()
+}
+
+if (typeof window !== 'undefined' && (import.meta.env.DEV || location.search.includes('speechtest'))) {
+  ;(window as unknown as { __jackappSpeech: unknown }).__jackappSpeech = { synthesize: piperSynthesize }
 }
