@@ -9,7 +9,7 @@ import { Frame } from '../Frame'
 import { OnTheWay } from '../OnTheWay'
 import { MaterialPage } from '../MaterialPage'
 import { Creator, FreeRequest, RequestPage } from '../requests'
-import { Library, Panel, PathsProgress, StudySets, YearSubjects } from '../sections'
+import { Library, Panel, StudySets, YearSubjects } from '../sections'
 import styles from '../learner.module.css'
 
 // Gymnasium: a plain, efficient study dashboard. No collection, no mascots.
@@ -45,7 +45,6 @@ export function UpperArea() {
 function UpperHome() {
   const { learner } = useLearner()
   const subjects = useSubjects()
-  const [refresh, setRefresh] = useState(0)
   const allowed = learner.learnerRequestsAllowed
   return (
     <Frame title="Översikt" home={false}>
@@ -72,10 +71,6 @@ function UpperHome() {
         )}
         <Panel title="Studiematerial">
           <StudySets action="Övningsprov" />
-        </Panel>
-        <Panel title="Studieplaner">
-          <PathsProgress refresh={refresh} />
-          {allowed && <PlanForm onDone={() => setRefresh((n) => n + 1)} />}
         </Panel>
         <Panel title="Material och resultat" wide>
           <Library subjects={subjects} />
@@ -206,68 +201,6 @@ export function TestForm() {
           </fieldset>
           <div className={styles.row}>
             <Button type="submit">Skapa</Button>
-          </div>
-        </form>
-      )}
-    </Creator>
-  )
-}
-
-/** A learning path toward a goal and an optional test date. */
-function PlanForm({ onDone }: { onDone: () => void }) {
-  const { learner } = useLearner()
-  const sets = useReadySets()
-  const [open, setOpen] = useState(false)
-  if (!open)
-    return (
-      <Button variant="secondary" onClick={() => setOpen(true)}>
-        Ny studieplan
-      </Button>
-    )
-  return (
-    <Creator onComplete={onDone}>
-      {(submit) => (
-        <form
-          className={styles.form}
-          onSubmit={(e) => {
-            e.preventDefault()
-            const f = new FormData(e.currentTarget)
-            const goal = String(f.get('goal') ?? '').trim()
-            if (!goal) return
-            const body = {
-              goal,
-              targetDate: (f.get('date') as string) || undefined,
-              studySetId: (f.get('set') as string) || undefined,
-            }
-            submit(() => learnerApi.plan(learner.id, body), 'path')
-          }}
-        >
-          <label>
-            Mål
-            <input name="goal" required className={styles.input} maxLength={300} placeholder="Klara kemiprovet" />
-          </label>
-          <div className={styles.fields}>
-            <label>
-              Provdatum
-              <input name="date" type="date" className={styles.input} />
-            </label>
-            <label>
-              Material
-              <select name="set" className={styles.input}>
-                <option value="">Inget uppladdat</option>
-                {sets.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.title || 'Uppladdat material'}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
-          <div className={styles.row}>
-            <Button type="submit">Skapa plan</Button>
-            <Button variant="quiet" onClick={() => setOpen(false)}>
-              Avbryt
-            </Button>
           </div>
         </form>
       )}

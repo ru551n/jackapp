@@ -1,6 +1,6 @@
 import { useState } from 'react'
-import { Link, useNavigate } from 'react-router'
-import type { LearningPath, StudySet } from '../../../shared/contracts'
+import { Link } from 'react-router'
+import type { StudySet } from '../../../shared/contracts'
 import { usePaths } from '../../app/paths'
 import { Button } from '../../ui/Button'
 import { learnerApi, TYPE_LABEL, type ArtifactSummary, type Subject } from './api'
@@ -19,37 +19,6 @@ export function Panel({ title, children, wide }: { title: string; children: Reac
       </h2>
       {children}
     </section>
-  )
-}
-
-/** "Idag": child-friendly next steps; a step can become a request. */
-export function Today() {
-  const { learner } = useLearner()
-  const navigate = useNavigate()
-  const paths = usePaths()
-  const steps = useFetch(() => learnerApi.next(learner.id), `next:${learner.id}`)
-  return (
-    <Panel title="Idag">
-      {!steps?.length ? (
-        <p className={styles.muted}>
-          {steps === undefined ? 'Ett ögonblick …' : 'Inga förslag just nu. Välj fritt nedanför.'}
-        </p>
-      ) : (
-        <ul className={styles.list}>
-          {steps.map((s, i) => (
-            <li key={i} className={styles.step}>
-              <strong>{s.title}</strong>
-              <span data-secondary>{s.text}</span>
-              {learner.learnerRequestsAllowed && (
-                <Button variant="secondary" onClick={() => navigate(paths.request, { state: { text: s.title } })}>
-                  Öva på det här
-                </Button>
-              )}
-            </li>
-          ))}
-        </ul>
-      )}
-    </Panel>
   )
 }
 
@@ -111,40 +80,6 @@ export function YearSubjects({ subjects }: { subjects?: Subject[] | null }) {
         ))}
       </ul>
     </details>
-  )
-}
-
-/** Qualitative progress along learning paths: where you are, never scores. */
-export function PathsProgress({ refresh = 0 }: { refresh?: number }) {
-  const { learner } = useLearner()
-  const paths = usePaths()
-  const list = useFetch<LearningPath[]>(() => learnerApi.paths(learner.id), `paths:${learner.id}:${refresh}`)
-  const active = list?.filter((p) => p.status !== 'completed') ?? []
-  const done = list?.filter((p) => p.status === 'completed') ?? []
-  if (list === undefined) return null
-  if (!list?.length) return <p className={styles.muted}>När du har en plan syns den här.</p>
-  return (
-    <ul className={styles.list}>
-      {active.map((p) => {
-        const i = p.milestones.findIndex((m) => m.status === 'active')
-        const m = p.milestones[i]
-        return (
-          <li key={p.id} className={styles.step}>
-            <strong>{p.goal}</strong>
-            <span>
-              {m ? `Steg ${i + 1} av ${p.milestones.length}: ${m.title}` : 'Pausad'}
-              {p.targetDate && ` · mål ${p.targetDate}`}
-            </span>
-            {m?.artifactIds.map((id) => (
-              <Link key={id} to={paths.material(id)}>
-                Öppna materialet
-              </Link>
-            ))}
-          </li>
-        )
-      })}
-      {done.length > 0 && <li className={styles.muted}>Klara planer: {done.map((p) => p.goal).join(', ')}</li>}
-    </ul>
   )
 }
 

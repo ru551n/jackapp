@@ -18,7 +18,16 @@ import { Choice, Field, Toggle } from './fields'
 import { JobProgress } from './JobProgress'
 import { StudyUpload } from '../study'
 import { useLearner } from './context'
-import { ARTIFACT_TYPE, DIFFICULTY, ITEM_KIND, SOURCE_MODE, SUPPORT_CHOICES, SUPPORT_NOTE } from './labels'
+import {
+  ARTIFACT_TYPE,
+  DIFFICULTY,
+  ITEM_KIND,
+  NO_IMAGE_SOURCE,
+  noImageSource,
+  SOURCE_MODE,
+  SUPPORT_CHOICES,
+  SUPPORT_NOTE,
+} from './labels'
 import s from './adult.module.css'
 
 type Req = Partial<Omit<GenerationRequest, 'learnerId'>>
@@ -304,12 +313,8 @@ export function Generate() {
           />
           <Toggle
             label="Bilder"
-            help={
-              features && !features.imageGeneration && !features.externalAssets
-                ? 'Inte tillgängligt just nu.'
-                : 'Bara bilder med känd licens används.'
-            }
-            disabled={features && !features.imageGeneration && !features.externalAssets}
+            help={noImageSource(features) ? NO_IMAGE_SOURCE : 'Bara bilder med känd licens används.'}
+            disabled={noImageSource(features)}
             checked={req.includeImages ?? false}
             onChange={(v) => set('includeImages', v)}
           />

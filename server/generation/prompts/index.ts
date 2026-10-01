@@ -12,7 +12,7 @@ import { stem, tokens } from '../../validation/text'
 
 // Versioned prompt building blocks (docs/platform/generation.md#prompt-architecture).
 // Bump PROMPT_VERSION whenever wording changes; it is stored on every artifact version.
-export const PROMPT_VERSION = 'generation/v4'
+export const PROMPT_VERSION = 'generation/v5'
 
 export interface OfferedRef {
   /** Local id the model may cite, e.g. "C1". */
@@ -225,6 +225,7 @@ export function sourceBlock(mode: SourceMode, m: ProcessedStudyMaterial | undefi
     strict: [
       'Källläge STRIKT: varje uppgift och varje fakta får BARA komma från studiematerialet nedan.',
       'Varje uppgift MÅSTE ange sourceSegmentIds med minst ett segment-id som uppgiften bygger på.',
+      'Fritt svar: varje punkt i rubric ska stå i de segment som anges i sourceSegmentIds (ange alla segment som punkterna bygger på).',
       'Hitta aldrig på fakta som inte står i materialet. Läroplanen används inte som källa.',
       'Ett tema eller elevens intressen får bara färga ordvalet (t.ex. namn och miljö i frågan), aldrig tillföra fakta. Rätt svar ska stå i materialet.',
     ],
@@ -281,10 +282,21 @@ export function settingsBlock(p: PromptInput): string {
     p.knownSkills?.length
       ? `Eleven har redan dessa färdighetstaggar; återanvänd dem när de passar i stället för att hitta på nya: ${p.knownSkills.slice(0, 40).join(', ')}.`
       : '',
-    p.includeImages ? 'Föreslå illustrationer (fältet illustration) där bilder hjälper.' : '',
+    p.includeImages || p.support.visualSupport === 'high' ? imageBlock(p.band) : '',
   ]
     .filter(Boolean)
     .join('\n')
+}
+
+/** Pictures: an illustration plus a search term for licensed photos when no image model is configured. */
+function imageBlock(band: AgeBand): string {
+  return [
+    'Föreslå illustrationer (fältet illustration) där bilder hjälper förståelsen, inte som dekoration.',
+    'Visar bilden en konkret sak (t.ex. ett äpple, ett tåg, en katt), sätt imageQuery till 1–3 sökord på engelska (t.ex. "red apple"); annars null.',
+    band === 'early'
+      ? 'Är alla svarsalternativ konkreta saker som går att avbilda (t.ex. "tåg", "äpple"), sätt choiceImageQueries till ett engelskt sökord per alternativ i samma ordning; annars null.'
+      : 'choiceImageQueries: null.',
+  ].join('\n')
 }
 
 /** The full system prompt: one per artifact, shared by all its calls. Never contains the learner's name. */
@@ -337,6 +349,7 @@ export function itemsTask(opts: {
     quota.length > 1
       ? `Fördelning: ${quota.map(([k, n]) => `${n} st ${KIND_SV[k as ItemKind].split(' (')[0]}`).join(', ')}.`
       : '',
+    quota.length > 1 && opts.quota?.freeText ? 'Lägg uppgifterna med fritt svar sist i denna del.' : '',
     opts.ramp
       ? opts.ramp[0] === opts.ramp[1]
         ? `Svårighetsgrad (difficulty) ${opts.ramp[0]} för alla uppgifter i denna del.`

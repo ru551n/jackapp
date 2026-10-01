@@ -20,7 +20,7 @@ import type { Db } from '../db/client'
 import { skillEvidence, type IllustrationRequest } from '../db/schema'
 import { promptProfile } from '../learners/profile'
 import { validateArtifact, type ValidationContext } from '../validation'
-import { describeItem, fallbackSkill, genItemsSchema, toItem, type ItemContext } from './items'
+import { describeItem, fallbackSkill, genItemsSchema, toItem, type GenItem, type ItemContext } from './items'
 import {
   buildSystemPrompt,
   itemsTask,
@@ -70,19 +70,32 @@ interface Slot {
 export const ITEM_TOKENS = 600
 const TEXT_TOKENS_PER_WORD = 4
 
+/** Smooth weighted round-robin: `n` kinds spread evenly by weight (equal weights = plain round-robin). */
+export function kindSequence(kinds: ItemKind[], n: number, mix?: Record<string, number>): ItemKind[] {
+  let w = kinds.map((k) => (mix ? (mix[k] ?? 0) : 1))
+  if (!w.some((x) => x > 0)) w = kinds.map(() => 1)
+  const total = w.reduce((a, b) => a + b, 0)
+  const used = kinds.map(() => 0)
+  return Array.from({ length: n }, (_, j) => {
+    const lag = (i: number) => (w[i]! * (j + 1)) / total - used[i]!
+    const best = kinds.reduce((b, _, i) => (lag(i) > lag(b) ? i : b), 0)
+    used[best]!++
+    return kinds[best]!
+  })
+}
+
 /** Practice test: difficulty rises across the test and item kinds are spread evenly over it. */
 function practiceTest(r: ResolvedRequest): Slot[] {
   const n = r.questionCount
   const parts = Math.ceil(n / CHUNK)
   const lo = Math.max(1, r.difficulty - 1)
   const hi = Math.min(5, r.difficulty + 1)
-  const kinds = r.itemKinds
+  const seq = kindSequence(r.itemKinds, n, r.kindMix)
   return Array.from({ length: parts }, (_, i) => {
     const start = i * CHUNK
     const count = Math.min(CHUNK, n - start)
     const quota: Partial<Record<ItemKind, number>> = {}
-    for (let j = start; j < start + count; j++)
-      quota[kinds[j % kinds.length]!] = (quota[kinds[j % kinds.length]!] ?? 0) + 1
+    for (const k of seq.slice(start, start + count)) quota[k] = (quota[k] ?? 0) + 1
     const at = (x: number) => Math.round(lo + ((hi - lo) * x) / n)
     return {
       kind: 'check' as const,
@@ -425,11 +438,34 @@ export async function generateArtifact(
         400 + ITEM_TOKENS * count,
       )
       title ??= out.title ?? undefined
+      // Models tend to skip free text despite the quota: top it up in place of surplus items of other kinds.
+      const missing = (slot.quota?.freeText ?? 0) - out.items.filter((g) => g.kind === 'freeText').length
+      if (missing > 0) {
+        const extra = await call(
+          genItemsSchema(['freeText'], missing),
+          'artifact_items',
+          itemsTask({
+            count: missing,
+            kinds: ['freeText'],
+            sectionTitle: slot.title,
+            context,
+            avoid: [...prompts.slice(-30), ...out.items.map((g) => g.prompt.slice(0, 120))],
+            ramp: slot.ramp,
+          }),
+          400 + ITEM_TOKENS * missing,
+        )
+        const surplus = (g: GenItem) =>
+          g.kind !== 'freeText' && out.items.filter((x) => x.kind === g.kind).length > (slot.quota?.[g.kind] ?? 0)
+        for (const g of extra.items) {
+          const j = out.items.findLastIndex(surplus)
+          out.items[j >= 0 ? j : out.items.length - 1] = g
+        }
+      }
       for (const g of out.items) {
-        const { item, illustration } = toItem(g, `i${nextId++}`, itemCtx)
+        const { item, illustrations: wanted } = toItem(g, `i${nextId++}`, itemCtx)
         section.items.push(item)
         prompts.push(item.prompt.slice(0, 120))
-        if (illustration) illustrations.push(illustration)
+        illustrations.push(...wanted)
       }
       left -= count
       done += count
@@ -485,7 +521,7 @@ export async function generateArtifact(
     }
     const failing = new Set(errors.flatMap((e) => (e.itemId ? [e.itemId] : [])))
     const bad = allItems(artifact).filter((i) => failing.has(i.id))
-    const replacement = new Map<string, { item: Item; illustration?: IllustrationRequest }>()
+    const replacement = new Map<string, { item: Item; illustrations: IllustrationRequest[] }>()
     // One call per kind: replacements are matched by kind and order within the kind, never across kinds.
     for (const kind of [...new Set(bad.map((i) => i.kind))]) {
       const group = bad.filter((i) => i.kind === kind)
@@ -508,11 +544,8 @@ export async function generateArtifact(
         items: s.items.map((i) => replacement.get(i.id)?.item ?? i),
       })),
     }
-    for (const [id, x] of replacement) {
-      const at = illustrations.findIndex((i) => i.itemId === id)
-      if (at >= 0) illustrations.splice(at, 1)
-      if (x.illustration) illustrations.push(x.illustration)
-    }
+    const kept = illustrations.filter((i) => !replacement.has(i.itemId))
+    illustrations.splice(0, illustrations.length, ...kept, ...[...replacement.values()].flatMap((x) => x.illustrations))
     report = await check(deps, artifact, vctx)
   }
   return {
@@ -531,7 +564,7 @@ export async function regenerateItem(
   p: Prepared,
   artifact: Artifact,
   itemId: string,
-): Promise<{ artifact: Artifact; ok: boolean; illustration?: IllustrationRequest; model?: string }> {
+): Promise<{ artifact: Artifact; ok: boolean; illustrations: IllustrationRequest[]; model?: string }> {
   const r = p.request
   const strict = r.sourceMode === 'strict' && !!p.material
   const cur = strict
@@ -563,13 +596,13 @@ export async function regenerateItem(
     maxTokens: 400 + ITEM_TOKENS,
     signal: deps.signal,
   })
-  const { item, illustration } = toItem(res.output.items[0]!, itemId, itemContext(p, cur.refs))
+  const { item, illustrations } = toItem(res.output.items[0]!, itemId, itemContext(p, cur.refs))
   const next: Artifact = {
     ...artifact,
     sections: artifact.sections.map((s) => ({ ...s, items: s.items.map((i) => (i.id === itemId ? item : i)) })),
   }
   const report = await check(deps, next, { request: r, material: p.material })
-  return { artifact: { ...next, validation: report }, ok: report.ok, illustration, model: res.model }
+  return { artifact: { ...next, validation: report }, ok: report.ok, illustrations, model: res.model }
 }
 
 /** Re-validate an edited artifact. */

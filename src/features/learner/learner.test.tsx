@@ -102,16 +102,14 @@ describe('band selection', () => {
     expect(document.documentElement.dataset.band).toBe('early')
   })
 
-  it('middle learners get the denser home with "Idag" and subjects', async () => {
+  it('middle learners get the denser home with requests and subjects', async () => {
     mockApi({
-      [`GET /learners/${ID}/next`]: [200, [{ kind: 'explore', title: 'Bråk', text: 'Prova något nytt.' }]],
       [`GET /learners/${ID}`]: [200, learner(MIDDLE)],
       'GET /curriculum/subjects': [200, { subjects: [{ code: 'GRGRMAT01', name: 'Matematik' }] }],
     })
     renderAt()
     expect(await screen.findByRole('heading', { name: 'Hej Jack!' })).toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: 'Idag' })).toBeInTheDocument()
-    expect(await screen.findByText('Bråk')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Önska något nytt' })).toBeInTheDocument()
     expect(await screen.findByText('Alla ämnen i årskurs 5')).toBeInTheDocument()
     expect(screen.getByText('Matematik')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Byt elev' })).toHaveAttribute('href', '/')
@@ -123,7 +121,6 @@ describe('band selection', () => {
     renderAt()
     expect(await screen.findByRole('heading', { name: 'Översikt' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Skapa övningsprov' })).toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: 'Studieplaner' })).toBeInTheDocument()
     expect(screen.getByText(/Be en vuxen ladda upp/)).toBeInTheDocument()
   })
 

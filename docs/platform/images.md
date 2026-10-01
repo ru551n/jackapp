@@ -54,6 +54,12 @@ Prompts are written in English, because image models follow English best. The sc
   - Over the cap, the job fails with `limit_exceeded` (not retried) and the API returns 429.
 - All of these failures are non-retryable `JobError`s with Swedish adult messages. Provider errors (`ai_*`) keep their retryability.
 
+### Without image generation ("Mer bildstöd" fallback)
+
+When no `AI_IMAGE_PROVIDER` is configured (or `FEATURE_IMAGE_GENERATION=false`), "Mer bildstöd" and "Bilder" still add pictures: illustration requests with a search term (`imageQuery`, and per-choice terms for early learners) become `asset.fetch` jobs against Wikimedia Commons and Openverse. Only CC0/PD/CC BY/CC BY-SA images classified `autoUsable` are stored, with their attribution, and the UI shows licence and source as for any licensed image. See [generation.md](generation.md#illustrations).
+
+`FEATURE_EXTERNAL_ASSETS` defaults to **true**: the images are openly licensed and attributed, are fetched through the SSRF-safe fetcher (`server/research/fetch.ts`, size- and type-limited, magic-byte sniffed, no SVG), and need no API key. Set it to `false` to keep the server from contacting Commons/Openverse. If neither image generation nor licensed search is available, the adult sees "Bilder kräver bildgenerering eller bildsökning – se Systemstatus" where pictures are chosen, and no image jobs are enqueued.
+
 ## API
 
 | Route                              | Who   | Result                                                                                                                                                         |

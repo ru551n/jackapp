@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import type { Artifact, Item } from '../../../shared/contracts'
-import type { RunSummary } from '../../../server/runs/api'
+import type { AnswerFeedback, RunSummary } from '../../../server/runs/api'
 import { api } from '../../api/client'
+import { Button } from '../../ui/Button'
 import { errorText, type CommonProps } from './presentation'
 import styles from './runs.module.css'
 
@@ -17,7 +18,8 @@ interface HistoryAnswer {
   correct: boolean | null
   score: number | null
   revealed: boolean
-  assessedBy: 'auto' | 'self' | 'ai' | 'pending'
+  assessedBy: 'auto' | 'self' | 'ai' | 'pending' | 'adult'
+  feedback: AnswerFeedback | null
   at: string
 }
 interface HistoryRun {
@@ -33,7 +35,14 @@ interface HistoryRun {
 }
 
 const STATE = { active: 'Pågår', finished: 'Klar', abandoned: 'Avbruten' }
-const ASSESSED = { auto: '', self: 'Självbedömd', ai: 'AI-bedömd', pending: 'Väntar på självbedömning' }
+const ASSESSED = {
+  auto: '',
+  self: 'Självbedömd',
+  ai: 'AI-bedömt',
+  pending: 'Väntar på självbedömning',
+  adult: 'Ändrat av vuxen',
+}
+const VERDICT = { met: 'Finns med', partly: 'Delvis', missing: 'Saknas' }
 const date = (s: string) => new Date(s).toLocaleString('sv-SE', { dateStyle: 'medium', timeStyle: 'short' })
 
 function showAnswer(a: unknown, item?: Item): string {
@@ -57,6 +66,16 @@ export function RunHistory({ learnerId, variant, artifactId }: RunHistoryProps) 
   const [runs, setRuns] = useState<HistoryRun[]>()
   const [arts, setArts] = useState<Record<string, Artifact>>({})
   const [error, setError] = useState('')
+  const [reload, setReload] = useState(0)
+
+  const override = async (runId: string, itemId: string, done: boolean) => {
+    try {
+      await api.post(`/learners/${learnerId}/runs/${runId}/override`, { itemId, done })
+      setReload((n) => n + 1)
+    } catch (e) {
+      setError(errorText(variant, e, 'Det gick inte att spara just nu.'))
+    }
+  }
 
   useEffect(() => {
     let live = true
@@ -81,7 +100,7 @@ export function RunHistory({ learnerId, variant, artifactId }: RunHistoryProps) 
     return () => {
       live = false
     }
-  }, [learnerId, artifactId, variant])
+  }, [learnerId, artifactId, variant, reload])
 
   if (error) return <p className={styles.notice}>{error}</p>
   if (!runs) return <p className={styles.notice}>Hämtar historik …</p>
@@ -116,23 +135,49 @@ export function RunHistory({ learnerId, variant, artifactId }: RunHistoryProps) 
                 </tr>
               </thead>
               <tbody>
-                {r.answers.map((a) => (
-                  <tr key={`${a.itemId}-${a.attempt}`}>
-                    <td>{item(a.itemId)?.prompt ?? a.itemId}</td>
-                    <td>{a.attempt}</td>
-                    <td>{showAnswer(a.answer, item(a.itemId))}</td>
-                    <td>
-                      {result(a)}
-                      {a.revealed && <span className={styles.note}> · visat svar</span>}
-                      {ASSESSED[a.assessedBy] && (
-                        <span className={a.assessedBy === 'ai' ? styles.badge : styles.note}>
-                          {' '}
-                          {ASSESSED[a.assessedBy]}
-                        </span>
-                      )}
-                    </td>
-                  </tr>
-                ))}
+                {r.answers.map((a, i) => {
+                  const ai = a.feedback?.ai
+                  const lastTry = r.answers[i + 1]?.itemId !== a.itemId
+                  return (
+                    <tr key={`${a.itemId}-${a.attempt}`}>
+                      <td>{item(a.itemId)?.prompt ?? a.itemId}</td>
+                      <td>{a.attempt}</td>
+                      <td>
+                        {showAnswer(a.answer, item(a.itemId))}
+                        {ai?.keyPoints && (
+                          <ul className={styles.rubric} aria-label="AI:s bedömning per punkt">
+                            {ai.keyPoints.map((k, j) => (
+                              <li key={j}>
+                                {k.point}: <strong>{VERDICT[k.verdict]}</strong>
+                                {k.evidence && <span className={styles.note}> – ”{k.evidence}”</span>}
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                      </td>
+                      <td>
+                        {result(a)}
+                        {a.revealed && <span className={styles.note}> · visat svar</span>}
+                        {ASSESSED[a.assessedBy] && (
+                          <span className={a.assessedBy === 'ai' ? styles.badge : styles.note}>
+                            {' '}
+                            {ASSESSED[a.assessedBy]}
+                          </span>
+                        )}
+                        {lastTry && item(a.itemId)?.kind === 'freeText' && a.assessedBy !== 'auto' && (
+                          <span className={styles.actions}>
+                            <Button variant="secondary" onClick={() => void override(r.id, a.itemId, true)}>
+                              Räkna som klar
+                            </Button>
+                            <Button variant="quiet" onClick={() => void override(r.id, a.itemId, false)}>
+                              Inte ännu
+                            </Button>
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  )
+                })}
               </tbody>
             </table>
           </details>

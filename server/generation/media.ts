@@ -17,7 +17,7 @@ import { requestedIllustrations } from './view'
 
 // Generation ↔ images (docs/platform/generation.md#illustrations):
 // 1. enqueueIllustrations: after a version is stored, one image.generate job per illustration
-//    request (or asset.fetch for slots that need real imagery).
+//    request (or asset.fetch for slots that need real imagery, or when image generation is off).
 // 2. applyJobMedia: the worker's completion hook for those jobs; adds the media as a new version.
 
 /** ponytail: per-version cap so one big test can't spend the daily image budget; raise if needed. */
@@ -60,16 +60,18 @@ export async function enqueueIllustrations(
           ? [
               {
                 artifactId: a.id,
-                path,
+                path: r.choice === undefined ? path : `${path}.choices.${r.choice}`,
                 itemId: r.itemId,
                 description: clipDescription(r.description),
+                query: r.query,
                 purpose: 'illustration' as const,
               },
             ]
           : []
       })
     const refusal = (d: string) => screenRequest({ description: d, subject: subjectName })?.code
-    if (!imageUnavailable(ai as AiServices)) {
+    const canDraw = !imageUnavailable(ai as AiServices)
+    if (canDraw) {
       const style = { ageBand: ageBand(a.school), theme: request.theme ?? profile.themes[0] ?? profile.interests[0] }
       const drawable = slots.filter((s) => !refusal(s.description))
       await illustrationJobsFor(drawable, {
@@ -80,13 +82,18 @@ export async function enqueueIllustrations(
       })
     }
     if (!externalAssetsEnabled()) return
-    for (const s of slots.filter((x) => refusal(x.description) === 'factual_reference'))
+    // Licensed photos: always for factual slots; for safe slots with a search term when nothing can draw.
+    const fetchable = (x: (typeof slots)[number]) => {
+      const r = refusal(x.description)
+      return r === 'factual_reference' || (!r && !canDraw && !!x.query)
+    }
+    for (const s of slots.filter(fetchable))
       await enqueue(db, {
         type: 'asset.fetch',
         learnerId: a.learnerId,
         dedupeKey: `asset:${a.id}:${s.path}`,
         payload: {
-          query: s.description,
+          query: s.query ?? s.description,
           count: 1,
           preferFactual: true,
           artifactId: a.id,
@@ -122,15 +129,19 @@ export const applyJobMedia: NonNullable<JobHandler['onCompleted']> = async (job,
     const stored = await loadArtifact(db, artifactId)
     if (!stored) return
     const a = stored.artifact
-    // Generation slots carry itemId: the request must still stand for that item.
+    // Generation slots carry itemId: the request must still stand for that item (and choice).
     let path = target.path
     if (target.itemId) {
+      const choice = /\.choices\.(\d+)$/.exec(target.path)?.[1]
       const still = stored.illustrations.some(
-        (i) => i.itemId === target.itemId && clipDescription(i.description) === description,
+        (i) =>
+          i.itemId === target.itemId &&
+          String(i.choice) === String(choice) &&
+          (clipDescription(i.description) === description || i.query === description),
       )
       const at = pathOf(a, target.itemId)
       if (!still || !at) return
-      path = at
+      path = choice === undefined ? at : `${at}.choices.${choice}`
     }
     const next = applyGeneratedMedia(a, [{ path, media: toMediaRef(asset) }])
     if (isDeepStrictEqual(next, a)) return // already applied, or the slot is full

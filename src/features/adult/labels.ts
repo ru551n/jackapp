@@ -87,6 +87,11 @@ export const TRANSFORMS = [
   ['more', 'Mer av samma (nytt material)'],
 ] as const
 
+/** Shown where pictures are chosen ("Mer bildstöd", "Bilder") when no image source is available. */
+export const NO_IMAGE_SOURCE = 'Bilder kräver bildgenerering eller bildsökning – se Systemstatus.'
+export const noImageSource = (f?: { imageGeneration: boolean; externalAssets: boolean }) =>
+  !!f && !f.imageGeneration && !f.externalAssets
+
 export const DIFFICULTY: Record<number, string> = {
   1: 'Mycket lätt',
   2: 'Lätt',
@@ -102,10 +107,6 @@ export const RELATIVE_LEVEL: Record<number, string> = {
   4: 'Något över årskursen',
   5: 'Långt över årskursen',
 }
-
-/** "math.addition.tens-crossing" → "tens crossing" (fallback when no note exists). */
-/** Skill rows show the server's Swedish note; tags are slugs and never shown. */
-export const UNNAMED_SKILL = 'Övrig färdighet'
 
 export const formatDate = (iso: string) =>
   new Date(iso).toLocaleDateString('sv-SE', { day: 'numeric', month: 'short', year: 'numeric' })

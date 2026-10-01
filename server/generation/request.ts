@@ -113,7 +113,8 @@ const PER_ITEM_MINUTES: Record<AgeBand, number> = { early: 1.5, middle: 2, upper
 const DEFAULT_COUNT: Record<AgeBand, number> = { early: 6, middle: 10, upper: 12 }
 
 const DEFAULT_KINDS: Record<ArtifactType, ItemKind[]> = {
-  practiceTest: ['multipleChoice', 'trueFalse', 'fillBlank', 'numeric', 'matching', 'freeText'],
+  // Free text second, so short tests for åk 4+ get one too (the early band drops it).
+  practiceTest: ['multipleChoice', 'freeText', 'trueFalse', 'fillBlank', 'numeric', 'matching'],
   exercises: ['multipleChoice', 'fillBlank', 'numeric', 'ordering', 'matching', 'trueFalse'],
   lesson: ['multipleChoice', 'trueFalse', 'fillBlank', 'numeric'],
   revision: ['multipleChoice', 'flashcard', 'fillBlank', 'trueFalse'],

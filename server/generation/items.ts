@@ -38,19 +38,26 @@ const Common = {
   webSourceIds: opt(z.array(z.string()).max(5)),
   /** Short description of a helpful illustration (hook for the image domain). */
   illustration: opt(z.string().max(300)),
+  /** 1–3 words to search licensed photos of the concrete thing shown (e.g. "red apple"). */
+  imageQuery: opt(z.string().max(60)),
 }
+
+/** One search term per choice, only when every choice is a concrete, picturable thing. */
+const choiceImageQueries = opt(z.array(z.string().max(60)).max(8))
 
 const GEN_KINDS = {
   multipleChoice: z.object({
     kind: z.literal('multipleChoice'),
     ...Common,
     choices: z.array(z.string().max(500)).min(2).max(6),
+    choiceImageQueries,
     correctIndex: z.number().int().min(0),
   }),
   multiSelect: z.object({
     kind: z.literal('multiSelect'),
     ...Common,
     choices: z.array(z.string().max(500)).min(2).max(8),
+    choiceImageQueries,
     correctIndexes: z.array(z.number().int().min(0)).min(1),
   }),
   trueFalse: z.object({ kind: z.literal('trueFalse'), ...Common, answer: z.boolean() }),
@@ -177,7 +184,7 @@ function limitChoices<T>(choices: T[], keep: (i: number) => boolean, max: number
 }
 
 /** Generated item → contract Item (server-assigned id, sources and refs). */
-export function toItem(g: GenItem, id: string, ctx: ItemContext): { item: Item; illustration?: IllustrationRequest } {
+export function toItem(g: GenItem, id: string, ctx: ItemContext): { item: Item; illustrations: IllustrationRequest[] } {
   const curriculumRefs = (g.curriculumIds ?? []).flatMap((c) => ctx.curriculum.get(c) ?? [])
   const segs = ctx.material?.segments ?? []
   const sources: SourceRef[] = (g.sourceSegmentIds ?? []).flatMap((sid) => {
@@ -274,7 +281,20 @@ export function toItem(g: GenItem, id: string, ctx: ItemContext): { item: Item; 
       item = { ...base, kind: g.kind, back: g.back }
       break
   }
-  return { item, illustration: g.illustration ? { itemId: id, description: g.illustration } : undefined }
+  return { item, illustrations: illustrationsOf(g, item) }
+}
+
+function illustrationsOf(g: GenItem, item: Item): IllustrationRequest[] {
+  const out: IllustrationRequest[] = []
+  const description = g.illustration ?? g.imageQuery
+  if (description) out.push({ itemId: item.id, description, ...(g.imageQuery ? { query: g.imageQuery } : {}) })
+  if (!('choiceImageQueries' in g) || !g.choiceImageQueries || !('choices' in item)) return out
+  const queries = g.choiceImageQueries
+  item.choices.forEach((c, n) => {
+    const query = queries[g.choices.indexOf(c.text)]?.trim()
+    if (query) out.push({ itemId: item.id, description: c.text, query, choice: n })
+  })
+  return out
 }
 
 /** Contract item → compact model-facing form (for transforms and targeted regeneration context). */

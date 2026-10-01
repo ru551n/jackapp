@@ -1,10 +1,11 @@
 import { useState } from 'react'
-import type { RunSummary, RunView } from '../../../server/runs/api'
+import type { FreeTextAssessment, RunSummary, RunView } from '../../../server/runs/api'
 import { api } from '../../api/client'
 import { Button } from '../../ui/Button'
 import { Icon } from '../../ui/Icon'
+import { SpeakButton } from '../../ui/SpeakButton'
 import { Markdown } from './Markdown'
-import { errorText, RATINGS, type CommonProps } from './presentation'
+import { errorText, keyPointsSpeech, RATINGS, type CommonProps } from './presentation'
 import styles from './runs.module.css'
 
 export interface RunResultsProps extends CommonProps {
@@ -16,8 +17,50 @@ export interface RunResultsProps extends CommonProps {
   onDone?: () => void
 }
 
+/** AI-graded free text: what the answer covered and what to add, calmly. Older assessments have no key points. */
+export function KeyPoints({ ai }: { ai: FreeTextAssessment }) {
+  const pts = ai.keyPoints ?? []
+  const had = pts.filter((k) => k.verdict === 'met')
+  const add = pts.filter((k) => k.verdict !== 'met')
+  return (
+    <>
+      {had.length > 0 && (
+        <>
+          <p className={styles.fbTitle}>Det här fanns med</p>
+          <ul className={styles.rubric}>
+            {had.map((k, i) => (
+              <li key={i}>{k.point}</li>
+            ))}
+          </ul>
+        </>
+      )}
+      {add.length > 0 && (
+        <>
+          <p className={styles.fbTitle}>Det här kan du lägga till</p>
+          <ul className={styles.rubric}>
+            {add.map((k, i) => (
+              <li key={i}>
+                {k.point}
+                {k.verdict === 'partly' && <span className={styles.note}> (finns delvis med)</span>}
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+    </>
+  )
+}
+
 /** Non-punitive results: what went well, what to look at again. */
-export function RunResults({ learnerId, variant, runId, summary: initial, onPracticeMore, onDone }: RunResultsProps) {
+export function RunResults({
+  learnerId,
+  variant,
+  presentation = {},
+  runId,
+  summary: initial,
+  onPracticeMore,
+  onDone,
+}: RunResultsProps) {
   const [summary, setSummary] = useState(initial)
   const [error, setError] = useState('')
   const detailed = variant === 'upper' || variant === 'adult'
@@ -65,6 +108,26 @@ export function RunResults({ learnerId, variant, runId, summary: initial, onPrac
               </li>
             ))}
           </ul>
+        </>
+      )}
+
+      {!!summary.freeText?.length && (
+        <>
+          <h3>Dina egna svar</h3>
+          {summary.freeText.map((f) => (
+            <article key={f.itemId} className={styles.reviewCard}>
+              <p className={styles.fbTitle}>{f.prompt}</p>
+              <p>
+                Ditt svar: <em>{f.answer}</em>
+              </p>
+              <KeyPoints ai={f.ai} />
+              <p>{f.ai.feedback}</p>
+              {f.sampleAnswer && <p>Exempel på svar: {f.sampleAnswer}</p>}
+              {presentation.readAloud !== false && (
+                <SpeakButton text={[f.prompt, keyPointsSpeech(f.ai), f.ai.feedback].join(' ')} />
+              )}
+            </article>
+          ))}
         </>
       )}
 

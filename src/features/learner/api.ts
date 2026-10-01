@@ -2,7 +2,6 @@ import type {
   AgeBand,
   ArtifactType,
   GenerationRequest,
-  LearningPath,
   SchoolPosition,
   StudySet,
   SupportPreferences,
@@ -36,14 +35,6 @@ export interface ArtifactSummary {
   createdAt: string
 }
 
-/** Child-friendly next step. */
-export interface ChildStep {
-  kind: string
-  title: string
-  text: string
-  pathId?: string
-}
-
 export interface Subject {
   code: string
   name: string
@@ -60,14 +51,10 @@ export type LearnerRequest = Omit<Partial<GenerationRequest>, 'learnerId'>
 export const learnerApi = {
   profile: (id: string) => api.get<LearnerView>(`/learners/${id}`),
   artifacts: (id: string) => api.get<ArtifactSummary[]>(`/learners/${id}/artifacts`),
-  next: (id: string) => api.get<ChildStep[]>(`/learners/${id}/next`),
-  paths: (id: string) => api.get<LearningPath[]>(`/learners/${id}/paths`),
   studySets: (id: string) => api.get<StudySet[]>(`/learners/${id}/study-sets`),
   subjects: (s: SchoolPosition) =>
     api.get<{ subjects: Subject[] }>(`/curriculum/subjects?stage=${s.stage}&year=${s.year}`).then((r) => r.subjects),
   generate: (id: string, req: LearnerRequest) => api.post<{ jobId: string }>(`/learners/${id}/generate`, req),
-  plan: (id: string, body: { goal: string; targetDate?: string; studySetId?: string }) =>
-    api.post<{ jobId: string }>(`/learners/${id}/paths`, body),
   /** Learners get 404 until the material is approved (and for another learner's material). */
   artifact: (artifactId: string, learnerId: string) =>
     api.get<{ artifact: { id: string; title: string; subjectCode?: string } }>(

@@ -1,5 +1,6 @@
 import type { ItemKind, MediaRef, StudySetStatus, SupportPreferences } from '../../../shared/contracts'
 import type { SpeechLang } from '../../core/types'
+import type { FreeTextAssessment } from '../../../server/runs/api'
 
 /** Presentation band: early/middle/upper learners, or the adult area. */
 export type Variant = 'early' | 'middle' | 'upper' | 'adult'
@@ -24,7 +25,7 @@ export const KIND_LABELS: Record<ItemKind, string> = {
   matching: 'Para ihop',
   ordering: 'Sätt i ordning',
   numeric: 'Svara med ett tal',
-  freeText: 'Skriv eget svar',
+  freeText: 'Skriv eget svar (AI rättar)',
   flashcard: 'Glosor och begreppskort',
 }
 
@@ -108,4 +109,15 @@ export const STATUS_LABEL: Record<StudySetStatus, string> = {
   processing: 'Läses nu',
   ready: 'Klart',
   failed: 'Kunde inte läsas',
+}
+
+/** The same content as plain text for read-aloud. */
+export function keyPointsSpeech(ai: FreeTextAssessment): string {
+  const pts = ai.keyPoints ?? []
+  const list = (ks: typeof pts) => ks.map((k) => k.point).join('. ')
+  const had = pts.filter((k) => k.verdict === 'met')
+  const add = pts.filter((k) => k.verdict !== 'met')
+  return [had.length && `Det här fanns med: ${list(had)}.`, add.length && `Det här kan du lägga till: ${list(add)}.`]
+    .filter(Boolean)
+    .join(' ')
 }

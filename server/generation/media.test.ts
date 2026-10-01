@@ -2,7 +2,7 @@ import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { eq } from 'drizzle-orm'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createAi } from '../ai'
 import { MOCK_PNG } from '../ai/mock'
 import type { ChatRequest } from '../ai/types'
@@ -54,18 +54,23 @@ const fetcher: Fetcher = async (url) => {
 let worker: Worker | undefined
 let close: (() => Promise<void>) | undefined
 afterEach(async () => {
+  vi.unstubAllEnvs()
   await worker?.stop(1000)
   await close?.()
   worker = close = undefined
 })
 
-async function setup() {
+async function setup(text: (req: ChatRequest) => unknown = mockText, image = true) {
   const t = await createTestApp()
   close = t.close
   const learner = await seedLearner(t.db)
   const ai = createAi(
-    { AI_TEXT_PROVIDER: 'mock', AI_IMAGE_PROVIDER: 'mock', LIMIT_AI_REQUESTS_PER_HOUR: '10000' },
-    { db: t.db, log, mock: { text: mockText } },
+    {
+      AI_TEXT_PROVIDER: 'mock',
+      ...(image ? { AI_IMAGE_PROVIDER: 'mock' } : {}),
+      LIMIT_AI_REQUESTS_PER_HOUR: '10000',
+    },
+    { db: t.db, log, mock: { text } },
   )
   const env = { ...TEST_ENV, DATA_DIR: mkdtempSync(join(tmpdir(), 'jackapp-media-')) }
   const handlers = jobHandlers({ db: t.db, env, ai, log, net: { fetcher } })
@@ -172,5 +177,85 @@ describe('generation → images → artifact versions', () => {
     const learnerView = await t.app.inject(`/api/v1/artifacts/${gen!.resultId}`)
     expect(learnerView.statusCode).toBe(200)
     expect(learnerView.json().artifact.sections[0].items[0].media).toEqual([])
+  }, 120_000)
+})
+
+/** An early-learner picture question: concrete choices with search terms, as the prompt asks for. */
+function pictureText(req: ChatRequest) {
+  const js = req.json!.jsonSchema as { properties: { items: { minItems: number } } }
+  return {
+    title: 'Saker',
+    items: Array.from({ length: js.properties.items.minItems }, () => ({
+      kind: 'multipleChoice',
+      prompt: 'Vilken kan man äta?',
+      difficulty: 1,
+      skills: ['swedish.words'],
+      choices: ['tåg', 'äpple', 'katt'],
+      correctIndex: 1,
+      illustration: 'Ett rött äpple',
+      imageQuery: 'red apple',
+      choiceImageQueries: ['train', 'apple', 'cat'],
+    })),
+  }
+}
+
+describe('"Mer bildstöd" without image generation', () => {
+  async function moreVisual(t: Awaited<ReturnType<typeof setup>>) {
+    await t.app.inject({
+      method: 'POST',
+      url: `/api/v1/learners/${t.learnerId}/generate`,
+      headers: asAdult,
+      payload: { type: 'exercises', questionCount: 1, itemKinds: ['multipleChoice'] },
+    })
+    await t.start()
+    await until(async () => (await allJobs(t.db)).some((j) => j.state === 'completed'))
+    const artifactId = (await allJobs(t.db))[0]!.resultId!
+    expect((await allJobs(t.db)).map((j) => j.type)).toEqual(['artifact.generate']) // no images asked for yet
+    const res = await t.app.inject({
+      method: 'POST',
+      url: `/api/v1/artifacts/${artifactId}/transform`,
+      headers: asAdult,
+      payload: { kind: 'moreVisual' },
+    })
+    expect(res.statusCode).toBe(202)
+    await until(async () => {
+      const all = await allJobs(t.db)
+      return all.filter((j) => j.type === 'artifact.generate').length === 2 && all.every((j) => finished(j.state))
+    })
+    return artifactId
+  }
+
+  it('falls back to licensed images for the item and its concrete choices', async () => {
+    const t = await setup(pictureText, false)
+    const artifactId = await moreVisual(t)
+    const fetches = (await allJobs(t.db)).filter((j) => j.type !== 'artifact.generate')
+    expect(fetches.map((j) => [j.type, j.state, (j.payload as { query: string }).query]).sort()).toEqual([
+      ['asset.fetch', 'completed', 'apple'],
+      ['asset.fetch', 'completed', 'cat'],
+      ['asset.fetch', 'completed', 'red apple'],
+      ['asset.fetch', 'completed', 'train'],
+    ])
+    // generate, transform, then one media version per picture
+    await until(async () => (await loadArtifact(t.db, artifactId))!.artifact.version === 6)
+    const { artifact } = (await loadArtifact(t.db, artifactId))!
+    const item = artifact.sections[0]!.items[0]!
+    const licensed = expect.objectContaining({
+      generated: false,
+      license: expect.objectContaining({ autoUsable: true }),
+    })
+    expect(item.media).toEqual([licensed])
+    expect('choices' in item && item.choices.map((c) => c.media)).toEqual([licensed, licensed, licensed])
+    expect(artifact.validation.ok).toBe(true)
+    // The learner gets the pictures too.
+    const learnerView = (await t.app.inject(`/api/v1/artifacts/${artifactId}`)).json()
+    expect(learnerView.artifact.sections[0].items[0].media).toHaveLength(1)
+  }, 120_000)
+
+  it('enqueues no image jobs when no image source exists (the adult UI says so)', async () => {
+    vi.stubEnv('FEATURE_EXTERNAL_ASSETS', 'false')
+    const t = await setup(pictureText, false)
+    const artifactId = await moreVisual(t)
+    expect((await allJobs(t.db)).map((j) => j.type)).toEqual(['artifact.generate', 'artifact.generate'])
+    expect((await loadArtifact(t.db, artifactId))!.artifact.version).toBe(2)
   }, 120_000)
 })

@@ -4,11 +4,11 @@ One React app, hash routing, Swedish UI. The API is under `/api/v1` (`src/api/cl
 
 ## Top-level routes (`src/app/App.tsx`, owned by the orchestrator)
 
-| Route             | Area                                                                                                                                                                                              | Owner folder            |
-| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------- |
-| `/`               | Start: first-run setup (create the adult PIN and the first learner), else the learner picker "Vem ska lära sig?" with large cards and a small "För vuxna" link                                    | `src/features/start/`   |
-| `/vuxen/*`        | Adult area behind the PIN gate: learners and profiles, support preferences, approvals, editing generated material, generation requests, progress and gaps, learning paths, uploads, system status | `src/features/adult/`   |
-| `/l/:learnerId/*` | Learner area. The shell is chosen by **age band** (`early`, `middle`, `upper`), and presentation comes from the learner's support preferences                                                     | `src/features/learner/` |
+| Route             | Area                                                                                                                                                           | Owner folder            |
+| ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------- |
+| `/`               | Start: first-run setup (create the adult PIN and the first learner), else the learner picker "Vem ska lära sig?" with large cards and a small "För vuxna" link | `src/features/start/`   |
+| `/vuxen/*`        | Adult area behind the PIN gate: learners and profiles, support preferences, approvals, editing generated material, generation requests, uploads, system status | `src/features/adult/`   |
+| `/l/:learnerId/*` | Learner area. The shell is chosen by **age band** (`early`, `middle`, `upper`), and presentation comes from the learner's support preferences                  | `src/features/learner/` |
 
 Shared components used by both areas: study upload and material view, test configuration, and the run player (all 10 item kinds) live in `src/features/study/` and `src/features/runs/`.
 
@@ -17,6 +17,8 @@ Shared components used by both areas: study upload and material view, test confi
 - **early** (F–3): the existing JackApp experience (Stationen, Tunnelbanan, Spårvagnen, Flygplatsen, Engelska, Min samling, Bygg din linje) plus AI material presented the same calm way: large controls, few choices, pictures, read-aloud, special-interest themes, gentle collection rewards.
 - **middle** (4–9): more density and autonomy, meaningful progress, optional themes, own requests ("Jag vill lära mig bråk med flygplan").
 - **upper** (gymnasium): a mature, efficient study dashboard. Upload material → practice test, revision, detailed results, minimal gamification.
+
+Learning paths, skill status and the "Idag" next-step suggestions were removed from the UI (adult and learner); see adaptive.md.
 
 Support preferences (reduced text, high visual support, max choices, read-aloud, reduced motion, step-by-step, no time pressure) apply in **every** band and are independent of age and difficulty.
 
