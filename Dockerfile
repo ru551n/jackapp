@@ -31,6 +31,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends poppler-utils t
 ENV NODE_ENV=production PORT=3000 DATA_DIR=/data WEB_DIST_DIR=/app/dist
 WORKDIR /app
 COPY --from=server /app/dist-server ./dist-server
+# sharp is native and external to the bundle (worker image processing): install the locked version.
+RUN npm install --no-save --no-audit --no-fund --omit=dev "sharp@$(cat dist-server/sharp-version)" \
+    && npm cache clean --force
 COPY --from=server /app/server/db/migrations ./server/db/migrations
 COPY --from=web /app/dist ./dist
 USER node

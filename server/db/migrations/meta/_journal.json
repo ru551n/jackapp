@@ -15,6 +15,13 @@
       "when": 1790868581107,
       "tag": "0001_images",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1790868774615,
+      "tag": "0002_study",
+      "breakpoints": true
     }
   ]
 }
