@@ -102,4 +102,19 @@ describe('speak fallback order', () => {
     expect(played).not.toContain('blob:clip')
     expect(spoken).toEqual([])
   })
+
+  it("an old utterance's timeout never cancels a newer one", async () => {
+    vi.useFakeTimers()
+    let doneB!: (b: Blob) => void
+    synth.mockReturnValueOnce(new Promise(() => {})).mockReturnValueOnce(new Promise((r) => (doneB = r)))
+    const s = await load()
+    s.speak('A', 'sv')
+    await vi.advanceTimersByTimeAsync(3000)
+    s.speak('B', 'sv') // child taps another button before A's 4 s fallback
+    await vi.advanceTimersByTimeAsync(1500) // A's timer fires here
+    doneB(new Blob(['x']))
+    await vi.advanceTimersByTimeAsync(0)
+    expect(spoken).toEqual([])
+    expect(played).toContain('blob:clip')
+  })
 })

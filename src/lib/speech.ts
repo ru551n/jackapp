@@ -81,7 +81,8 @@ function playEngine(text: string, lang: SpeechLang) {
   audio.play().catch(() => {}) // unlocks the element for the later src swap (iOS)
   const stale = () => mine !== seq
   const timer = setTimeout(() => {
-    if (!stale()) deviceSpeak(text, lang)
+    if (stale()) return
+    deviceSpeak(text, lang)
     seq++ // the late clip is cached for next time but must not play now
   }, ENGINE_WAIT_MS)
   piperSynthesize(text, lang).then(
