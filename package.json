@@ -16,7 +16,8 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "check": "npm run typecheck && npm run lint && npm run format:check && npm run test",
-    "gate:reset-pin": "tsx server/gate/cli.ts"
+    "gate:reset-pin": "tsx server/gate/cli.ts",
+    "curriculum:fetch": "tsx server/curriculum/import.ts"
   },
   "dependencies": {
     "@diffusionstudio/piper-wasm": "^1.0.0",

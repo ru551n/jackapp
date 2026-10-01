@@ -3,3 +3,4 @@
 export * from './core'
 export * from './jobs'
 export * from './learners'
+export * from './curriculum'
