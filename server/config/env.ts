@@ -16,8 +16,8 @@ export const CoreEnv = z.object({
   /** Externally visible origin, e.g. https://jackapp.example.se (behind Caddy). */
   PUBLIC_URL: z.string().url(),
   DATABASE_URL: z.string().min(1),
-  /** ≥32 random chars; signs session cookies. */
-  SESSION_SECRET: z.string().min(32),
+  /** ≥32 random chars; signs the adult-gate cookie. */
+  APP_SECRET: z.string().min(32),
   /** Root for persistent files (generated assets, processed material, temporary uploads). */
   DATA_DIR: z.string().default('/data'),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info'),
@@ -25,9 +25,6 @@ export const CoreEnv = z.object({
   TRUST_PROXY: z.string().default(''),
   /** Serve the built web app from this directory (production single container). */
   WEB_DIST_DIR: z.string().default('dist'),
-  /** Dev-only auth bypass; refused in production. */
-  AUTH_DEV_USER: z.string().optional(),
-  ENABLE_DEV_AUTH: bool(false),
 })
 export type CoreEnv = z.infer<typeof CoreEnv>
 

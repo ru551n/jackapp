@@ -1,18 +1,18 @@
 # Environment variables (contract)
 
-The host administrator configures everything technical here. Each subsystem parses its own group with `parseEnv` (`server/config/env.ts`) and validates it at startup. Secret values (`*_API_KEY`, `*_SECRET`, `*_PASSWORD`, `DATABASE_URL`) are never logged or sent to clients. `.env.example` documents all of them.
+The host administrator configures everything technical here. Each subsystem parses its own group with `parseEnv` (`server/config/env.ts`) and validates it at startup. Secret values (`*_API_KEY`, `APP_SECRET`, `*_PASSWORD`, `DATABASE_URL`) are never logged or sent to clients. `.env.example` documents all of them.
 
 ## Application (`server/config/env.ts`)
 
-`NODE_ENV`, `PORT` (3000), `HOST`, `PUBLIC_URL` (required, external origin), `DATABASE_URL` (required), `SESSION_SECRET` (required, ≥32 chars), `DATA_DIR` (/data), `LOG_LEVEL` (info), `TRUST_PROXY` (comma-separated IPs/CIDRs of the reverse proxy; empty = trust none), `WEB_DIST_DIR`, `ENABLE_DEV_AUTH` + `AUTH_DEV_USER` (development only; refused when `NODE_ENV=production`).
+`NODE_ENV`, `PORT` (3000), `HOST`, `PUBLIC_URL` (required, external origin), `DATABASE_URL` (required), `APP_SECRET` (required, ≥32 chars; signs the adult-gate cookie), `DATA_DIR` (/data), `LOG_LEVEL` (info), `TRUST_PROXY` (comma-separated IPs/CIDRs of the reverse proxy; empty = trust none), `WEB_DIST_DIR`.
 
 ## Database (Compose)
 
 `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`. `DATABASE_URL` is built from these in `compose.yaml`.
 
-## Authentication (`server/auth/config.ts`)
+## Access control
 
-`OIDC_ISSUER_URL` (Authentik application issuer/discovery URL), `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`, `OIDC_SCOPES` ("openid profile email"), `SESSION_TTL_HOURS` (720). The redirect URI is always `${PUBLIC_URL}/auth/callback`.
+JackApp has no login, accounts or OIDC. Whoever reaches it is trusted, so put it behind a reverse proxy that controls access (e.g. Caddy + Authentik forward auth). Inside the app, the only gate is a household adult PIN (set in the app) that keeps children out of adult screens.
 
 ## AI capabilities (`server/ai/config.ts`)
 

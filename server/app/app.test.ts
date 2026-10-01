@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { requireLearner } from '../auth/guards'
-import { createTestApp, seedLearner, seedUser } from '../test/helpers'
+import { HttpError, requireAdult, requireLearner } from '../gate/guards'
+import { createTestApp, seedLearner } from '../test/helpers'
 import type { FastifyRequest } from 'fastify'
 
 let close: (() => Promise<void>) | undefined
@@ -30,27 +30,15 @@ describe('app skeleton', () => {
   })
 })
 
-describe('learner authorization', () => {
-  it('allows owners, hides learners from others, limits learner mode', async () => {
+describe('adult gate guards', () => {
+  it('requireAdult refuses without the gate; requireLearner 404s unknown learners', async () => {
     const t = await createTestApp()
     close = t.close
-    const owner = await seedUser(t.db)
-    const other = await seedUser(t.db, 'Granne')
-    const l = await seedLearner(t.db, owner.id)
-    const req = (auth: object) => ({ auth }) as unknown as FastifyRequest
-    await expect(
-      requireLearner(req({ userId: owner.id, mode: 'adult' }), t.db, l.id, { min: 'owner' }),
-    ).resolves.toBeTruthy()
-    await expect(requireLearner(req({ userId: other.id, mode: 'adult' }), t.db, l.id)).rejects.toMatchObject({
-      status: 404,
-    })
-    await expect(
-      requireLearner(req({ userId: owner.id, mode: 'learner', activeLearnerId: l.id }), t.db, l.id),
-    ).rejects.toMatchObject({ status: 403 })
-    await expect(
-      requireLearner(req({ userId: owner.id, mode: 'learner', activeLearnerId: l.id }), t.db, l.id, {
-        allowLearnerMode: true,
-      }),
-    ).resolves.toBeTruthy()
+    const req = (gate?: object) => ({ gate }) as unknown as FastifyRequest
+    expect(() => requireAdult(req())).toThrow(HttpError)
+    expect(() => requireAdult(req({ adult: true }))).not.toThrow()
+    const l = await seedLearner(t.db)
+    await expect(requireLearner(t.db, l.id)).resolves.toMatchObject({ id: l.id })
+    await expect(requireLearner(t.db, crypto.randomUUID())).rejects.toMatchObject({ status: 404 })
   })
 })

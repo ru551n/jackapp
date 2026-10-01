@@ -16,19 +16,16 @@ export const ApiError = z.object({
 export type ApiError = z.infer<typeof ApiError>
 
 /**
- * A session is always an authenticated adult. "Learner mode" is that adult handing the device to a
- * learner: the session then acts for one learner with learner-level permissions until an adult
- * re-authenticates (or unlocks with the device PIN) to leave it.
+ * JackApp has no accounts or login (access is controlled by the reverse proxy). The only
+ * distinction is the adult gate: a household PIN unlocking adult screens for a limited time.
  */
-export const SessionMode = z.enum(['adult', 'learner'])
-export type SessionMode = z.infer<typeof SessionMode>
-
-export const Me = z.object({
-  user: z.object({ id: z.string().uuid(), displayName: z.string(), email: z.string().optional() }),
-  mode: SessionMode,
-  activeLearnerId: z.string().uuid().optional(),
+export const GateState = z.object({
+  /** True when the household has set an adult PIN. */
+  pinSet: z.boolean(),
+  /** True while this device is unlocked for adult use. */
+  adult: z.boolean(),
 })
-export type Me = z.infer<typeof Me>
+export type GateState = z.infer<typeof GateState>
 
 /** GET /api/v1/system/status — human-friendly availability for adults (no technical details). */
 export const SystemStatus = z.object({

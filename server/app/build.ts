@@ -1,7 +1,7 @@
 import Fastify, { type FastifyServerOptions } from 'fastify'
 import { ZodError } from 'zod'
 import { API_PREFIX } from '../../shared/contracts'
-import { HttpError, sendError } from '../auth/guards'
+import { HttpError, sendError } from '../gate/guards'
 import type { AppContext, ReadinessCheck } from './context'
 import { ROUTE_MODULES } from './routes'
 

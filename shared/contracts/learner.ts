@@ -62,7 +62,3 @@ export const LearnerProfile = LearnerProfileInput.extend({
   updatedAt: z.string(),
 })
 export type LearnerProfile = z.infer<typeof LearnerProfile>
-
-/** What an adult may do with a learner. Owners can share; editors can manage content; viewers read. */
-export const LearnerRole = z.enum(['owner', 'editor', 'viewer'])
-export type LearnerRole = z.infer<typeof LearnerRole>

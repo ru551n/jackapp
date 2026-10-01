@@ -1,5 +1,4 @@
 import type { FastifyBaseLogger, FastifyInstance } from 'fastify'
-import type { SessionMode } from '../../shared/contracts'
 import type { CoreEnv } from '../config/env'
 import type { Db } from '../db/client'
 
@@ -24,12 +23,9 @@ export interface AppContext {
   readiness: ReadinessCheck[]
 }
 
-/** Authenticated principal, set by the auth/session plugin. */
-export interface AuthInfo {
-  userId: string
-  mode: SessionMode
-  /** Set in learner mode: the only learner this session may act for. */
-  activeLearnerId?: string
+/** Adult-gate state for this request (server/gate). Not an identity: JackApp has no accounts. */
+export interface GateInfo {
+  adult: boolean
 }
 
 declare module 'fastify' {
@@ -37,7 +33,7 @@ declare module 'fastify' {
     ctx: AppContext
   }
   interface FastifyRequest {
-    auth?: AuthInfo
+    gate?: GateInfo
   }
 }
 
