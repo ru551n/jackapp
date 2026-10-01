@@ -1,4 +1,4 @@
-import type { ReadinessCheck } from '../app/context'
+import type { AppContext, ReadinessCheck } from '../app/context'
 import { buildApp } from '../app/build'
 import { createTestDb, type Db } from '../db/client'
 import { learners } from '../db/schema'
@@ -19,10 +19,12 @@ export const TEST_PIN = '2468'
  * App on an in-process database. Tests unlock the adult gate with the `x-test-adult: 1` header.
  * A household PIN (TEST_PIN) is set so the gate is closed by default; `pin: null` = first run.
  */
-export async function createTestApp(opts: { readiness?: ReadinessCheck[]; pin?: string | null } = {}) {
+export async function createTestApp(
+  opts: { readiness?: ReadinessCheck[]; pin?: string | null; ctx?: Partial<Omit<AppContext, 'env' | 'db' | 'log'>> } = {},
+) {
   const handle = await createTestDb()
   if (opts.pin !== null) await storePin(handle.db, opts.pin ?? TEST_PIN)
-  const app = await buildApp({ ctx: { env: TEST_ENV, db: handle.db, readiness: opts.readiness ?? [] } })
+  const app = await buildApp({ ctx: { env: TEST_ENV, db: handle.db, readiness: opts.readiness ?? [], ...opts.ctx } })
   app.addHook('onRequest', async (req) => {
     if (req.headers['x-test-adult'] === '1') req.gate = { adult: true }
   })
