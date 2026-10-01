@@ -178,6 +178,19 @@ describe('generation', () => {
     })
   })
 
+  it('uploads pictures inline and waits for them before creating', async () => {
+    const { calls } = mockApi(base())
+    setup(`/vuxen/elev/${ID}/skapa`)
+    await userEvent.type(await screen.findByLabelText('Vad vill du skapa?'), 'Prov på kapitlet')
+    await userEvent.selectOptions(screen.getByLabelText('Studiematerial'), 'new')
+    expect(await screen.findByRole('heading', { name: 'Ladda upp studiematerial' })).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Skapa' }))
+    expect(await screen.findByText('Ladda upp bilderna först, eller välj Inget.')).toBeInTheDocument()
+    expect(calls.some((c) => c.method === 'POST')).toBe(false)
+    await userEvent.selectOptions(screen.getByLabelText('Studiematerial'), '')
+    expect(screen.queryByRole('heading', { name: 'Ladda upp studiematerial' })).not.toBeInTheDocument()
+  })
+
   it('shows the adult failure message', async () => {
     mockApi({
       ...base(),
@@ -275,14 +288,6 @@ describe('material approval and editing', () => {
       items: { i1: { prompt: 'Vad är 2 + 3?' } },
       version: 1,
     })
-  })
-
-  it('progress groups skills without a subject under Övrigt and never shows tags', async () => {
-    mockApi(base())
-    setup(`/vuxen/elev/${ID}/framsteg`)
-    expect(await screen.findByText('Verkar behöva mer träning på addition.')).toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: 'Övrigt' })).toBeInTheDocument()
-    expect(screen.queryByText(/math/)).toBeNull()
   })
 
   it('a version conflict shows a calm message and reloads the material', async () => {

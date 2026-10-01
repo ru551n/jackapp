@@ -13,7 +13,6 @@ import { LockContext } from './context'
 import { Page } from './Page'
 import { NewPin, PinPad } from './PinPad'
 import { ProfileEditor } from './ProfileEditor'
-import { Progress } from './Progress'
 import { Uploads } from './Uploads'
 import s from './adult.module.css'
 
@@ -103,7 +102,6 @@ export function AdultArea() {
           <Route path="skapa" element={<Generate />} />
           <Route path="material" element={<Library />} />
           <Route path="material/:artifactId" element={<ArtifactView />} />
-          <Route path="framsteg" element={<Progress />} />
           <Route path="studiematerial/*" element={<Uploads />} />
         </Route>
         <Route path="*" element={<Navigate to="/vuxen" replace />} />

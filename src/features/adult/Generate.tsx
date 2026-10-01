@@ -15,6 +15,7 @@ import {
 } from './api'
 import { Choice, Field, Toggle } from './fields'
 import { JobProgress } from './JobProgress'
+import { StudyUpload } from '../study'
 import { useLearner } from './context'
 import { ARTIFACT_TYPE, DIFFICULTY, ITEM_KIND, SOURCE_MODE, SUPPORT_CHOICES, SUPPORT_NOTE } from './labels'
 import s from './adult.module.css'
@@ -109,6 +110,9 @@ export function Generate() {
   const subjects = useResource<{ subjects: Subject[] }>(paths.subjects(req.school ?? learner.school))
   const sets = useResource<StudySet[]>(paths.studySets(learner.id))
   const ready = sets.data?.filter((x) => x.status === 'ready') ?? []
+  // Inline upload: new pictures become a study set that is selected as soon as it has been read.
+  const [uploading, setUploading] = useState(false)
+  const [reading, setReading] = useState(false)
   const features = status.data?.features
 
   const set = <K extends keyof Req>(k: K, v: Req[K]) =>
@@ -128,6 +132,10 @@ export function Generate() {
     e.preventDefault()
     setMsg('')
     setResult(undefined)
+    if (uploading) {
+      setMsg(reading ? 'Väntar på att bilderna ska läsas klart.' : 'Ladda upp bilderna först, eller välj Inget.')
+      return
+    }
     if (!req.instructions?.trim() && !req.type) {
       setMsg('Beskriv vad du vill skapa, eller välj en typ av material.')
       return
@@ -320,36 +328,58 @@ export function Generate() {
         </div>
       </details>
 
-      {ready.length > 0 && (
-        <section className={s.card} aria-labelledby="src-h">
-          <h2 id="src-h">Utgå från studiematerial (valfritt)</h2>
-          <Field label="Studiematerial">
-            {(id) => (
-              <select id={id} value={req.studySetId ?? ''} onChange={(e) => set('studySetId', e.target.value)}>
-                <option value="">Inget</option>
-                {ready.map((x) => (
-                  <option key={x.id} value={x.id}>
-                    {x.title}
-                  </option>
-                ))}
-              </select>
-            )}
-          </Field>
-          {req.studySetId && (
-            <Choice
-              legend="Hur materialet används"
-              value={req.sourceMode ?? 'sourceAndCurriculum'}
-              options={(Object.keys(SOURCE_MODE) as SourceMode[]).map(
-                (m) => [m, `${SOURCE_MODE[m].label}: ${SOURCE_MODE[m].help}`] as const,
-              )}
-              onChange={(v) => set('sourceMode', v)}
-            />
+      <section className={s.card} aria-labelledby="src-h">
+        <h2 id="src-h">Utgå från studiematerial (valfritt)</h2>
+        <Field label="Studiematerial">
+          {(id) => (
+            <select
+              id={id}
+              value={uploading ? 'new' : (req.studySetId ?? '')}
+              onChange={(e) => {
+                const v = e.target.value
+                setUploading(v === 'new')
+                setReading(false)
+                set('studySetId', v === 'new' ? undefined : v)
+              }}
+            >
+              <option value="">Inget</option>
+              {ready.map((x) => (
+                <option key={x.id} value={x.id}>
+                  {x.title}
+                </option>
+              ))}
+              <option value="new">Ladda upp nya bilder…</option>
+            </select>
           )}
-        </section>
-      )}
+        </Field>
+        {uploading && (
+          <StudyUpload
+            learnerId={learner.id}
+            variant="adult"
+            onUploaded={() => setReading(true)}
+            onReady={(setId) => {
+              sets.reload()
+              setUploading(false)
+              setReading(false)
+              set('studySetId', setId)
+              setMsg('Bilderna är lästa och valda som studiematerial.')
+            }}
+          />
+        )}
+        {req.studySetId && (
+          <Choice
+            legend="Hur materialet används"
+            value={req.sourceMode ?? 'sourceAndCurriculum'}
+            options={(Object.keys(SOURCE_MODE) as SourceMode[]).map(
+              (m) => [m, `${SOURCE_MODE[m].label}: ${SOURCE_MODE[m].help}`] as const,
+            )}
+            onChange={(v) => set('sourceMode', v)}
+          />
+        )}
+      </section>
 
       <div className={s.saveBar}>
-        <Button type="submit" disabled={busy}>
+        <Button type="submit" disabled={busy || reading}>
           Skapa
         </Button>
         <p role="status" className={s.msg}>

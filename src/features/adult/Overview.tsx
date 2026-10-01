@@ -82,7 +82,6 @@ function LearnerCard({ l }: { l: LearnerListItem }) {
       <nav aria-label={`Genvägar för ${l.displayName}`} className={s.links}>
         <Link to={`${base}/skapa`}>Skapa material</Link>
         <Link to={`${base}/material`}>Material</Link>
-        <Link to={`${base}/framsteg`}>Framsteg</Link>
         <Link to={base}>Profil och stöd</Link>
       </nav>
     </li>

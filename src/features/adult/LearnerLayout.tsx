@@ -10,7 +10,6 @@ const TABS = [
   ['', 'Profil och stöd'],
   ['skapa', 'Skapa material'],
   ['material', 'Material'],
-  ['framsteg', 'Framsteg'],
   ['studiematerial', 'Studiematerial'],
 ] as const
 
