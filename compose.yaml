@@ -1,0 +1,78 @@
+# JackApp: docker compose up -d --build   (see docs/platform/deployment.md)
+name: jackapp
+
+x-jackapp: &jackapp
+  image: jackapp:local
+  build:
+    context: .
+    args:
+      JACKAPP_SKIP_SPEECH: ${JACKAPP_SKIP_SPEECH:-0}
+  env_file: .env
+  environment:
+    NODE_ENV: production
+    DATABASE_URL: postgres://${POSTGRES_USER:-jackapp}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@db:5432/${POSTGRES_DB:-jackapp}
+  restart: unless-stopped
+
+services:
+  db:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-jackapp}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-jackapp}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks: [backend]
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+  migrate:
+    <<: *jackapp
+    command: ['node', 'dist-server/migrate.js']
+    networks: [backend]
+    depends_on:
+      db: { condition: service_healthy }
+    healthcheck: { disable: true }
+    restart: 'no'
+
+  app:
+    <<: *jackapp
+    # Loopback only: the app has no login, so only the reverse proxy may reach it.
+    # Caddy in this compose project? Remove `ports` and use `reverse_proxy app:3000`.
+    ports: ['127.0.0.1:3000:3000']
+    volumes:
+      - appdata:/data
+    networks: [backend, egress]
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+
+  worker:
+    <<: *jackapp
+    command: ['node', '--enable-source-maps', 'dist-server/worker.js']
+    volumes:
+      - appdata:/data
+    networks: [backend, egress]
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+    healthcheck:
+      test: ['CMD', 'node', 'dist-server/worker-health.js']
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+    # LAN AI on the Docker host itself? Uncomment and use http://host.docker.internal:<port>/v1.
+    # extra_hosts: ['host.docker.internal:host-gateway']
+
+networks:
+  # No route out: db is only reachable from the app, worker and migrate.
+  backend: { internal: true }
+  # Outbound access for AI providers and the published port.
+  egress: {}
+
+volumes:
+  pgdata: # PostgreSQL data: back this up.
+  appdata: # /data: uploads, processed material, generated images. Back this up.

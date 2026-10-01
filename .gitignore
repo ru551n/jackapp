@@ -31,3 +31,9 @@ test-results
 .venv-speech/
 public/audio/
 public/voices/
+dist-server
+
+# Local configuration (secrets)
+.env
+.env.*
+!.env.example
