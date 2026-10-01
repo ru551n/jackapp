@@ -45,10 +45,20 @@ Rules (enforced by `src/content/content.test.ts` for every generator):
 
 ## Levels (guideline)
 
-| Level | Reading                      | Mathematics                        |
-| ----- | ---------------------------- | ---------------------------------- |
-| 1     | single letters, 2 choices    | quantities ≤ 5, pictures only      |
-| 2     | short familiar words         | ≤ 6, pictures + numbers            |
-| 3     | longer words, missing letter | ≤ 10, `🚃🚃🚃 + 🚃` with numbers   |
-| 4     | short sentences              | ≤ 10, symbols with picture support |
-| 5     | sentence comprehension       | ≤ 20, symbolic `3 + 1 = ?`         |
+| Level | Reading                                                              | Mathematics (add/sub total)                                |
+| ----- | -------------------------------------------------------------------- | ---------------------------------------------------------- |
+| 1     | short picture-backed words (TÅG, BIL), 2 choices, two-word sentences | ≤ 5, pictures only                                         |
+| 2     | short familiar words, uppercase                                      | ≤ 6, pictures + a number under each group                  |
+| 3     | longer words, missing letter, mixed case                             | ≤ 8, pictures + `3 + 2 = ?`                                |
+| 4     | short sentences                                                      | ≤ 10, equation first with pictures below                   |
+| 5     | two-sentence comprehension                                           | ≤ 12, equation with a count-on aid (never a bare equation) |
+
+`support === 'extra'` brings full pictures back at the **same** numeric range. Choice counts come from the shared `choiceCount()` (2 at level 1 or with extra support, 3 at levels 2–3, 4 above).
+
+## Hints
+
+With 2 choices a child can only miss once, so `hints[0]` must be the real scaffold: a supportive scene, a counting cue, or the word sign. `hints[1]` is a worked step. Only eliminate options when at least 2 remain, and never write "vi tar bort…" when nothing is removed.
+
+## Languages
+
+English content sets `promptLang: 'en'` for English prompts, `lang: 'en'` on English choices and signs, and `Hint.speech` (Swedish only) whenever a hint's text contains English, so the Swedish voice never reads English words.

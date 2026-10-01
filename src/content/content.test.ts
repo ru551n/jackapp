@@ -16,9 +16,6 @@ function vehicleIds(scene: Scene | undefined): string[] {
   return []
 }
 
-// Known bug: offers both 'G' and 'g' as choices (see the it.fails test below). Remove when fixed.
-const CASE_CLASH = new Set(['read.missingLetter.word'])
-
 function check(q: Question, genId: string) {
   const ctx = `${genId} → ${q.id}`
   expect(q.prompt.trim(), ctx).not.toBe('')
@@ -40,7 +37,7 @@ function check(q: Question, genId: string) {
       [...ids].sort(),
     )
   }
-  const fold = (t: string) => (CASE_CLASH.has(genId) ? t.trim() : t.trim().toLowerCase())
+  const fold = (t: string) => t.trim().toLowerCase()
   const labels = options.filter((c) => c.label).map((c) => fold(c.label!))
   expect(new Set(labels).size, `${ctx}: duplicate visible labels`).toBe(labels.length)
 
@@ -86,20 +83,6 @@ describe('every generator', () => {
   it('generator ids are unique', () => {
     const ids = GENERATORS.map((g) => g.id)
     expect(new Set(ids).size).toBe(ids.length)
-  })
-})
-
-describe('known content bugs', () => {
-  // src/content/reading/missingLetter.ts: textChoices() filters the answer case-sensitively, so a
-  // cased distractor can equal the answer ignoring case ("G" next to "g").
-  it.fails('read.missingLetter.word never offers the same letter in two cases', () => {
-    const gen = GENERATORS.find((g) => g.id === 'read.missingLetter.word')!
-    for (const seed of SEEDS)
-      for (let level = 2; level <= 5; level++) {
-        const q = gen.generate({ rng: createRng(seed), level: level as Level, support: 'normal' })
-        const labels = (q.task.kind === 'choice' ? q.task.choices : []).map((c) => c.label!.toLowerCase())
-        expect(new Set(labels).size).toBe(labels.length)
-      }
   })
 })
 
