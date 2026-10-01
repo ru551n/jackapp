@@ -1,14 +1,16 @@
 import { Link } from 'react-router'
+import type { Vehicle } from '../../core/types'
 import { paths } from '../../app/paths'
 import { VehicleArt } from '../../art/vehicles'
 import { isUnlocked, VEHICLES } from '../../content/vehicles'
 import { useAppState } from '../../store/store'
 import { Shell } from '../../ui/Shell'
 import styles from './Collection.module.css'
-import { remainingText, SECTIONS } from './remaining'
+import { lockedHint, nextIds, SECTIONS } from './remaining'
 
 export function CollectionPage() {
   const missions = useAppState((s) => s.missions)
+  const next = nextIds(VEHICLES, missions)
   const have = VEHICLES.filter((v) => isUnlocked(v, missions)).length
   return (
     <Shell title="Min samling">
@@ -33,15 +35,8 @@ export function CollectionPage() {
                     </Link>
                   </li>
                 ) : (
-                  <li key={v.id} className={`${styles.card} ${styles.locked}`}>
-                    <div aria-hidden="true" className={styles.lockedArt}>
-                      <VehicleArt vehicle={v} mode="silhouette" className={styles.art} />
-                    </div>
-                    <span className={styles.name}>
-                      <span aria-hidden="true">?</span>
-                      <span className={styles.visuallyHidden}>Ett fordon som är låst</span>
-                    </span>
-                    <span className={styles.hint}>{remainingText(v, missions)}</span>
+                  <li key={v.id}>
+                    <LockedCard v={v} hint={lockedHint(v, missions, next.has(v.id))} prominent={next.has(v.id)} />
                   </li>
                 ),
               )}
@@ -50,5 +45,29 @@ export function CollectionPage() {
         )
       })}
     </Shell>
+  )
+}
+
+function LockedCard({ v, hint, prominent }: { v: Vehicle; hint: string; prominent: boolean }) {
+  const body = (
+    <>
+      <div aria-hidden="true" className={styles.lockedArt}>
+        <VehicleArt vehicle={v} mode="silhouette" className={styles.art} />
+      </div>
+      <span className={styles.name}>
+        <span aria-hidden="true">?</span>
+        <span className={styles.visuallyHidden}>Låst fordon. </span>
+      </span>
+      <span className={prominent ? styles.hintNext : styles.hint}>{hint}</span>
+    </>
+  )
+  const cls = `${styles.card} ${styles.locked}`
+  // 'any' unlocks from any area, so there is no single place to send the child.
+  return v.unlock.area === 'any' ? (
+    <div className={cls}>{body}</div>
+  ) : (
+    <Link to={paths.area(v.unlock.area)} className={cls}>
+      {body}
+    </Link>
   )
 }

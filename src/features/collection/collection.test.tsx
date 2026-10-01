@@ -1,13 +1,13 @@
 import { render, screen } from '@testing-library/react'
 import { createMemoryRouter, RouterProvider } from 'react-router'
 import { beforeEach, describe, expect, it } from 'vitest'
-import { isUnlocked, VEHICLES, vehicleById } from '../../content/vehicles'
+import { missionsLeft, VEHICLES, vehicleById } from '../../content/vehicles'
 import { RAIL_VEHICLES } from '../../content/vehicles/rail'
 import type { AreaId, VehicleCategory } from '../../core/types'
 import { defaultState } from '../../store/state'
 import { actions } from '../../store/store'
 import { CollectionPage } from './CollectionPage'
-import { missionsLeft, remainingText } from './remaining'
+import { lockedHint, nextIds } from './remaining'
 import { VehicleDetailPage } from './VehicleDetailPage'
 
 const withMissions = (m: Partial<Record<AreaId, number>>) => {
@@ -41,21 +41,26 @@ describe('collection page', () => {
   })
 })
 
-describe('remaining missions text', () => {
-  it('counts per area and for any', () => {
-    const iore = vehicleById('iore')!
-    withMissions({ stationen: 2 })
-    expect(remainingText(iore, defaultStateWith({ stationen: 2 }))).toBe('3 uppdrag till i Stationen')
-    expect(remainingText(iore, defaultStateWith({ stationen: 4 }))).toBe('1 uppdrag till i Stationen')
-    expect(missionsLeft(iore, defaultStateWith({ stationen: 9 }))).toBe(0)
+describe('locked hints', () => {
+  const iore = vehicleById('iore')!
+  const x60 = vehicleById('x60')!
+  it('shows a count only for the next unlock per area', () => {
+    const m = defaultStateWith({ stationen: 2 })
+    const next = nextIds(RAIL_VEHICLES, m)
+    expect(next.has('x31')).toBe(true) // needs 3, has 2
+    expect(next.has('iore')).toBe(false)
+    expect(lockedHint(vehicleById('x31')!, m, true)).toBe('1 uppdrag kvar i Stationen')
+    expect(lockedHint(iore, m, false)).toBe('Låst · Stationen')
+    expect(missionsLeft(iore, m)).toBe(3) // 5 needed - 2 done
+    expect(missionsLeft(x60, m)).toBe(0)
   })
-  it('is consistent with isUnlocked for every vehicle', () => {
-    for (const v of VEHICLES) {
-      for (const n of [0, 1, 5, 12]) {
-        const m = defaultStateWith({ stationen: n, tunnelbanan: n, sparvagnen: n, flygplatsen: n })
-        expect(missionsLeft(v, m) === 0).toBe(isUnlocked(v, m))
-      }
-    }
+  it('links locked cards to their area, but not "any" ones', () => {
+    renderAt('/samling')
+    expect(screen.getAllByRole('link', { name: /Låst fordon/ })[0]).toHaveAttribute(
+      'href',
+      expect.stringMatching(/^\/omrade\//),
+    )
+    expect(screen.getAllByText(/Låst/).length).toBeGreaterThan(0)
   })
 })
 

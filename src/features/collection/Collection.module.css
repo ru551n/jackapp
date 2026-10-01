@@ -33,7 +33,7 @@
   min-height: 11rem;
   padding: var(--space-2);
   background: var(--paper);
-  border: 3px solid var(--line);
+  border: 3px solid var(--ink-soft);
   border-radius: var(--radius);
   box-shadow: var(--shadow);
   color: var(--ink);
@@ -47,7 +47,13 @@ a.card:focus-visible {
   border-color: var(--accent);
 }
 
+a.card:focus-visible {
+  outline: 3px solid var(--ink-soft);
+  outline-offset: 2px;
+}
+
 .locked {
+  border-style: dashed;
   background: var(--paper-strong);
   color: var(--ink-soft);
 }
@@ -69,6 +75,12 @@ a.card:focus-visible {
 
 .hint {
   font-size: 1rem;
+}
+
+.hintNext {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--ink);
 }
 
 .visuallyHidden {
