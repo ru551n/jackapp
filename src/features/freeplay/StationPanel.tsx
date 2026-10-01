@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Button } from '../../ui/Button'
 import { MAX_NAME, STATION_NAMES } from './model'
 import styles from './FreePlay.module.css'
@@ -10,10 +10,14 @@ interface Props {
 }
 
 export function StationPanel({ name, onPick, onClose }: Props) {
+  const heading = useRef<HTMLHeadingElement>(null)
+  useEffect(() => heading.current?.focus(), [])
   const [custom, setCustom] = useState('')
   return (
     <section className={styles.panel} aria-label="Välj namn">
-      <h2>Namn på stationen</h2>
+      <h2 ref={heading} tabIndex={-1}>
+        Namn på stationen
+      </h2>
       <div className={styles.names}>
         {STATION_NAMES.map((n) => (
           <Button key={n} variant={n === name ? 'primary' : 'secondary'} onClick={() => onPick(n)}>

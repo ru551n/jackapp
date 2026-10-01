@@ -1,15 +1,25 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
+import { useAppState } from '../../store/store'
 import type { FreeStation } from '../../core/types'
 import { stationOffsets } from './model'
 
-const SPEED = 12 // map units per second: calm and constant
+const SPEED = 9 // map units per second: calm and constant
 const DWELL_MS = 1600
 
-export function prefersReducedMotion() {
-  const m = document.documentElement.dataset.motion
-  if (m === 'reduced') return true
-  if (m === 'full') return false
-  return typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches
+const QUERY = '(prefers-reduced-motion: reduce)'
+const subscribe = (cb: () => void) => {
+  if (typeof matchMedia !== 'function') return () => {}
+  const m = matchMedia(QUERY)
+  m.addEventListener('change', cb)
+  return () => m.removeEventListener('change', cb)
+}
+const systemReduced = () => typeof matchMedia === 'function' && matchMedia(QUERY).matches
+
+/** Reduced motion from the motion setting; 'system' follows the OS and reacts to changes. */
+export function useReducedMotion() {
+  const motion = useAppState((s) => s.settings.motion)
+  const system = useSyncExternalStore(subscribe, systemReduced, () => false)
+  return motion === 'system' ? system : motion === 'reduced'
 }
 
 const IDLE = { d: 0, at: 0 as number | null, to: 1, running: false }

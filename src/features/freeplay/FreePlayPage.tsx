@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { Navigate } from 'react-router'
 import { paths } from '../../app/paths'
 import type { FreeLine } from '../../core/types'
@@ -9,7 +9,7 @@ import { Sprite } from '../../art/sprites'
 import { LineMap } from './LineMap'
 import { StationPanel } from './StationPanel'
 import { MAX_STATIONS, VEHICLES, addAtFreeSpot, addStation, emptyLine, removeLast, renameStation } from './model'
-import { prefersReducedMotion, useRunner } from './useRunner'
+import { useReducedMotion, useRunner } from './useRunner'
 import styles from './FreePlay.module.css'
 
 export function FreePlayPage() {
@@ -22,7 +22,8 @@ function Builder() {
   const line = useAppState((s) => s.freePlay.line) ?? emptyLine
   const [selected, setSelected] = useState<string | null>(null)
   const [confirming, setConfirming] = useState(false)
-  const reduced = prefersReducedMotion()
+  const stationRefs = useRef(new Map<string, SVGGElement>())
+  const reduced = useReducedMotion()
   const { stations } = line
   const runner = useRunner(stations, reduced)
   const save = (next: FreeLine) => actions.setFreeLine(next)
@@ -41,12 +42,14 @@ function Builder() {
             selected={selected}
             onAdd={(x, y) => save(addStation(line, x, y))}
             onSelect={setSelected}
+            stationRefs={stationRefs}
+            at={runner.at}
           />
         </div>
         <div className={styles.side}>
-          <div className={styles.sign} aria-live="polite">
+          <div className={styles.sign} aria-live={runner.running ? 'off' : 'polite'} aria-atomic="true">
             {stations.length < 2 ? (
-              <span>Lägg till minst två stationer</span>
+              <span>Tryck på kartan för att lägga till en station</span>
             ) : (
               <>
                 <span>{here ? `Här: ${here.name}` : 'På väg'}</span>
@@ -71,7 +74,7 @@ function Builder() {
               Lägg till station
             </Button>
             <Button variant="secondary" disabled={!stations.length} onClick={() => save(removeLast(line))}>
-              Ta bort sista stationen
+              Ta bort station
             </Button>
           </div>
           <div className={styles.row}>
@@ -108,12 +111,16 @@ function Builder() {
               </Button>
             )}
           </div>
+          {stations.length < 2 && <p className={styles.hint}>Lägg till minst två stationer</p>}
           {sel && (
             <StationPanel
               key={sel.id}
               name={sel.name}
               onPick={(n) => save(renameStation(line, sel.id, n))}
-              onClose={() => setSelected(null)}
+              onClose={() => {
+                setSelected(null)
+                stationRefs.current.get(sel.id)?.focus()
+              }}
             />
           )}
         </div>
