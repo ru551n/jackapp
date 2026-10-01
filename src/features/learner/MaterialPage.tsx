@@ -1,6 +1,6 @@
 import { RunPlayer } from '../runs'
 import { useState } from 'react'
-import { useParams } from 'react-router'
+import { useNavigate, useParams } from 'react-router'
 import { usePaths } from '../../app/paths'
 import { VehicleArt } from '../../art/vehicles'
 import type { Vehicle } from '../../core/types'
@@ -49,16 +49,31 @@ export function MaterialPage() {
           </LinkButton>
         </section>
       ) : (
-        data && <RunSlot learnerId={learner.id} artifactId={artifactId} band={flags.band} onFinish={onFinish} />
+        data && (
+          <RunSlot
+            learnerId={learner.id}
+            artifactId={artifactId}
+            band={flags.band}
+            title={data.artifact.title}
+            onFinish={onFinish}
+          />
+        )
       )}
     </Frame>
   )
 }
 
 /** Runs the material with the shared player in the learner's band and presentation. */
-function RunSlot(props: { learnerId: string; artifactId: string; band: string; onFinish: () => void }) {
+function RunSlot(props: { learnerId: string; artifactId: string; band: string; title: string; onFinish: () => void }) {
   const { learner } = useLearner()
+  const paths = usePaths()
+  const navigate = useNavigate()
   const variant = props.band === 'upper' ? 'upper' : props.band === 'middle' ? 'middle' : 'early'
+  // "Öva mer": the free request, prefilled (middle and upper have one; early uses the guided picker).
+  const practice =
+    variant !== 'early' && learner.learnerRequestsAllowed
+      ? () => navigate(paths.request, { state: { text: `Jag vill öva mer på ${props.title}` } })
+      : undefined
   return (
     <RunPlayer
       learnerId={props.learnerId}
@@ -66,6 +81,8 @@ function RunSlot(props: { learnerId: string; artifactId: string; band: string; o
       variant={variant}
       presentation={learner.presentation}
       onFinished={() => props.onFinish()}
+      onPracticeMore={practice}
+      onDone={() => navigate(paths.home)}
     />
   )
 }

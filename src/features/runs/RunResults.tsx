@@ -12,10 +12,15 @@ export interface RunResultsProps extends CommonProps {
   summary: RunSummary
   /** "Öva mer på det här": the skill tags that need more practice (the parent area wires this). */
   onPracticeMore?: (skills: string[]) => void
+  /** "Klar – till start": a clear way out after the results. */
+  onDone?: () => void
 }
 
+const skillLabel = (s: RunSummary['skills'][number]) =>
+  'label' in s && typeof s.label === 'string' ? s.label : undefined
+
 /** Non-punitive results: what went well, what to look at again. */
-export function RunResults({ learnerId, variant, runId, summary: initial, onPracticeMore }: RunResultsProps) {
+export function RunResults({ learnerId, variant, runId, summary: initial, onPracticeMore, onDone }: RunResultsProps) {
   const [summary, setSummary] = useState(initial)
   const [error, setError] = useState('')
   const detailed = variant === 'upper' || variant === 'adult'
@@ -50,7 +55,11 @@ export function RunResults({ learnerId, variant, runId, summary: initial, onPrac
           <ul className={styles.skills}>
             {summary.skills.map((s) => (
               <li key={s.skill}>
-                <p>{s.note}</p>
+                <p>
+                  {/* Skill tags are slugs; only a readable label (when the server sends one) is shown. */}
+                  {skillLabel(s) && <strong>{skillLabel(s)}: </strong>}
+                  {s.note}
+                </p>
                 {detailed && (
                   <p className={styles.note}>
                     {s.correct} av {s.total}
@@ -108,14 +117,22 @@ export function RunResults({ learnerId, variant, runId, summary: initial, onPrac
       )}
 
       {error && <p className={styles.note}>{error}</p>}
-      {onPracticeMore && (
+      {(onDone || onPracticeMore) && (
         <div className={styles.actions}>
-          <Button
-            icon="arrow"
-            onClick={() => onPracticeMore(practice.length ? practice : summary.skills.map((s) => s.skill))}
-          >
-            Öva mer på det här
-          </Button>
+          {onDone && (
+            <Button icon="home" onClick={onDone}>
+              Klar – till start
+            </Button>
+          )}
+          {onPracticeMore && (
+            <Button
+              variant={onDone ? 'secondary' : 'primary'}
+              icon="arrow"
+              onClick={() => onPracticeMore(practice.length ? practice : summary.skills.map((s) => s.skill))}
+            >
+              Öva mer på det här
+            </Button>
+          )}
         </div>
       )}
     </section>

@@ -6,7 +6,7 @@ export type Variant = 'early' | 'middle' | 'upper' | 'adult'
 
 /** Support preferences that change presentation (never difficulty). */
 export type Presentation = Partial<
-  Pick<SupportPreferences, 'maxChoices' | 'textAmount' | 'visualSupport' | 'readAloud' | 'reducedMotion'>
+  Pick<SupportPreferences, 'maxChoices' | 'textAmount' | 'visualSupport' | 'readAloud' | 'reducedMotion' | 'stepByStep'>
 >
 
 export interface CommonProps {
