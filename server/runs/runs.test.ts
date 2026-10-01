@@ -152,6 +152,15 @@ describe('immediate feedback', () => {
     expect(adaptive.calls).toBe(1)
   })
 
+  it('counts only hints the child asked for as hints used', async () => {
+    const t = await setup()
+    const run = await t.start(t.add(artifact(t.learner.id)))
+    await t.call('POST', `/runs/${run.id}/hint`, { itemId: 'q1' }) // asked
+    await t.answer(run.id, 'q1', 'a') // wrong: the next hint comes with the retry message
+    await t.answer(run.id, 'q1', 'b')
+    expect(await t.evidence()).toMatchObject([{ itemId: 'q1', misses: 1, hintsUsed: 1 }])
+  })
+
   it('retries calmly with progressive hints, reveals after 3 tries (early band), records evidence once', async () => {
     const t = await setup()
     const a = t.add(artifact(t.learner.id))
@@ -173,7 +182,8 @@ describe('immediate feedback', () => {
       'item_done',
     )
     expect(await t.evidence()).toMatchObject([
-      { skill: 'sv.letters', correct: false, misses: 3, hintsUsed: 2, difficulty: 2, itemId: 'q1', artifactId: a.id },
+      // The two hints came with "Prova igen", not on request: not counted as using hints.
+      { skill: 'sv.letters', correct: false, misses: 3, hintsUsed: 0, difficulty: 2, itemId: 'q1', artifactId: a.id },
     ])
 
     const ok = await t.answer(run.id, 'q2', '2,5 kg')

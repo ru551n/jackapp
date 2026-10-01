@@ -17,12 +17,13 @@ import {
   detectPatterns,
   judge,
   loadObs,
+  skillLabel,
   skillStates,
   summarizeSkills,
   type Obs,
   type Outcome,
 } from './skills'
-import { childSteps, nextReviewStep, nextSteps, remediationRequest, REVIEW_INTERVAL_DAYS } from './steps'
+import { childSteps, nextReviewStep, nextSteps, rankExplore, remediationRequest, REVIEW_INTERVAL_DAYS } from './steps'
 
 const NOW = new Date('2026-10-01T12:00:00Z')
 const DAY = 86_400_000
@@ -488,3 +489,46 @@ async function seedCurriculum(db: Db) {
     ],
   })
 }
+
+describe('Swedish labels and suggestions', () => {
+  const SLUG = /[a-z]+\.[a-z]/
+  const tags = [
+    'math.addition.within-100',
+    'math.multiplication.tables-6-9',
+    'science.volcanoes',
+    'foo.bar-baz.qux',
+    'ma.decimals',
+    'math',
+  ]
+
+  it('never shows slugs or English tag words in labels, titles, notes or requests', async () => {
+    expect(skillLabel('math.addition.within-100')).toBe('addition i talområdet 0–100')
+    expect(skillLabel('math.multiplication.tables-6-9')).toBe('multiplikation')
+    expect(skillLabel('science.volcanoes')).toBe('naturkunskap')
+    expect(skillLabel('math')).toBe('matematik')
+    const { db, l } = await setup()
+    await seedCurriculum(db)
+    for (const s of tags) await answer(db, l.id, s, H(6), ago(1))
+    const steps = await nextSteps(db, l.id, NOW)
+    const summaries = await summarizeSkills(db, l.id, NOW)
+    const shown = JSON.stringify([
+      tags.map(skillLabel),
+      steps.map((s) => [s.title, s.reason, s.childText, s.request.topic, s.request.instructions]),
+      summaries.map((s) => s.note),
+      detectPatterns(skillStates(await loadObs(db, l.id), NOW)).map((p) => p.note),
+    ])
+    expect(shown).not.toMatch(SLUG)
+    expect(shown).not.toMatch(/\b(within|tables|volcanoes|science|math|foo|bar|baz|qux)\b/)
+    // Group headings: a tag without a subject gets its root's subject code (math → Matematik).
+    expect(summaries.find((s) => s.skill === 'math')?.subjectCode).toBe('GRGRMAT01')
+  })
+
+  it('suggests subjects matching interests first, then the core subjects', () => {
+    const subjects = ['Bild', 'Biologi', 'Engelska', 'Idrott och hälsa', 'Matematik', 'Musik', 'Svenska'].map(
+      (name) => ({ name }),
+    )
+    const names = (interests: string[]) => rankExplore(subjects, { interests, themes: [] }).map((s) => s.name)
+    expect(names([]).slice(0, 3)).toEqual(['Engelska', 'Matematik', 'Svenska'])
+    expect(names(['fotboll', 'djur']).slice(0, 2)).toEqual(['Biologi', 'Idrott och hälsa'])
+  })
+})

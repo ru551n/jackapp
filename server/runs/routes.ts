@@ -77,6 +77,10 @@ function settled(item: Item, row: Pick<AnswerRow, 'attempt' | 'correct' | 'score
   } satisfies AnswerFeedback
 }
 
+/** Hints the child asked for (/hint). Hints attached to a retry message were not chosen, so they don't count. */
+const askedHints = (run: Run, itemId: string, rows: AnswerRow[]) =>
+  Math.max(0, (run.hintsShown[itemId] ?? 0) - rows.filter((r) => (r.feedback as AnswerFeedback | null)?.hint).length)
+
 function evidence(
   run: Run,
   art: Artifact,
@@ -350,7 +354,8 @@ export const runRoutes: RouteModule = (app, ctx: AppContext) => {
         await tx.update(runs).set({ hintsShown: hints }).where(eq(runs.id, runId))
       if (final) {
         const misses = run.feedback === 'end' ? (check!.correct ? 0 : 1) : check!.correct ? attempt - 1 : attempt
-        await recordEvidence(tx as unknown as Db, evidence(run, art, item, check!.correct, misses, hintsUsed))
+        const asked = askedHints(run, item.id, rows)
+        await recordEvidence(tx as unknown as Db, evidence(run, art, item, check!.correct, misses, asked))
         wroteEvidence.add(req)
       }
       // A post-finish self-assessment updates the stored summary.
@@ -402,13 +407,14 @@ export const runRoutes: RouteModule = (app, ctx: AppContext) => {
         const rows = g.get(item.id)
         const last = rows?.at(-1)
         if (!last || last.final || last.correct === null) continue
+        const asked = askedHints(run, item.id, rows!) // before the row's feedback is replaced below
         const end = run.feedback === 'end'
         const msg = end ? (last.correct ? MSG.correct : MSG.notFinished) : MSG.notFinished
         last.final = true
         last.feedback = { ...settled(item, last, msg), ai: (last.feedback as AnswerFeedback).ai }
         await tx.update(runAnswers).set({ final: true, feedback: last.feedback }).where(eq(runAnswers.id, last.id))
         const misses = end ? (last.correct ? 0 : 1) : last.attempt
-        ev.push(...evidence(run, art, item, last.correct, misses, run.hintsShown[item.id] ?? 0))
+        ev.push(...evidence(run, art, item, last.correct, misses, asked))
       }
       await recordEvidence(tx as unknown as Db, ev)
       if (ev.length) wroteEvidence.add(req)

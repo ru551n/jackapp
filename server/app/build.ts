@@ -53,10 +53,11 @@ export async function buildApp(opts: BuildOptions) {
   })
 
   /** Liveness: the process is up. */
-  app.get('/health', async () => ({ status: 'ok' }))
+  // logLevel warn: the 15 s container healthchecks would otherwise flood the request log.
+  app.get('/health', { logLevel: 'warn' }, async () => ({ status: 'ok' }))
 
   /** Readiness: critical dependencies OK. Details are safe (names + coarse status only). */
-  app.get('/ready', async (_req, reply) => {
+  app.get('/ready', { logLevel: 'warn' }, async (_req, reply) => {
     const r = await runReadiness(ctx.readiness)
     return reply.status(r.ready ? 200 : 503).send(r)
   })

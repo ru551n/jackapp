@@ -1,7 +1,8 @@
 import { and, desc, eq, ne, sql } from 'drizzle-orm'
 import type { SkillStatus, SkillSummary } from '../../shared/contracts'
 import type { Db } from '../db/client'
-import { adaptiveLegacySkills, legacySkillProgress, skillEvidence, skillEvidenceKinds } from '../db/schema'
+import { subjectsFor } from '../curriculum/service'
+import { adaptiveLegacySkills, learners, legacySkillProgress, skillEvidence, skillEvidenceKinds } from '../db/schema'
 
 // Deterministic skill model: per-answer outcomes → recency-weighted window → status.
 // Rules and thresholds: docs/platform/adaptive.md.
@@ -62,30 +63,107 @@ export function judge(obs: Obs[], now: Date): Judgement {
 
 // ---------- labels and notes ----------
 
-const LABELS: Record<string, string> = {
+/** Root segment → Swedish subject name (also used to find the subject code for headings). */
+export const ROOT_SUBJECTS: Record<string, string> = {
   math: 'matematik',
+  ma: 'matematik',
+  matematik: 'matematik',
   swedish: 'svenska',
+  sv: 'svenska',
+  svenska: 'svenska',
   english: 'engelska',
+  en: 'engelska',
+  engelska: 'engelska',
+  science: 'naturkunskap',
+  no: 'naturorienterande ämnen',
+  biology: 'biologi',
+  bio: 'biologi',
+  physics: 'fysik',
+  chemistry: 'kemi',
+  history: 'historia',
+  geography: 'geografi',
+  religion: 'religionskunskap',
+  civics: 'samhällskunskap',
+  so: 'samhällsorienterande ämnen',
+  technology: 'teknik',
+  music: 'musik',
+  art: 'bild',
+  sports: 'idrott och hälsa',
+  pe: 'idrott och hälsa',
+  crafts: 'slöjd',
+  spanish: 'spanska',
+  german: 'tyska',
+  french: 'franska',
+}
+
+const LABELS: Record<string, string> = {
+  ...ROOT_SUBJECTS,
   addition: 'addition',
   subtraction: 'subtraktion',
   multiplication: 'multiplikation',
   division: 'division',
   'tens-crossing': 'tiotalsövergångar',
+  'number-bonds': 'talkamrater',
+  tables: 'multiplikationstabellen',
   counting: 'att räkna',
   comparison: 'att jämföra',
+  numbers: 'tal',
+  'place-value': 'positionssystemet',
+  fractions: 'bråk',
+  decimals: 'decimaltal',
+  percent: 'procent',
+  geometry: 'geometri',
+  shapes: 'former',
+  measurement: 'mätning',
+  units: 'enheter',
+  time: 'klockan och tid',
+  money: 'pengar',
+  equations: 'ekvationer',
+  algebra: 'algebra',
+  statistics: 'statistik',
+  probability: 'sannolikhet',
+  'problem-solving': 'problemlösning',
+  'mental-math': 'huvudräkning',
   reading: 'läsning',
   'word-recognition': 'ordläsning',
   comprehension: 'läsförståelse',
   letters: 'bokstäver',
+  sounds: 'ljud',
+  phonics: 'ljudning',
   spelling: 'stavning',
+  writing: 'skrivning',
+  grammar: 'grammatik',
+  punctuation: 'skiljetecken',
   vocabulary: 'ord',
+  words: 'ord',
+  listening: 'hörförståelse',
+  speaking: 'att tala',
   patterns: 'mönster',
+  animals: 'djur',
+  plants: 'växter',
+  nature: 'naturen',
+  body: 'kroppen',
+  weather: 'väder',
+  space: 'rymden',
+  light: 'ljus',
+  energy: 'energi',
+  water: 'vatten',
+  maps: 'kartor',
 }
 
-/** Swedish label of a skill tag's last segment (falls back to the segment itself). */
+/**
+ * Swedish label for a skill tag: the most specific segment we know, walking up to the parent and
+ * the subject. Never returns a slug; unknown tags fall back to a neutral phrase.
+ */
 export function skillLabel(skill: string): string {
-  const last = skill.split('.').at(-1)!
-  return LABELS[last] ?? last.replace(/-/g, ' ')
+  const segs = skill.split('.')
+  const within = /^(?:within|upto|up-to)-(\d+)$/.exec(segs.at(-1)!)
+  if (within) {
+    const range = `talområdet 0–${within[1]}`
+    return segs.length > 1 && LABELS[segs.at(-2)!] ? `${LABELS[segs.at(-2)!]} i ${range}` : range
+  }
+  for (let i = segs.length - 1; i >= 0; i--) if (LABELS[segs[i]!]) return LABELS[segs[i]!]!
+  return 'det här området'
 }
 
 export function noteFor(skill: string, j: Judgement): string {
@@ -264,8 +342,16 @@ export function skillStates({ obs, extraCounts }: LearnerObs, now: Date): SkillS
 const toSummary = ({ judgement: _j, leaf: _l, obs: _o, ...s }: SkillState): SkillSummary =>
   Object.fromEntries(Object.entries(s).filter(([, v]) => v !== undefined)) as SkillSummary
 
+/** Summaries; a tag without a subject gets one from its root (e.g. math → Matematik) for headings. */
 export async function summarizeSkills(db: Db, learnerId: string, now = new Date()): Promise<SkillSummary[]> {
-  return skillStates(await loadObs(db, learnerId), now).map(toSummary)
+  const states = skillStates(await loadObs(db, learnerId), now)
+  if (states.some((s) => !s.subjectCode)) {
+    const [l] = await db.select().from(learners).where(eq(learners.id, learnerId))
+    const subjects = l ? await subjectsFor(db, l.profile.school).catch(() => []) : []
+    const code = new Map(subjects.map((s) => [s.name.toLowerCase(), s.code]))
+    for (const s of states) s.subjectCode ??= code.get(ROOT_SUBJECTS[s.skill.split('.')[0]!] ?? '')
+  }
+  return states.map(toSummary)
 }
 
 // ---------- pattern detectors ----------
