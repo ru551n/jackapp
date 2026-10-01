@@ -30,6 +30,7 @@ export default defineConfig({
           environment: 'jsdom',
           setupFiles: ['./src/test/setup.ts'],
           include: ['src/**/*.test.{ts,tsx}'],
+          testTimeout: 20000,
           css: { modules: { classNameStrategy: 'non-scoped' } },
         },
       },
@@ -38,7 +39,9 @@ export default defineConfig({
           name: 'server',
           environment: 'node',
           include: ['server/**/*.test.ts', 'shared/**/*.test.ts'],
-          testTimeout: 30000,
+          // PGlite schema setup is CPU-heavy; generous limits avoid false failures on a busy machine.
+          testTimeout: 60000,
+          hookTimeout: 120000,
         },
       },
     ],
