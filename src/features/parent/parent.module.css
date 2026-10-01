@@ -32,7 +32,7 @@
   min-height: 3rem;
   font: inherit;
   padding: 0 var(--space-2);
-  border: 2px solid var(--line);
+  border: 2px solid var(--ink-soft);
   border-radius: var(--radius-sm);
   background: var(--paper-strong);
   color: var(--ink);
@@ -61,7 +61,7 @@
   font: inherit;
   font-size: 1.5rem;
   border-radius: var(--radius-sm);
-  border: 2px solid var(--line);
+  border: 2px solid var(--ink-soft);
   background: var(--paper-strong);
   color: var(--ink);
   cursor: pointer;
