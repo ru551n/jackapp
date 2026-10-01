@@ -2,6 +2,7 @@ import Fastify, { type FastifyServerOptions } from 'fastify'
 import { ZodError } from 'zod'
 import { API_PREFIX } from '../../shared/contracts'
 import { HttpError, sendError } from '../gate/guards'
+import { registerGate } from '../gate/plugin'
 import type { AppContext, ReadinessCheck } from './context'
 import { ROUTE_MODULES } from './routes'
 
@@ -56,6 +57,7 @@ export async function buildApp(opts: BuildOptions) {
     return reply.status(r.ready ? 200 : 503).send(r)
   })
 
+  await registerGate(app, ctx)
   await app.register(
     async (api) => {
       for (const mod of ROUTE_MODULES) await mod(api, ctx)

@@ -4,6 +4,7 @@ import { createTestDb, type Db } from '../db/client'
 import { learners } from '../db/schema'
 import { CoreEnv } from '../config/env'
 import { LearnerProfileInput } from '../../shared/contracts'
+import { storePin } from '../gate/pin'
 
 export const TEST_ENV = CoreEnv.parse({
   NODE_ENV: 'test',
@@ -12,9 +13,15 @@ export const TEST_ENV = CoreEnv.parse({
   APP_SECRET: 'x'.repeat(40),
 })
 
-/** App on an in-process database. Tests unlock the adult gate with the `x-test-adult: 1` header. */
-export async function createTestApp(opts: { readiness?: ReadinessCheck[] } = {}) {
+export const TEST_PIN = '2468'
+
+/**
+ * App on an in-process database. Tests unlock the adult gate with the `x-test-adult: 1` header.
+ * A household PIN (TEST_PIN) is set so the gate is closed by default; `pin: null` = first run.
+ */
+export async function createTestApp(opts: { readiness?: ReadinessCheck[]; pin?: string | null } = {}) {
   const handle = await createTestDb()
+  if (opts.pin !== null) await storePin(handle.db, opts.pin ?? TEST_PIN)
   const app = await buildApp({ ctx: { env: TEST_ENV, db: handle.db, readiness: opts.readiness ?? [] } })
   app.addHook('onRequest', async (req) => {
     if (req.headers['x-test-adult'] === '1') req.gate = { adult: true }
