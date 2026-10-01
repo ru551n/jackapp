@@ -16,6 +16,8 @@ Each `SkillEvidence` row becomes one outcome:
 
 ## Status (`judge`)
 
+The skill-status screens (adult "Framsteg" and the overview's "Behöver stöd"/"Går bra") were removed from the UI; evidence still sets generation difficulty.
+
 The status uses the **newest 10 answers** of a skill. Each answer has an integer recency weight: **4** if it is at most 14 days old, **2** if it is at most 60 days old, and **1** if it is older.
 
 | Status         | Rule (checked in this order)                                                                                                 |
@@ -57,6 +59,8 @@ Steps are ranked in this order, at most 2 per kind and 6 in total:
 
 Each step carries a Swedish `reason` for adults, a `childText` and a ready `GenerationRequest` draft (`request`). The skill tags are in `request.skills`; generation makes every item carry them (see generation.md). Learner mode gets `{ kind, title, text, pathId? }` only.
 
+No screen shows next steps any more: the learner "Idag" panel was removed from the UI.
+
 ## Remediation (`remediationRequest(summary, profile, { difficulty? })`)
 
 This builds a `lesson` in a fixed order: easier representation → worked example → guided practice → repeated practice → final check. The difficulty is one step below the median difficulty of recent answers (minimum 1). The number of questions follows `repetition` (low 5, normal 8, high 12). The support preferences pass through unchanged. They are also restated in the instructions: max choices, text amount, visual support and step by step. `textAmount` other than `normal` drops `fillBlank` and adds `trueFalse`. `visualSupport: high` sets `includeImages`.
@@ -72,6 +76,8 @@ Intervals are **1, 3, 7, 14 and 30 days** (`REVIEW_INTERVAL_DAYS`). A leaf skill
 The due date is counted from the newest answer.
 
 ## Learning paths
+
+The learning-path screens ("Min väg framåt", "Studieplaner") were removed from the UI; the API remains.
 
 `POST /learners/:id/paths { goal, subjectCode?, targetDate?, studySetId? }` → `202 { jobId }`. The `path.plan` job's `resultId` is the new path id. The text AI proposes milestones under a strict schema. Then `checkPlan` validates the proposal deterministically:
 

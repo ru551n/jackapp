@@ -184,31 +184,14 @@ details > summary {
   font-size: 0.85rem;
   white-space: nowrap;
 }
-.ap_approved,
-.st_secure {
+.ap_approved {
   background: var(--ok-soft);
   border-color: var(--ok);
 }
 .ap_pendingApproval,
-.ap_draft,
-.st_needsSupport {
+.ap_draft {
   background: var(--hint-soft);
   border-color: var(--hint);
-}
-.st_practising {
-  background: var(--accent-soft);
-  border-color: var(--accent);
-}
-.tagSupport,
-.tagGood {
-  font-size: 0.85rem;
-  margin: 0;
-}
-.tagSupport {
-  color: var(--hint);
-}
-.tagGood {
-  color: var(--ok);
 }
 .dotOn,
 .dotOff {

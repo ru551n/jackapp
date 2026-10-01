@@ -103,10 +103,6 @@ export const RELATIVE_LEVEL: Record<number, string> = {
   5: 'Långt över årskursen',
 }
 
-/** "math.addition.tens-crossing" → "tens crossing" (fallback when no note exists). */
-/** Skill rows show the server's Swedish note; tags are slugs and never shown. */
-export const UNNAMED_SKILL = 'Övrig färdighet'
-
 export const formatDate = (iso: string) =>
   new Date(iso).toLocaleDateString('sv-SE', { day: 'numeric', month: 'short', year: 'numeric' })
 

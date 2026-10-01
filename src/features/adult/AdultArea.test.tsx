@@ -28,17 +28,6 @@ const base = (adult = true) => ({
   'GET /system/status': status,
   'GET /learners': [{ id: ID, displayName: 'Jack', school: profile.school, ageBand: 'early' }],
   [`GET /learners/${ID}`]: profile,
-  [`GET /learners/${ID}/skills`]: {
-    skills: [
-      {
-        skill: 'math.addition',
-        status: 'needsSupport',
-        evidenceCount: 6,
-        note: 'Verkar behöva mer träning på addition.',
-      },
-    ],
-    patterns: [],
-  },
   [`GET /learners/${ID}/artifacts`]: [],
   [`GET /learners/${ID}/study-sets`]: [],
   'GET /curriculum/subjects': { version: 'v1', subjects: [{ code: 'GRGRMAT01', name: 'Matematik' }] },
@@ -87,7 +76,7 @@ describe('adult gate', () => {
     for (const d of ['2', '4', '6', '8']) await userEvent.click(screen.getByRole('button', { name: d }))
     await userEvent.click(screen.getByRole('button', { name: 'Öppna' }))
     expect(await screen.findByRole('heading', { name: 'Elever' })).toBeInTheDocument()
-    expect(await screen.findByText('Verkar behöva mer träning på addition.')).toBeInTheDocument()
+    expect(await screen.findByRole('link', { name: 'Jack' })).toBeInTheDocument()
     expect(screen.getByText('AI-text är tillgänglig')).toBeInTheDocument()
 
     await userEvent.click(screen.getByRole('button', { name: 'Lås' }))
@@ -95,7 +84,7 @@ describe('adult gate', () => {
   })
 
   it('re-shows the gate when the API answers 403 adult_required', async () => {
-    mockApi({ ...base(), [`GET /learners/${ID}/skills`]: apiError(403, 'adult_required') })
+    mockApi({ ...base(), [`GET /learners/${ID}/artifacts`]: apiError(403, 'adult_required') })
     setup('/vuxen')
     expect(await screen.findByRole('heading', { name: 'Skriv vuxenkoden' })).toBeInTheDocument()
   })

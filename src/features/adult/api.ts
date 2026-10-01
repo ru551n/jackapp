@@ -6,9 +6,7 @@ import type {
   GateState,
   GenerationRequest,
   LearnerProfile,
-  LearningPath,
   SchoolPosition,
-  SkillSummary,
   StudySet,
   SystemStatus,
   ValidationReport,
@@ -78,23 +76,6 @@ export interface LearnerListItem {
   school: SchoolPosition
   ageBand: AgeBand
 }
-export interface Pattern {
-  code: string
-  skill?: string
-  note: string
-}
-export interface SkillsResponse {
-  skills: SkillSummary[]
-  patterns: Pattern[]
-}
-export interface NextStep {
-  kind: 'remediate' | 'review' | 'continuePath' | 'explore'
-  title: string
-  reason: string
-  skill?: string
-  pathId?: string
-  request: GenerationRequest
-}
 export interface ArtifactSummary {
   id: string
   type: Artifact['type']
@@ -149,22 +130,10 @@ export const paths = {
   status: '/system/status',
   learners: '/learners',
   learner: (id: string) => `/learners/${id}`,
-  skills: (id: string) => `/learners/${id}/skills`,
-  next: (id: string) => `/learners/${id}/next`,
-  learningPaths: (id: string) => `/learners/${id}/paths`,
   artifacts: (id: string, q = '') => `/learners/${id}/artifacts${q}`,
   artifact: (id: string) => `/artifacts/${id}`,
   studySets: (id: string) => `/learners/${id}/study-sets`,
   subjects: (s: SchoolPosition) => `/curriculum/subjects?stage=${s.stage}&year=${s.year}`,
 }
 
-export type {
-  Artifact,
-  GateState,
-  LearnerProfile,
-  LearningPath,
-  SkillSummary,
-  StudySet,
-  SystemStatus,
-  GenerationRequest,
-}
+export type { Artifact, GateState, LearnerProfile, StudySet, SystemStatus, GenerationRequest }

@@ -8,10 +8,9 @@ import {
   useResource,
   type ArtifactSummary,
   type LearnerListItem,
-  type SkillsResponse,
   type SystemStatus,
 } from './api'
-import { AGE_BAND, formatDate, schoolLabel, UNNAMED_SKILL } from './labels'
+import { AGE_BAND, schoolLabel } from './labels'
 import { Page } from './Page'
 import { NewPin } from './PinPad'
 import s from './adult.module.css'
@@ -19,50 +18,17 @@ import s from './adult.module.css'
 export const AI_UNAVAILABLE =
   'AI-funktionerna är inte tillgängliga. Den som driftar JackApp behöver kontrollera inställningarna.'
 
+/** Material waiting for approval, when there is any. */
 function Highlights({ id }: { id: string }) {
-  const skills = useResource<SkillsResponse>(paths.skills(id))
   const pending = useResource<ArtifactSummary[]>(paths.artifacts(id, '?approval=pendingApproval'))
-  const list = skills.data?.skills ?? []
-  const leaf = (st: string) => list.filter((k) => k.status === st && k.skill.split('.').length > 1).slice(0, 3)
-  const support = leaf('needsSupport')
-  const good = leaf('secure')
-  const last = list
-    .map((k) => k.lastPracticedAt)
-    .filter((d): d is string => !!d)
-    .sort()
-    .at(-1)
-  const nPending = pending.data?.length ?? 0
+  const n = pending.data?.length ?? 0
+  if (!n) return null
   return (
-    <div className={s.stack}>
-      <p className={s.muted}>{last ? `Senast aktiv ${formatDate(last)}` : 'Ingen aktivitet ännu'}</p>
-      {support.length > 0 && (
-        <div>
-          <h4 className={s.tagSupport}>Behöver stöd</h4>
-          <ul className={s.plain}>
-            {support.map((k) => (
-              <li key={k.skill}>{k.note ?? UNNAMED_SKILL}</li>
-            ))}
-          </ul>
-        </div>
-      )}
-      {good.length > 0 && (
-        <div>
-          <h4 className={s.tagGood}>Går bra</h4>
-          <ul className={s.plain}>
-            {good.map((k) => (
-              <li key={k.skill}>{k.note ?? UNNAMED_SKILL}</li>
-            ))}
-          </ul>
-        </div>
-      )}
-      {nPending > 0 && (
-        <p>
-          <Link to={`/vuxen/elev/${id}/material?approval=pendingApproval`}>
-            {nPending === 1 ? '1 material väntar på godkännande' : `${nPending} material väntar på godkännande`}
-          </Link>
-        </p>
-      )}
-    </div>
+    <p>
+      <Link to={`/vuxen/elev/${id}/material?approval=pendingApproval`}>
+        {n === 1 ? '1 material väntar på godkännande' : `${n} material väntar på godkännande`}
+      </Link>
+    </p>
   )
 }
 

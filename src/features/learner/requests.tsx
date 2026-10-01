@@ -21,30 +21,22 @@ export interface Option {
   sprite?: SpriteId
 }
 
-type Kind = 'artifact' | 'path'
-export type Submit = (call: () => Promise<{ jobId: string }>, kind?: Kind) => void
+export type Submit = (call: () => Promise<{ jobId: string }>) => void
 
 /** Runs a create call and shows its progress; `children` renders the form while idle. */
-export function Creator({
-  children,
-  onComplete,
-}: {
-  children: (submit: Submit) => ReactNode
-  onComplete?: () => void
-}) {
-  const [state, setState] = useState<{ jobId: string; kind: Kind } | 'failed' | 'sending'>()
-  const submit: Submit = (call, kind = 'artifact') => {
+export function Creator({ children }: { children: (submit: Submit) => ReactNode }) {
+  const [state, setState] = useState<{ jobId: string } | 'failed' | 'sending'>()
+  const submit: Submit = (call) => {
     setState('sending')
     call().then(
-      (r) => setState({ jobId: r.jobId, kind }),
+      (r) => setState({ jobId: r.jobId }),
       () => setState('failed'),
     )
   }
   const again = () => setState(undefined)
   if (state === 'failed') return <Calm onAgain={again} />
   if (state === 'sending') return <Working />
-  if (state)
-    return <JobWait key={state.jobId} jobId={state.jobId} kind={state.kind} onAgain={again} onComplete={onComplete} />
+  if (state) return <JobWait key={state.jobId} jobId={state.jobId} onAgain={again} />
   return <>{children(submit)}</>
 }
 
@@ -75,45 +67,24 @@ function Working({ progress, step }: { progress?: number; step?: string }) {
 }
 
 /** Follows the job; a finished artifact is either ready to start or waits for an adult. */
-export function JobWait({
-  jobId,
-  kind,
-  onAgain,
-  onComplete,
-}: {
-  jobId: string
-  kind: Kind
-  onAgain: () => void
-  onComplete?: () => void
-}) {
+export function JobWait({ jobId, onAgain }: { jobId: string; onAgain: () => void }) {
   const paths = usePaths()
   const { learner } = useLearner()
   const status = useJob(jobId)
-  const completed = status?.state === 'completed'
-  const resultId = completed ? status.resultId : undefined
-  useEffect(() => {
-    if (completed) onComplete?.()
-    // Once per job.
-    // oxlint-disable-next-line react-hooks/exhaustive-deps
-  }, [completed])
+  const resultId = status?.state === 'completed' ? status.resultId : undefined
   const [result, setResult] = useState<'ready' | 'pending' | 'failed'>()
   useEffect(() => {
-    if (!resultId || kind !== 'artifact') return
+    if (!resultId) return
     learnerApi.artifact(resultId, learner.id).then(
       () => setResult('ready'),
       (e: unknown) => setResult(e instanceof ApiRequestError && e.status === 404 ? 'pending' : 'failed'),
     )
-  }, [resultId, kind, learner.id])
+  }, [resultId, learner.id])
 
   if (status?.state === 'failed' || status?.state === 'cancelled' || result === 'failed')
     return <Calm onAgain={onAgain} />
-  if (status?.state === 'completed' && (kind === 'path' || result)) {
-    const text =
-      kind === 'path'
-        ? 'Din plan är klar.'
-        : result === 'ready'
-          ? 'Ditt uppdrag är klart!'
-          : 'En vuxen tittar på uppdraget först.'
+  if (status?.state === 'completed' && result) {
+    const text = result === 'ready' ? 'Ditt uppdrag är klart!' : 'En vuxen tittar på uppdraget först.'
     return (
       <section className={styles.panel} role="status">
         <p className={styles.lead}>{text}</p>

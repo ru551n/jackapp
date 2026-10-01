@@ -6,7 +6,7 @@ import { useLearner, useSubjects } from '../context'
 import { Frame } from '../Frame'
 import { MaterialPage } from '../MaterialPage'
 import { RequestPage, type Option } from '../requests'
-import { Library, Panel, PathsProgress, StudySets, Today, YearSubjects } from '../sections'
+import { Library, Panel, StudySets, YearSubjects } from '../sections'
 import styles from '../learner.module.css'
 
 // Year 4–9: denser, more autonomy, meaningful (qualitative) progress, optional themes.
@@ -80,7 +80,6 @@ function MiddleHome() {
   return (
     <Frame title={`Hej ${learner.displayName}!`} home={false}>
       <div className={styles.grid}>
-        <Today />
         <Panel title="Önska något nytt">
           <p data-secondary>Skriv vad du vill lära dig, eller välj steg för steg.</p>
           {learner.learnerRequestsAllowed ? (
@@ -94,9 +93,6 @@ function MiddleHome() {
         <Panel title="Mitt material" wide>
           <Library subjects={subjects} />
           <YearSubjects subjects={subjects} />
-        </Panel>
-        <Panel title="Min väg framåt">
-          <PathsProgress />
         </Panel>
         <Panel title="Prov på mina bilder">
           <StudySets action="Gör ett prov" />
