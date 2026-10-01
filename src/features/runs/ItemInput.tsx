@@ -15,6 +15,10 @@ export interface ItemInputProps {
   tapToAnswer?: boolean
   /** Tiles per row (support preference maxChoices). */
   columns?: number
+  /** Early band: matching by tapping tile pairs instead of dropdowns. */
+  pairTiles?: boolean
+  /** Minimal text: leave out helper notes. */
+  brief?: boolean
 }
 
 const cols = (n: number, max?: number) => ({ '--cols': Math.min(n, max ?? n, 4) }) as CSSProperties
@@ -119,7 +123,100 @@ function FillBlank({ item, value, onChange, disabled }: ItemInputProps) {
   )
 }
 
-function Matching({ item, value, onChange, disabled }: ItemInputProps) {
+function Matching(props: ItemInputProps) {
+  return props.pairTiles ? <PairTiles {...props} /> : <MatchingSelects {...props} />
+}
+
+// Pair colours (never red); the number badge carries the pairing too.
+const PAIR_TINTS = ['--tint-blue', '--tint-green', '--tint-yellow', '--accent', '--tint-grey', '--hint']
+
+/** Tap a left tile, then a right tile; tapping a paired tile undoes the pair. */
+function PairTiles({ item, value, onChange, disabled }: ItemInputProps) {
+  const left = item.left ?? []
+  const right = item.right ?? []
+  const vals = (value as string[] | undefined) ?? left.map(() => '')
+  const [sel, setSel] = useState<number | null>(null)
+  const [said, setSaid] = useState('')
+  const lang = item.lang && item.lang !== 'sv' ? item.lang : undefined
+  const set = (i: number, r: string) => onChange(left.map((_, j) => (j === i ? r : (vals[j] ?? ''))))
+  const tint = (i: number) => ({ '--pair': `var(${PAIR_TINTS[i % PAIR_TINTS.length]})` }) as CSSProperties
+
+  const tapLeft = (i: number) => {
+    if (disabled) return
+    if (vals[i]) {
+      set(i, '')
+      setSel(null)
+      return setSaid(`${left[i]} är inte ihop med något längre.`)
+    }
+    setSel(sel === i ? null : i)
+    setSaid(sel === i ? '' : `${left[i]} är vald. Tryck på det som hör ihop med den.`)
+  }
+  const tapRight = (r: string) => {
+    if (disabled) return
+    const j = vals.indexOf(r)
+    if (j >= 0) {
+      set(j, '')
+      return setSaid(`${left[j]} och ${r} är inte ihop längre.`)
+    }
+    if (sel === null) return setSaid('Tryck först på en ruta i den vänstra raden.')
+    set(sel, r)
+    setSel(null)
+    setSaid(`${left[sel]} och ${r} hör ihop.`)
+  }
+
+  const badge = (i: number) => (
+    <span className={styles.pairBadge} aria-hidden="true">
+      {i + 1}
+    </span>
+  )
+  return (
+    <>
+      <div className={styles.pairTiles} lang={lang}>
+        <div className={styles.pairCol} role="group" aria-label="Välj en ruta här först">
+          {left.map((l, i) => (
+            <button
+              key={i}
+              type="button"
+              className={[styles.tile, sel === i && styles.picked, vals[i] && styles.paired].filter(Boolean).join(' ')}
+              style={vals[i] ? tint(i) : undefined}
+              aria-pressed={sel === i}
+              aria-disabled={disabled || undefined}
+              onClick={() => tapLeft(i)}
+            >
+              {vals[i] && badge(i)}
+              <span>{l}</span>
+              {vals[i] && <span className="visually-hidden">, ihop med {vals[i]}</span>}
+            </button>
+          ))}
+        </div>
+        <div className={styles.pairCol} role="group" aria-label="Sedan det som hör ihop">
+          {right.map((r) => {
+            const j = vals.indexOf(r)
+            return (
+              <button
+                key={r}
+                type="button"
+                className={[styles.tile, j >= 0 && styles.paired].filter(Boolean).join(' ')}
+                style={j >= 0 ? tint(j) : undefined}
+                aria-disabled={disabled || undefined}
+                onClick={() => tapRight(r)}
+              >
+                {j >= 0 && badge(j)}
+                <span>{r}</span>
+                {j >= 0 && <span className="visually-hidden">, ihop med {left[j]}</span>}
+              </button>
+            )
+          })}
+        </div>
+      </div>
+      <p className="visually-hidden" aria-live="polite">
+        {said}
+      </p>
+    </>
+  )
+}
+
+function MatchingSelects({ item, value, onChange, disabled }: ItemInputProps) {
   const left = item.left ?? []
   const right = item.right ?? []
   const vals = (value as string[] | undefined) ?? left.map(() => '')
@@ -181,7 +278,7 @@ function Ordering({ item, value, onChange, disabled }: ItemInputProps) {
                 disabled={disabled || i === 0}
                 onClick={() => move(i, -1)}
               >
-                ↑
+                <span aria-hidden="true">▲</span> Upp
               </button>
               <button
                 type="button"
@@ -190,7 +287,7 @@ function Ordering({ item, value, onChange, disabled }: ItemInputProps) {
                 disabled={disabled || i === order.length - 1}
                 onClick={() => move(i, 1)}
               >
-                ↓
+                <span aria-hidden="true">▼</span> Ner
               </button>
             </li>
           )
@@ -203,7 +300,7 @@ function Ordering({ item, value, onChange, disabled }: ItemInputProps) {
   )
 }
 
-function Numeric({ item, value, onChange, disabled }: ItemInputProps) {
+function Numeric({ item, value, onChange, disabled, brief }: ItemInputProps) {
   return (
     <div className={styles.numeric}>
       <label htmlFor={`${item.id}-num`} className="visually-hidden">
@@ -218,7 +315,7 @@ function Numeric({ item, value, onChange, disabled }: ItemInputProps) {
         onChange={(e) => onChange(e.target.value)}
       />
       {item.unit && <span aria-hidden="true">{item.unit}</span>}
-      <p className={styles.note}>Du kan skriva decimaler med komma, till exempel 3,5.</p>
+      {!brief && <p className={styles.note}>Du kan skriva decimaler med komma, till exempel 3,5.</p>}
     </div>
   )
 }

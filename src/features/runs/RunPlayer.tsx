@@ -29,6 +29,8 @@ export interface RunPlayerProps extends CommonProps {
   onPracticeMore?: (skills: string[]) => void
   /** Leave without finishing; the run stays active and resumes next time. */
   onExit?: () => void
+  /** "Klar – till start" after the results. */
+  onDone?: () => void
 }
 
 interface SectionLike {
@@ -75,6 +77,7 @@ export function RunPlayer({
   onFinished,
   onPracticeMore,
   onExit,
+  onDone,
 }: RunPlayerProps) {
   const [run, setRun] = useState<RunView>()
   const [steps, setSteps] = useState<Step[]>([])
@@ -142,6 +145,7 @@ export function RunPlayer({
         runId={run.id}
         summary={summary}
         onPracticeMore={onPracticeMore}
+        onDone={onDone}
       />
     )
   if (error && !run)
@@ -265,13 +269,20 @@ export function RunPlayer({
   const hintsLeft = (item.hintCount ?? 0) > st.hintsShown && !st.done
   const showAnswerButton = !st.done && !selfAssess && !tap && item.kind !== 'flashcard'
   const collapse = presentation.textAmount === 'minimal'
+  const brief = collapse || variant === 'early'
+  const steps1 = !!presentation.stepByStep
+  // Speech for a feedback box (plain text, markdown marks removed).
+  const say = (...parts: (string | false | undefined)[]) =>
+    readAloud && <SpeakButton text={parts.filter(Boolean).join(' ').replace(/[*#_]/g, '')} />
 
   return (
     <section className={rootClass} data-variant={variant} aria-labelledby="run-heading">
       <div className={styles.progressRow}>
-        <span>
-          {run.title} · Uppgift {n} av {itemSteps.length}
-        </span>
+        {!brief && (
+          <span>
+            {run.title} · Uppgift {n} av {itemSteps.length}
+          </span>
+        )}
         <progress max={itemSteps.length} value={n} aria-label={`Uppgift ${n} av ${itemSteps.length}`} />
       </div>
 
@@ -297,6 +308,8 @@ export function RunPlayer({
         disabled={busy || st.done || !!selfAssess}
         tapToAnswer={tap}
         columns={presentation.maxChoices}
+        pairTiles={variant === 'early'}
+        brief={brief}
         onChange={(v, now) => {
           patch(item.id, { value: v })
           if (now) void submit(item, v)
@@ -325,18 +338,21 @@ export function RunPlayer({
               ) : (
                 <Markdown text={fb.explanation} />
               ))}
+            {say(fb.message, fb.solution && !fb.correct && `Svaret: ${fb.solution}.`, fb.ai?.feedback, fb.explanation)}
           </div>
         )}
         {waitingRetry && (
           <div className={styles.hint}>
             <p className={styles.tryAgain}>{fb.message}</p>
             {st.hints.length > 0 && <p>{st.hints.at(-1)}</p>}
+            {say(fb.message, st.hints.at(-1))}
           </div>
         )}
         {!fb && st.hints.length > 0 && (
           <div className={styles.hint}>
             <p className={styles.tryAgain}>Ledtråd</p>
             <p>{st.hints.at(-1)}</p>
+            {say(st.hints.at(-1))}
           </div>
         )}
         {selfAssess && (
@@ -351,6 +367,11 @@ export function RunPlayer({
               <p>
                 Exempel på svar: <em>{selfAssess.sampleAnswer}</em>
               </p>
+            )}
+            {say(
+              fb.message,
+              ...selfAssess.rubric,
+              selfAssess.sampleAnswer && `Exempel på svar: ${selfAssess.sampleAnswer}`,
             )}
             <div className={styles.ratings} role="group" aria-label="Hur bra stämmer ditt svar?">
               {RATINGS.map((r) => (
@@ -371,19 +392,20 @@ export function RunPlayer({
             {end ? (fb ? 'Spara nytt svar' : 'Spara svar') : 'Svara'}
           </Button>
         )}
-        {hintsLeft && (
+        {hintsLeft && (!steps1 || fb) && (
           <Button variant="secondary" disabled={busy} onClick={() => void askHint(item)}>
             Ledtråd
           </Button>
         )}
-        {(st.done || end || fb) && (
+        {(st.done || selfAssess || (end && (fb || !steps1))) && (
           <Button icon="arrow" disabled={busy} onClick={next}>
             {last ? (end ? 'Lämna in' : 'Se resultat') : 'Nästa'}
           </Button>
         )}
-        {!st.done && !end && !fb && (
+        {/* Not done yet (also while a retry is open): a quiet way on, so "Svara" stays the only main button. */}
+        {!st.done && !end && !selfAssess && (!steps1 || fb) && (
           <Button variant="quiet" disabled={busy} onClick={next}>
-            {last ? 'Avsluta' : 'Hoppa över'}
+            Hoppa över
           </Button>
         )}
         {end && index > 0 && (

@@ -14,7 +14,7 @@ import { api } from '../../api/client'
 
 export type Presentation = SupportPreferences & { ageBand: AgeBand; school: SchoolPosition }
 
-/** `GET /learners/:id` without the adult gate. interests/themes/freePlayEnabled are not sent yet (API gap). */
+/** `GET /learners/:id` without the adult gate. */
 export interface LearnerView {
   id: string
   displayName: string

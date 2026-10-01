@@ -19,13 +19,23 @@ const UPPER_CHIPS = [
   'Förklara derivata steg för steg',
 ]
 
+/** The first chip follows the learner's first interest, when there is one. */
+const upperChips = (interests: string[] = []) => {
+  const a = interests
+    .find((i) => i.trim())
+    ?.trim()
+    .toLowerCase()
+  return a ? [`Förklara något om ${a} steg för steg`, ...UPPER_CHIPS.slice(0, 2)] : UPPER_CHIPS
+}
+
 export function UpperArea() {
   const paths = usePaths()
+  const { learner } = useLearner()
   return (
     <Routes>
       <Route index element={<UpperHome />} />
       <Route path="material/:artifactId" element={<MaterialPage />} />
-      <Route path="onska" element={<RequestPage chips={UPPER_CHIPS} />} />
+      <Route path="onska" element={<RequestPage chips={upperChips(learner.interests)} />} />
       <Route path="*" element={<Navigate to={paths.home} replace />} />
     </Routes>
   )
@@ -43,7 +53,10 @@ function UpperHome() {
           {allowed ? (
             <Creator>
               {(submit) => (
-                <FreeRequest chips={UPPER_CHIPS} onSubmit={(r) => submit(() => learnerApi.generate(learner.id, r))} />
+                <FreeRequest
+                  chips={upperChips(learner.interests)}
+                  onSubmit={(r) => submit(() => learnerApi.generate(learner.id, r))}
+                />
               )}
             </Creator>
           ) : (

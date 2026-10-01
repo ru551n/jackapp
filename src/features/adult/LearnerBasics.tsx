@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react'
-import type { LearnerProfile } from '../../../shared/contracts'
+import { defaultGeneration, type LearnerProfile } from '../../../shared/contracts'
 import { Button } from '../../ui/Button'
 import { adultApi, errorText } from './api'
 import { fromSchool, SCHOOL_OPTIONS, splitList, toSchool } from './labels'
@@ -28,6 +28,7 @@ export function LearnerBasics({
         displayName: name.trim(),
         school: toSchool(school),
         interests: splitList(interests),
+        generation: defaultGeneration(toSchool(school)),
       })
       onCreated(l)
     } catch (err) {

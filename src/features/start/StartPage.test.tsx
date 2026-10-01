@@ -53,6 +53,8 @@ describe('start page', () => {
       displayName: 'Jack',
       school: { stage: 'grundskola', year: 1 },
       interests: ['tåg', 'flygplan'],
+      // F–3: new material waits for an adult by default.
+      generation: { learnerRequestsAllowed: true, approval: 'parent' },
     })
   })
 
@@ -65,6 +67,19 @@ describe('start page', () => {
     setup()
     await typePin('Vuxenkod', '1357', 'Öppna')
     expect(await screen.findByRole('heading', { name: 'Lägg till den första eleven' })).toBeInTheDocument()
+  })
+
+  it('locks the adult gate before showing the picker (leaving the adult area hands the device over)', async () => {
+    const { calls } = mockApi({
+      'POST /gate/lock': { pinSet: true, adult: false },
+      'GET /gate': { pinSet: true, adult: false },
+      'GET /learners': [{ id: ID, displayName: 'Jack', school: { stage: 'grundskola', year: 1 }, ageBand: 'early' }],
+    })
+    setup()
+    expect(await screen.findByRole('heading', { name: 'Vem ska lära sig?' })).toBeInTheDocument()
+    const lock = calls.findIndex((c) => c.method === 'POST' && c.path === '/gate/lock')
+    expect(lock).toBeGreaterThanOrEqual(0)
+    expect(lock).toBeLessThan(calls.findIndex((c) => c.method === 'GET' && c.path === '/gate'))
   })
 
   it('otherwise shows the learner picker with a quiet adult link', async () => {

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router'
 import type { AgeBand } from '../../../shared/contracts'
 import { ApiRequestError } from '../../api/client'
@@ -110,7 +110,15 @@ function Setup({ gate, onGate }: { gate: GateState; onGate: (g: GateState) => vo
 
 /** `/`: first-run setup, otherwise the learner picker. */
 export function StartPage() {
-  const gate = useResource<GateState>(paths.gate)
+  // Back at the picker means the device may be handed to a child: lock the adult gate first.
+  const [locked, setLocked] = useState(false)
+  useEffect(() => {
+    void adultApi
+      .post('/gate/lock')
+      .catch(() => undefined)
+      .then(() => setLocked(true))
+  }, [])
+  const gate = useResource<GateState>(locked ? paths.gate : null)
   const learners = useResource<LearnerListItem[]>(paths.learners)
   if (!gate.data || !learners.data)
     return (

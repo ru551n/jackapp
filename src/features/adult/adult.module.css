@@ -135,10 +135,18 @@ details > summary {
 .list a {
   color: var(--accent);
 }
+/* Breadcrumb link: a full 44 px touch target without moving the text. */
+.crumb a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 0.5rem;
+  margin-left: -0.5rem;
+}
 .tabs {
   display: flex;
+  flex-wrap: wrap;
   gap: 0.25rem;
-  overflow-x: auto;
   border-bottom: 2px solid var(--line);
   margin-bottom: var(--space-2);
 }
@@ -324,6 +332,9 @@ details > summary {
   background: var(--bg);
   border-top: 1px solid var(--line);
 }
+.saveBar .job {
+  flex: 1 1 14rem;
+}
 
 /* PIN */
 .pin {
@@ -358,12 +369,9 @@ details > summary {
   background: var(--paper-strong);
   cursor: pointer;
 }
-.keypad button:last-child {
-  grid-column: 2;
-}
+/* DOM order matches the screen: 1–9, then 0 in the middle and ⌫ to its right. */
 .keypad button:nth-last-child(2) {
-  grid-column: 3;
-  grid-row: 4;
+  grid-column: 2;
 }
 
 /* Material */

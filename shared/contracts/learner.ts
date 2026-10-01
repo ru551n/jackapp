@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { SchoolPosition, SubjectCode } from './school'
+import { ageBand, SchoolPosition, SubjectCode } from './school'
 
 // Functional learning needs only. Not medical or diagnostic data.
 
@@ -39,6 +39,10 @@ export const GenerationPolicy = z.object({
   approval: z.enum(['immediate', 'parent']).default('immediate'),
 })
 export type GenerationPolicy = z.infer<typeof GenerationPolicy>
+
+/** Policy for a new learner: F–3 material waits for an adult by default; requests stay allowed. */
+export const defaultGeneration = (school: SchoolPosition): GenerationPolicy =>
+  GenerationPolicy.parse(ageBand(school) === 'early' ? { approval: 'parent' } : {})
 
 export const LearnerProfileInput = z.object({
   displayName: z.string().min(1).max(60),

@@ -272,6 +272,41 @@
   }
 }
 
+/* Matching by tile pairs (early band) */
+.pairTiles {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: var(--space-2);
+}
+
+.pairCol {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.paired {
+  position: relative;
+  border-color: var(--pair);
+  border-width: 4px;
+  padding-inline: 2.4rem; /* room for the badge, text stays centred */
+}
+
+.pairBadge {
+  position: absolute;
+  top: 0.3rem;
+  left: 0.3rem;
+  min-width: 1.8rem;
+  height: 1.8rem;
+  border-radius: 999px;
+  border: 3px solid var(--pair);
+  background: var(--paper);
+  color: var(--ink);
+  font-size: 1.1rem;
+  line-height: calc(1.8rem - 6px);
+  text-align: center;
+}
+
 /* Ordering */
 .order {
   list-style: none;
@@ -308,20 +343,32 @@
 }
 
 .move {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.3rem;
   min-width: max(2.4rem, calc(var(--tile-h) * 0.75));
   min-height: max(2.4rem, calc(var(--tile-h) * 0.75));
-  border: 2px solid var(--accent);
+  padding: 0 0.6rem;
+  border: 3px solid var(--accent);
   border-radius: var(--radius-sm);
   background: var(--paper);
   color: var(--accent);
-  font-size: 1.2rem;
+  font-size: 1rem;
   font-weight: 700;
   cursor: pointer;
 }
 
+.move span {
+  font-size: 1.3em;
+}
+
+/* Still readable when there is nowhere to move: quiet, dashed, not faded away. */
 .move:disabled {
-  border-color: var(--line);
-  color: var(--line);
+  border-style: dashed;
+  border-color: var(--ink-soft);
+  color: var(--ink-soft);
+  background: transparent;
   cursor: default;
 }
 
@@ -415,6 +462,13 @@
   gap: 0.4rem;
   padding: var(--space-2) var(--space-3);
   border-radius: var(--radius);
+}
+
+/* "Lyssna" keeps its own width inside a feedback box. */
+.success > button,
+.reveal > button,
+.hint > button {
+  align-self: flex-start;
 }
 
 .success {

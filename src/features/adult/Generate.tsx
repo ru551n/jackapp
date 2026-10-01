@@ -355,18 +355,13 @@ export function Generate() {
         <p role="status" className={s.msg}>
           {msg}
         </p>
-      </div>
-      {jobId && <JobProgress key={jobId} jobId={jobId} onDone={onDone} />}
-      {result?.state === 'completed' && result.resultId && (
-        <p>
+        {/* Job status lives in the sticky bar so it stays in view below a long form. */}
+        {jobId && <JobProgress key={jobId} jobId={jobId} onDone={onDone} />}
+        {result?.state === 'completed' && result.resultId && (
           <Link to={`/vuxen/elev/${learner.id}/material/${result.resultId}`}>Öppna materialet</Link>
-        </p>
-      )}
-      {result?.state === 'failed' && (
-        <p>
-          <Link to={`/vuxen/elev/${learner.id}/material`}>Till materialet</Link>
-        </p>
-      )}
+        )}
+        {result?.state === 'failed' && <Link to={`/vuxen/elev/${learner.id}/material`}>Till materialet</Link>}
+      </div>
     </form>
   )
 }

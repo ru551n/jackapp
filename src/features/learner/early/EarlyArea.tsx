@@ -53,17 +53,24 @@ function EarlyHome() {
   const { learner } = useLearner()
   const paths = usePaths()
   const missions = useMissions(learner.id)
+  const { reducedVisualComplexity, maxChoices } = learner.presentation
+  // "Enklare skärmbild" or few choices: fewer tiles at once, the rest behind "Mer".
+  const max = reducedVisualComplexity || maxChoices < 4 ? Math.max(maxChoices, 3) : undefined
   return (
-    <HomePage>
-      {!!missions?.length && (
-        <Destination
-          to={paths.materials}
-          sprite="suitcase"
-          name="Nya uppdrag"
-          tagline={missions.length === 1 ? 'Ett uppdrag väntar' : `${missions.length} uppdrag väntar`}
-          variant="collection"
-        />
-      )}
+    <HomePage
+      max={max}
+      lead={
+        !!missions?.length && (
+          <Destination
+            to={paths.materials}
+            sprite="suitcase"
+            name="Nya uppdrag"
+            tagline={missions.length === 1 ? 'Ett uppdrag väntar' : `${missions.length} uppdrag väntar`}
+            variant="collection"
+          />
+        )
+      }
+    >
       {learner.learnerRequestsAllowed && (
         <Destination to={paths.request} sprite="passenger" name="Önska uppdrag" tagline="Välj vad du vill öva på" />
       )}
