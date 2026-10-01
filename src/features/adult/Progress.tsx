@@ -16,7 +16,7 @@ import {
 import { Field } from './fields'
 import { JobProgress } from './JobProgress'
 import { useLearner } from './context'
-import { formatDate, skillName } from './labels'
+import { formatDate, UNNAMED_SKILL } from './labels'
 import { RunHistory } from './slots'
 import s from './adult.module.css'
 
@@ -34,10 +34,10 @@ const PATH_STATUS: Record<LearningPath['status'], string> = {
 }
 
 function Skills({ data, subjectName }: { data: SkillsResponse; subjectName: (c: string) => string }) {
-  // Group by subject, else by the root of the skill tag ("math.addition" → "math").
+  // Group by subject; tags without one go under "Övrigt" (tags are slugs, never shown).
   const groups = new Map<string, SkillSummary[]>()
   for (const k of data.skills) {
-    const g = k.subjectCode ? subjectName(k.subjectCode) : k.skill.split('.')[0]!
+    const g = k.subjectCode ? subjectName(k.subjectCode) : 'Övrigt'
     groups.set(g, [...(groups.get(g) ?? []), k])
   }
   if (!data.skills.length) return <p className={s.muted}>Inga svar ännu. Här syns det när eleven har övat.</p>
@@ -49,7 +49,7 @@ function Skills({ data, subjectName }: { data: SkillsResponse; subjectName: (c: 
           <ul className={s.list}>
             {list.map((k) => (
               <li key={k.skill} className={s.listRow}>
-                <span>{k.note ?? skillName(k.skill)}</span>
+                <span>{k.note ?? UNNAMED_SKILL}</span>
                 <span className={s.muted}>
                   {k.evidenceCount} svar{k.lastPracticedAt ? ` · senast ${formatDate(k.lastPracticedAt)}` : ''}
                 </span>

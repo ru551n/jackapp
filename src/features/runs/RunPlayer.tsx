@@ -97,7 +97,7 @@ export function RunPlayer({
       try {
         const r = await api.post<RunView>(base, { artifactId })
         const art = await api
-          .get<{ artifact: { sections: SectionLike[] } }>(`/artifacts/${artifactId}`)
+          .get<{ artifact: { sections: SectionLike[] } }>(`/artifacts/${artifactId}?learnerId=${learnerId}`)
           .catch(() => undefined)
         if (!live) return
         const items = r.items as unknown as PublicItem[]

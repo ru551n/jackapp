@@ -87,6 +87,7 @@ export function JobWait({
   onComplete?: () => void
 }) {
   const paths = usePaths()
+  const { learner } = useLearner()
   const status = useJob(jobId)
   const completed = status?.state === 'completed'
   const resultId = completed ? status.resultId : undefined
@@ -98,11 +99,11 @@ export function JobWait({
   const [result, setResult] = useState<'ready' | 'pending' | 'failed'>()
   useEffect(() => {
     if (!resultId || kind !== 'artifact') return
-    learnerApi.artifact(resultId).then(
+    learnerApi.artifact(resultId, learner.id).then(
       () => setResult('ready'),
       (e: unknown) => setResult(e instanceof ApiRequestError && e.status === 404 ? 'pending' : 'failed'),
     )
-  }, [resultId, kind])
+  }, [resultId, kind, learner.id])
 
   if (status?.state === 'failed' || status?.state === 'cancelled' || result === 'failed')
     return <Calm onAgain={onAgain} />

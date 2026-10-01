@@ -68,9 +68,11 @@ export const learnerApi = {
   generate: (id: string, req: LearnerRequest) => api.post<{ jobId: string }>(`/learners/${id}/generate`, req),
   plan: (id: string, body: { goal: string; targetDate?: string; studySetId?: string }) =>
     api.post<{ jobId: string }>(`/learners/${id}/paths`, body),
-  /** Learners get 404 until the material is approved. */
-  artifact: (artifactId: string) =>
-    api.get<{ artifact: { id: string; title: string; subjectCode?: string } }>(`/artifacts/${artifactId}`),
+  /** Learners get 404 until the material is approved (and for another learner's material). */
+  artifact: (artifactId: string, learnerId: string) =>
+    api.get<{ artifact: { id: string; title: string; subjectCode?: string } }>(
+      `/artifacts/${artifactId}?learnerId=${learnerId}`,
+    ),
 }
 
 export const TYPE_LABEL: Record<ArtifactType, string> = {

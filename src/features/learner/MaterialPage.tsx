@@ -18,7 +18,7 @@ export function MaterialPage() {
   const { artifactId = '' } = useParams()
   const { learner, flags } = useLearner()
   const paths = usePaths()
-  const data = useFetch(() => learnerApi.artifact(artifactId), artifactId)
+  const data = useFetch(() => learnerApi.artifact(artifactId, learner.id), artifactId)
   const [unlocked, setUnlocked] = useState<Vehicle[] | null>(null)
   const title = data?.artifact.title ?? (flags.band === 'early' ? 'Uppdrag' : 'Material')
 

@@ -70,7 +70,7 @@ export function RunHistory({ learnerId, variant, artifactId }: RunHistoryProps) 
         const found = await Promise.all(
           ids.map((id) =>
             api
-              .get<{ artifact: Artifact }>(`/artifacts/${id}`)
+              .get<{ artifact: Artifact }>(`/artifacts/${id}?learnerId=${learnerId}`)
               .then((r) => r.artifact)
               .catch(() => undefined),
           ),

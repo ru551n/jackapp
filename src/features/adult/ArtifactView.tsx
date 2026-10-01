@@ -1,6 +1,7 @@
 import { useCallback, useState } from 'react'
 import { Link, useParams } from 'react-router'
 import type { Artifact, AssetLicense, Item, JobStatus, MediaRef, SourceRef } from '../../../shared/contracts'
+import { ApiRequestError } from '../../api/client'
 import { Button } from '../../ui/Button'
 import { adultApi, errorText, paths, useResource, type ArtifactResponse, type VersionEntry } from './api'
 import { ExtLink, ItemView } from './ItemView'
@@ -157,6 +158,8 @@ interface Job {
 }
 
 /** `/vuxen/elev/:id/material/:artifactId`: answers, checks, sources, approval, edits and reworks. */
+const CONFLICT = 'Materialet har ändrats. Ladda om för att se den senaste versionen.'
+
 export function ArtifactView() {
   const { learner } = useLearner()
   const { artifactId = '' } = useParams()
@@ -195,21 +198,24 @@ export function ArtifactView() {
       if (ok) setMsg(ok)
       return true
     } catch (e) {
-      setMsg(errorText(e))
+      if (e instanceof ApiRequestError && e.code === 'version_conflict') {
+        setMsg(CONFLICT)
+        reload()
+      } else setMsg(errorText(e))
       return false
     }
   }
   const approve = (kind: 'approve' | 'reject') =>
     act(
       async () => {
-        const r = await adultApi.post<Artifact>(`/artifacts/${a.id}/${kind}`)
+        const r = await adultApi.post<Artifact>(`/artifacts/${a.id}/${kind}`, { version: a.version })
         res.set({ ...res.data!, artifact: { ...a, approval: r.approval } })
       },
       kind === 'approve' ? 'Materialet är godkänt.' : 'Materialet är avvisat.',
     )
-  const patch = (body: unknown, ok: string) =>
+  const patch = (body: object, ok: string) =>
     act(async () => {
-      const r = await adultApi.patch<Artifact>(`/artifacts/${a.id}`, body)
+      const r = await adultApi.patch<Artifact>(`/artifacts/${a.id}`, { ...body, version: a.version })
       res.set({ ...res.data!, artifact: r })
     }, ok)
   const startJob = (path: string, body: unknown, more?: boolean) =>

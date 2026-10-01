@@ -41,7 +41,7 @@ const summary = {
   total: 2,
   correct: 1,
   message: 'Du klarade 1 av 2. Bra kämpat!',
-  skills: [{ skill: 'math.add', correct: 1, total: 2, note: 'Öva lite mer på addition.' }],
+  skills: [{ skill: 'math.add', label: 'addition', correct: 1, total: 2, note: 'Öva lite mer på addition.' }],
   review: [{ itemId: 'i1', prompt: 'Vad är 2 + 2?', solution: '4', explanation: 'Två och två är **fyra**.' }],
   selfAssess: [],
 }
@@ -122,6 +122,9 @@ describe('RunPlayer', () => {
     expect(await screen.findByRole('heading', { name: 'Du klarade 1 av 2' })).toBeInTheDocument()
     expect(screen.getByText('Bra kämpat!')).toBeInTheDocument()
     expect(screen.getByText('Öva lite mer på addition.')).toBeInTheDocument()
+    // The server's Swedish label, never the tag.
+    expect(screen.getByText('addition:')).toBeInTheDocument()
+    expect(screen.queryByText(/math\.add/)).toBeNull()
     expect(hasFel()).toBe(false)
   })
 

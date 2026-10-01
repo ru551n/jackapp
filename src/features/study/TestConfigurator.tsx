@@ -92,7 +92,7 @@ export function TestConfigurator({ learnerId, variant, studySetId, onCreated, on
   const created = async (artifactId: string) => {
     // Learners get 404 for material that is not approved yet; that means it waits for an adult.
     const approval = await api
-      .get<{ artifact: { approval: ApprovalState } }>(`/artifacts/${artifactId}`)
+      .get<{ artifact: { approval: ApprovalState } }>(`/artifacts/${artifactId}?learnerId=${learnerId}`)
       .then((r) => r.artifact.approval)
       .catch(() => 'pendingApproval' as const)
     if (approval === 'pendingApproval') setWaiting(true)

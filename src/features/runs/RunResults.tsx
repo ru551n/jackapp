@@ -16,9 +16,6 @@ export interface RunResultsProps extends CommonProps {
   onDone?: () => void
 }
 
-const skillLabel = (s: RunSummary['skills'][number]) =>
-  'label' in s && typeof s.label === 'string' ? s.label : undefined
-
 /** Non-punitive results: what went well, what to look at again. */
 export function RunResults({ learnerId, variant, runId, summary: initial, onPracticeMore, onDone }: RunResultsProps) {
   const [summary, setSummary] = useState(initial)
@@ -56,14 +53,13 @@ export function RunResults({ learnerId, variant, runId, summary: initial, onPrac
             {summary.skills.map((s) => (
               <li key={s.skill}>
                 <p>
-                  {/* Skill tags are slugs; only a readable label (when the server sends one) is shown. */}
-                  {skillLabel(s) && <strong>{skillLabel(s)}: </strong>}
+                  {/* Skill tags are slugs; only the server's Swedish label is shown. */}
+                  {s.label && <strong>{s.label}: </strong>}
                   {s.note}
                 </p>
                 {detailed && (
                   <p className={styles.note}>
                     {s.correct} av {s.total}
-                    {variant === 'adult' && ` · ${s.skill}`}
                   </p>
                 )}
               </li>

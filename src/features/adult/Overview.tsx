@@ -11,7 +11,7 @@ import {
   type SkillsResponse,
   type SystemStatus,
 } from './api'
-import { AGE_BAND, formatDate, schoolLabel, skillName } from './labels'
+import { AGE_BAND, formatDate, schoolLabel, UNNAMED_SKILL } from './labels'
 import { Page } from './Page'
 import { NewPin } from './PinPad'
 import s from './adult.module.css'
@@ -40,7 +40,7 @@ function Highlights({ id }: { id: string }) {
           <h4 className={s.tagSupport}>Behöver stöd</h4>
           <ul className={s.plain}>
             {support.map((k) => (
-              <li key={k.skill}>{k.note ?? skillName(k.skill)}</li>
+              <li key={k.skill}>{k.note ?? UNNAMED_SKILL}</li>
             ))}
           </ul>
         </div>
@@ -50,7 +50,7 @@ function Highlights({ id }: { id: string }) {
           <h4 className={s.tagGood}>Går bra</h4>
           <ul className={s.plain}>
             {good.map((k) => (
-              <li key={k.skill}>{k.note ?? skillName(k.skill)}</li>
+              <li key={k.skill}>{k.note ?? UNNAMED_SKILL}</li>
             ))}
           </ul>
         </div>

@@ -270,6 +270,34 @@ describe('material approval and editing', () => {
     await userEvent.type(prompt, 'Vad är 2 + 3?')
     await userEvent.click(screen.getByRole('button', { name: 'Spara ändringen' }))
     expect(await screen.findByText('Vad är 2 + 3?')).toBeInTheDocument()
-    expect(calls.find((c) => c.method === 'PATCH')!.body).toEqual({ items: { i1: { prompt: 'Vad är 2 + 3?' } } })
+    expect(calls.find((c) => c.method === 'POST')!.body).toEqual({ version: 1 })
+    expect(calls.find((c) => c.method === 'PATCH')!.body).toEqual({
+      items: { i1: { prompt: 'Vad är 2 + 3?' } },
+      version: 1,
+    })
+  })
+
+  it('progress groups skills without a subject under Övrigt and never shows tags', async () => {
+    mockApi(base())
+    setup(`/vuxen/elev/${ID}/framsteg`)
+    expect(await screen.findByText('Verkar behöva mer träning på addition.')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Övrigt' })).toBeInTheDocument()
+    expect(screen.queryByText(/math/)).toBeNull()
+  })
+
+  it('a version conflict shows a calm message and reloads the material', async () => {
+    const { calls } = mockApi({
+      ...base(),
+      [`GET /artifacts/${AID}`]: { artifact, requestedIllustrations: [] },
+      [`POST /artifacts/${AID}/approve`]: apiError(409, 'version_conflict'),
+    })
+    setup(`/vuxen/elev/${ID}/material/${AID}`)
+    await userEvent.click(await screen.findByRole('button', { name: 'Godkänn' }))
+    expect(
+      await screen.findByText('Materialet har ändrats. Ladda om för att se den senaste versionen.'),
+    ).toBeInTheDocument()
+    await waitFor(() =>
+      expect(calls.filter((c) => c.method === 'GET' && c.path === `/artifacts/${AID}`)).toHaveLength(2),
+    )
   })
 })
