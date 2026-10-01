@@ -1,4 +1,5 @@
 import { and, desc, eq, type SQL } from 'drizzle-orm'
+import type { FastifyRequest } from 'fastify'
 import { z } from 'zod'
 import { ageBand, type AgeBand, type Artifact, type Item, type SkillEvidence } from '../../shared/contracts'
 import { recordEvidence } from '../adaptive/evidence'
@@ -202,9 +203,9 @@ export const runRoutes: RouteModule = (app, ctx: AppContext) => {
   }
 
   // After evidence was written: let adaptive paths/reviews react (best effort, never fails the answer).
-  const EVIDENCE_ROUTES = new Set(['/learners/:id/runs/:runId/answers', '/learners/:id/runs/:runId/finish'])
+  const wroteEvidence = new WeakSet<FastifyRequest>()
   app.addHook('onResponse', async (req, reply) => {
-    if (reply.statusCode >= 400 || !EVIDENCE_ROUTES.has(req.routeOptions.url?.replace(/^\/api\/v1/, '') ?? '')) return
+    if (reply.statusCode >= 400 || !wroteEvidence.has(req)) return
     const learnerId = (req.params as { id?: string }).id
     if (learnerId)
       await onEvidence(db, learnerId).catch((e: Error) => req.log.warn({ err: e.name }, 'adaptive update failed'))
@@ -350,6 +351,7 @@ export const runRoutes: RouteModule = (app, ctx: AppContext) => {
       if (final) {
         const misses = run.feedback === 'end' ? (check!.correct ? 0 : 1) : check!.correct ? attempt - 1 : attempt
         await recordEvidence(tx as unknown as Db, evidence(run, art, item, check!.correct, misses, hintsUsed))
+        wroteEvidence.add(req)
       }
       // A post-finish self-assessment updates the stored summary.
       if (run.state !== 'active')
@@ -409,6 +411,7 @@ export const runRoutes: RouteModule = (app, ctx: AppContext) => {
         ev.push(...evidence(run, art, item, last.correct, misses, run.hintsShown[item.id] ?? 0))
       }
       await recordEvidence(tx as unknown as Db, ev)
+      if (ev.length) wroteEvidence.add(req)
       const summary = summarize(run, items, [...g.values()].flat())
       await tx.update(runs).set({ state: 'finished', finishedAt: new Date(), summary }).where(eq(runs.id, runId))
       return summary

@@ -1,4 +1,4 @@
-import { and, eq, ne, sql } from 'drizzle-orm'
+import { and, desc, eq, ne, sql } from 'drizzle-orm'
 import type { SkillStatus, SkillSummary } from '../../shared/contracts'
 import type { Db } from '../db/client'
 import { adaptiveLegacySkills, legacySkillProgress, skillEvidence, skillEvidenceKinds } from '../db/schema'
@@ -179,6 +179,9 @@ export interface LearnerObs {
   extraCounts: Map<string, number>
 }
 
+/** Newest live answers loaded per learner: bounds memory and time per request. */
+export const MAX_OBS = 5000
+
 export async function loadObs(db: Db, learnerId: string): Promise<LearnerObs> {
   await convertLegacy(db, learnerId)
   const live = await db
@@ -186,6 +189,8 @@ export async function loadObs(db: Db, learnerId: string): Promise<LearnerObs> {
     .from(skillEvidence)
     .leftJoin(skillEvidenceKinds, eq(skillEvidenceKinds.evidenceId, skillEvidence.id))
     .where(eq(skillEvidence.learnerId, learnerId))
+    .orderBy(desc(skillEvidence.at))
+    .limit(MAX_OBS)
   const obs: Obs[] = live.map(({ e, kind }) => ({
     skill: e.skill,
     subjectCode: e.subjectCode ?? undefined,

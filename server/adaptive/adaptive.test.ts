@@ -6,8 +6,8 @@ import { silentLog } from '../ai/test-server'
 import { makeItems } from '../curriculum/import'
 import { syncCurriculumSnapshot } from '../curriculum/service'
 import type { Db } from '../db/client'
-import { jobs, learners, learningPaths, skillReviews } from '../db/schema'
-import { JobFailure } from '../jobs'
+import { artifacts, jobs, learners, learningPaths, skillReviews } from '../db/schema'
+import { JobFailure, pruneFinished } from '../jobs'
 import { importLegacy } from '../learners/legacy'
 import { asAdult, createTestApp, seedLearner } from '../test/helpers'
 import { recordEvidence } from './evidence'
@@ -332,6 +332,27 @@ describe('learning paths', () => {
     expect(req.curriculumRefs).toHaveLength(1)
     const [path] = await toLearningPaths(db, [row!])
     expect(LearningPath.parse(path).milestones).toHaveLength(3)
+
+    // The milestone keeps its artifact after the finished job is pruned (14-day retention).
+    const [art] = await db
+      .insert(artifacts)
+      .values({
+        learnerId: l.id,
+        type: 'lesson',
+        title: 'Talkamrater',
+        school: l.profile.school,
+        sourceMode: 'curriculum',
+        feedback: 'immediate',
+        approval: 'approved',
+        createdBy: 'system',
+        request: {} as never,
+        jobId: gen[0]!.id,
+      } as never)
+      .returning()
+    await db.update(jobs).set({ state: 'completed', resultId: art!.id, finishedAt: new Date(Date.now() - 15 * DAY) })
+    expect(await pruneFinished(db)).toBe(1)
+    const [after] = await toLearningPaths(db, [row!])
+    expect(after!.milestones[0]!.artifactIds).toEqual([art!.id])
   })
 
   it('advances on secure, inserts remediation on persistent needsSupport, completes', async () => {

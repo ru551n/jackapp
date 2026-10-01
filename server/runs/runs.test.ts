@@ -19,6 +19,12 @@ vi.mock('../adaptive/evidence', async (orig) => {
   }
 })
 
+const adaptive = vi.hoisted(() => ({ calls: 0 }))
+vi.mock('../adaptive/paths', async (orig) => {
+  const m = await orig<typeof import('../adaptive/paths')>()
+  return { ...m, onEvidence: (...a: Parameters<typeof m.onEvidence>) => (adaptive.calls++, m.onEvidence(...a)) }
+})
+
 let close: (() => Promise<void>) | undefined
 afterEach(async () => {
   fail.evidence = false
@@ -134,6 +140,18 @@ async function setup(
 }
 
 describe('immediate feedback', () => {
+  it('runs the adaptive update only after answers that wrote evidence', async () => {
+    const t = await setup()
+    const run = await t.start(t.add(artifact(t.learner.id)))
+    adaptive.calls = 0
+    await t.answer(run.id, 'q1', 'a') // wrong, retry allowed: no evidence yet
+    expect(await t.evidence()).toHaveLength(0)
+    expect(adaptive.calls).toBe(0)
+    await t.answer(run.id, 'q1', 'b') // settled: evidence
+    expect((await t.evidence()).length).toBeGreaterThan(0)
+    expect(adaptive.calls).toBe(1)
+  })
+
   it('retries calmly with progressive hints, reveals after 3 tries (early band), records evidence once', async () => {
     const t = await setup()
     const a = t.add(artifact(t.learner.id))
