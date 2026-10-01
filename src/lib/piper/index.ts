@@ -1,4 +1,5 @@
 import type { SpeechLang } from '../../core/types'
+import { getBytes, putBytes } from './store'
 import { speechKey } from '../spoken'
 import type { Reply, Request } from './protocol'
 
@@ -11,8 +12,6 @@ export interface EngineState {
   /** Download progress 0..1 while loading. */
   progress: number
 }
-
-const CLIPS = 'jackapp-speech-v1'
 
 export const isEngineSupported = () => typeof WebAssembly !== 'undefined' && typeof Worker !== 'undefined'
 
@@ -58,8 +57,6 @@ function getWorker() {
   return (worker = w)
 }
 
-const clipCache = () => ('caches' in self ? caches.open(CLIPS).catch(() => null) : Promise.resolve(null))
-const cacheUrl = (key: string) => `https://speech.invalid/${key}`
 const inflight = new Map<string, Promise<Blob>>()
 
 function render(text: string, lang: SpeechLang) {
@@ -78,11 +75,10 @@ export function synthesize(text: string, lang: SpeechLang): Promise<Blob> {
   let p = inflight.get(key)
   if (!p) {
     p = (async () => {
-      const cache = await clipCache()
-      const hit = await cache?.match(cacheUrl(key)).catch(() => undefined)
-      if (hit) return hit.blob()
+      const hit = await getBytes(`clip:${key}`)
+      if (hit) return new Blob([hit], { type: 'audio/wav' })
       const wav = await render(text.trim(), lang)
-      await cache?.put(cacheUrl(key), new Response(wav, { headers: { 'content-type': 'audio/wav' } })).catch(() => {})
+      await putBytes(`clip:${key}`, await wav.arrayBuffer())
       return wav
     })().finally(() => inflight.delete(key))
     inflight.set(key, p)

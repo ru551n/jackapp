@@ -1,10 +1,10 @@
-// Fetch a file once, keep it in Cache Storage (when available) so it also works offline.
-const CACHE = 'jackapp-voices-v1'
+import { getBytes, putBytes } from './store'
+
+// Fetch a file once and keep it on the device (IndexedDB) so it also works offline.
 
 export async function cachedBytes(url: string, onProgress?: (loaded: number, total: number) => void) {
-  const cache = 'caches' in self ? await caches.open(CACHE).catch(() => null) : null
-  const hit = await cache?.match(url).catch(() => undefined)
-  if (hit) return hit.arrayBuffer()
+  const hit = await getBytes(`asset:${url}`)
+  if (hit) return hit
   const res = await fetch(url)
   if (!res.ok) throw new Error(`${url}: ${res.status}`)
   const total = Number(res.headers.get('content-length')) || 0
@@ -19,6 +19,6 @@ export async function cachedBytes(url: string, onProgress?: (loaded: number, tot
     onProgress?.(loaded, total || loaded)
   }
   const bytes = await new Blob(parts as BlobPart[]).arrayBuffer()
-  await cache?.put(url, new Response(bytes)).catch(() => {})
+  await putBytes(`asset:${url}`, bytes)
   return bytes
 }
