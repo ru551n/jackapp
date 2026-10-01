@@ -108,7 +108,18 @@ describe('learner profiles', () => {
     ])
     const view = (await app.inject(`/api/v1/learners/${l.id}`)).json()
     expect(Object.keys(view).sort()).toEqual(
-      ['ageBand', 'displayName', 'id', 'language', 'learnerRequestsAllowed', 'presentation', 'school'].sort(),
+      [
+        'ageBand',
+        'displayName',
+        'freePlayEnabled',
+        'id',
+        'interests',
+        'language',
+        'learnerRequestsAllowed',
+        'presentation',
+        'school',
+        'themes',
+      ].sort(),
     )
     expect(view.presentation).toMatchObject({ ageBand: 'early', maxChoices: 4, school: { year: 1 } })
     const adult = (await app.inject({ url: `/api/v1/learners/${l.id}`, headers: asAdult })).json()
