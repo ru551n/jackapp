@@ -1,10 +1,11 @@
 import type { Logger } from 'pino'
-import type { AiServices } from '../ai'
+import { parseAiConfig, type AiServices } from '../ai'
 import type { CoreEnv } from '../config/env'
 import { pathPlanHandler } from '../adaptive/paths'
 import { curriculumJobHandlers } from '../curriculum/service'
 import type { Db } from '../db/client'
 import { imageJobHandler } from '../images'
+import { generationJobHandlers } from '../generation/jobs'
 import { defineJobHandler, type JobHandler } from '../jobs/runtime'
 import { studyHandlers } from '../study/process'
 import { researchJobHandlers } from '../research/jobs'
@@ -27,5 +28,6 @@ export function jobHandlers(deps: HandlerDeps): JobHandler[] {
     ...studyHandlers(deps),
     ...researchJobHandlers(deps),
     pathPlanHandler(deps),
+    ...generationJobHandlers({ ai: deps.ai, providerKind: parseAiConfig(process.env).text?.provider }),
   ]
 }

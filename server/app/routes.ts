@@ -4,6 +4,7 @@ import { systemStatusRoutes } from '../ai/routes'
 import { assetRoutes } from '../assets/routes'
 import { curriculumRoutes } from '../curriculum/routes'
 import { imageRoutes } from '../images/routes'
+import { generationRoutes } from '../generation/routes'
 import { jobRoutes } from '../jobs/routes'
 import { learnerRoutes } from '../learners/routes'
 import { studyRoutes } from '../study/routes'
@@ -22,4 +23,5 @@ export const ROUTE_MODULES: RouteModule[] = [
   runRoutes,
   researchRoutes,
   adaptiveRoutes,
+  generationRoutes,
 ]

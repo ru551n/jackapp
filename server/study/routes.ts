@@ -4,13 +4,13 @@ import { createWriteStream } from 'node:fs'
 import { mkdir, open } from 'node:fs/promises'
 import { join } from 'node:path'
 import { pipeline } from 'node:stream/promises'
-import { and, asc, desc, eq, inArray, isNull, notExists } from 'drizzle-orm'
+import { and, desc, eq, inArray, isNull, notExists } from 'drizzle-orm'
 import { z } from 'zod'
-import type { ProcessedStudyMaterial } from '../../shared/contracts'
+import { loadProcessedMaterial } from './material'
 import type { RouteModule } from '../app/context'
 import { parseEnv } from '../config/env'
 import { LimitsEnv } from '../config/limits'
-import { studyMaterials, studyPageExtractions, studyPages, studySegments, studySets } from '../db/schema'
+import { studyPageExtractions, studyPages, studySets } from '../db/schema'
 import { HttpError, requireAdult, requireLearner } from '../gate/guards'
 import { getJob, jobsServices } from '../jobs'
 import { pdfPageCount, processDedupeKey, removeOriginals, sniff, toStudySet, uploadDir } from './service'
@@ -244,31 +244,9 @@ export const studyRoutes: RouteModule = async (app, ctx) => {
   /** The processed representation. Adults also get technical provenance. */
   app.get('/learners/:id/study-sets/:setId/material', async (req) => {
     const set = await loadSet(req.params)
-    const [m] = await db.select().from(studyMaterials).where(eq(studyMaterials.setId, set.id))
-    if (set.status !== 'ready' || !m) throw err(409, 'not_ready', 'Materialet är inte färdigbearbetat än.')
-    const segments = await db
-      .select()
-      .from(studySegments)
-      .where(eq(studySegments.setId, set.id))
-      .orderBy(asc(studySegments.ord))
-    const material: ProcessedStudyMaterial = {
-      studySetId: set.id,
-      language: m.language,
-      ...(m.subjectGuess ? { subjectGuess: m.subjectGuess } : {}),
-      topic: m.topic,
-      summary: m.summary,
-      concepts: m.concepts,
-      curriculumRefs: m.curriculumRefs,
-      segments: segments.map((s) => ({
-        id: s.id,
-        page: s.page,
-        kind: s.kind,
-        text: s.text,
-        ...(s.data ? { data: s.data } : {}),
-        confidence: s.confidence,
-      })),
-      processedAt: m.processedAt.toISOString(),
-    }
-    return req.gate?.adult ? { ...material, provenance: m.provenance } : material
+    const loaded = set.status === 'ready' ? await loadProcessedMaterial(db, set.id) : undefined
+    if (!loaded) throw err(409, 'not_ready', 'Materialet är inte färdigbearbetat än.')
+    const { material, provenance } = loaded
+    return req.gate?.adult ? { ...material, provenance } : material
   })
 }

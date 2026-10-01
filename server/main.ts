@@ -8,6 +8,7 @@ import { createDb } from './db/client'
 import { dbReadiness } from './db/migrations'
 import { createAi } from './ai'
 import { jobsServices } from './jobs'
+import { loadArtifactVersion } from './generation/store'
 
 async function main() {
   const boot = pino({ base: { service: 'app' } })
@@ -28,7 +29,7 @@ async function main() {
   const jobs = jobsServices({ db: handle.db })
   const readiness: ReadinessCheck[] = [...dbReadiness(handle.db), ...ai.readiness, ...jobs.readiness]
   const app = await buildApp({
-    ctx: { env: core, db: handle.db, readiness, ai, jobs },
+    ctx: { env: core, db: handle.db, readiness, ai, jobs, loadArtifactVersion },
     logger: { level: core.LOG_LEVEL, base: { service: 'app' } },
     trustProxy: trustProxyFrom(core.TRUST_PROXY),
     webDistDir: core.WEB_DIST_DIR,

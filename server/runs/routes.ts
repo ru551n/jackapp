@@ -2,6 +2,7 @@ import { and, desc, eq, type SQL } from 'drizzle-orm'
 import { z } from 'zod'
 import { ageBand, type AgeBand, type Artifact, type Item, type SkillEvidence } from '../../shared/contracts'
 import { recordEvidence } from '../adaptive/evidence'
+import { onEvidence } from '../adaptive/paths'
 import type { AppContext, RouteModule } from '../app/context'
 import type { Db } from '../db/client'
 import { runAnswers, runs } from '../db/schema'
@@ -199,6 +200,15 @@ export const runRoutes: RouteModule = (app, ctx: AppContext) => {
       summary: (run.summary as RunSummary | null) ?? null,
     }
   }
+
+  // After evidence was written: let adaptive paths/reviews react (best effort, never fails the answer).
+  const EVIDENCE_ROUTES = new Set(['/learners/:id/runs/:runId/answers', '/learners/:id/runs/:runId/finish'])
+  app.addHook('onResponse', async (req, reply) => {
+    if (reply.statusCode >= 400 || !EVIDENCE_ROUTES.has(req.routeOptions.url?.replace(/^\/api\/v1/, '') ?? '')) return
+    const learnerId = (req.params as { id?: string }).id
+    if (learnerId)
+      await onEvidence(db, learnerId).catch((e: Error) => req.log.warn({ err: e.name }, 'adaptive update failed'))
+  })
 
   /** Start, or resume the active run for this artifact. Learner mode: approved artifacts only. */
   app.post('/learners/:id/runs', async (req, reply) => {

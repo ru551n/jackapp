@@ -36,6 +36,13 @@
       "when": 1790869149289,
       "tag": "0004_research_adaptive",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1790869208615,
+      "tag": "0005_generation",
+      "breakpoints": true
     }
   ]
 }
