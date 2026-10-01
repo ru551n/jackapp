@@ -289,6 +289,7 @@
   position: relative;
   border-color: var(--pair);
   border-width: 4px;
+  padding-inline: 2.4rem; /* room for the badge, text stays centred */
 }
 
 .pairBadge {
@@ -461,6 +462,13 @@
   gap: 0.4rem;
   padding: var(--space-2) var(--space-3);
   border-radius: var(--radius);
+}
+
+/* "Lyssna" keeps its own width inside a feedback box. */
+.success > button,
+.reveal > button,
+.hint > button {
+  align-self: flex-start;
 }
 
 .success {

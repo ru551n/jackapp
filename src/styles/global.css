@@ -81,8 +81,10 @@ button {
   outline-offset: 3px;
 }
 
-/* Headings focused in code on screen change: no ring unless reached by keyboard. */
-[tabindex='-1']:focus:not(:focus-visible) {
+/* Focused only in code (screen change, for screen readers); never a keyboard stop, so no ring.
+   Chrome counts script focus at load as :focus-visible, hence not the :not(:focus-visible) form. */
+[tabindex='-1']:focus:not(:focus-visible),
+:is(h1, h2, h3)[tabindex='-1']:focus {
   outline: none;
 }
 

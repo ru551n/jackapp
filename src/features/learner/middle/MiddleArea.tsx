@@ -19,7 +19,7 @@ const MIDDLE_CHIPS = [
 ]
 
 /** Suggestion chips built from the learner's interests; the generic ones when there are none. */
-export function middleChips(interests: string[] = []): string[] {
+function middleChips(interests: string[] = []): string[] {
   const [a, b = a, c = b] = interests.map((i) => i.trim().toLowerCase()).filter(Boolean)
   if (!a) return MIDDLE_CHIPS
   return [
