@@ -63,9 +63,7 @@
 details.card > summary {
   cursor: pointer;
   font-weight: 700;
-  min-height: 2.75rem;
-  display: flex;
-  align-items: center;
+  padding: 0.6rem 0;
 }
 details > summary {
   cursor: pointer;
@@ -132,6 +130,10 @@ details > summary {
 .crumb {
   margin-bottom: var(--space-1);
   color: var(--ink-soft);
+}
+.crumb a,
+.list a {
+  color: var(--accent);
 }
 .tabs {
   display: flex;
@@ -333,6 +335,12 @@ details > summary {
   font-weight: 700;
 }
 .pinInput {
+  font: inherit;
+  min-height: 3rem;
+  padding: 0.4rem 0.7rem;
+  border: 2px solid var(--ink-soft);
+  border-radius: 8px;
+  width: 100%;
   max-width: 12rem !important;
   font-size: 1.4rem !important;
   letter-spacing: 0.3em;
@@ -407,4 +415,7 @@ details > summary {
   background: transparent;
   color: var(--sign-ink);
   border-color: var(--sign-ink);
+}
+.lockButton svg {
+  flex: none;
 }
