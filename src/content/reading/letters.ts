@@ -1,8 +1,11 @@
 import type { Generator, Level, Scene } from '../../core/types'
-import { textChoices, wrongIds } from '../helpers'
-import { ALPHABET, WORDS, choiceCount } from './util'
+import { choiceCount, textChoices } from '../helpers'
+import { ALPHABET, WORDS, withElim } from './util'
 
 const low = (level: Level, s: string) => (level <= 2 ? s.toUpperCase() : s.toLowerCase())
+
+// Levels 1-2 use only these short picture-backed words.
+const SHORT = ['tåg', 'bil', 'buss', 'vagn']
 
 /** "Vilken bokstav börjar TÅG på?" */
 export const startsWith: Generator = {
@@ -10,19 +13,21 @@ export const startsWith: Generator = {
   skill: 'read.letters',
   levels: [1, 3],
   generate({ rng, level, support }) {
-    const word = rng.pick(WORDS)
+    // Extra support: always a picture-backed word.
+    const pool = WORDS.filter((w) => (level <= 2 ? SHORT.includes(w.w) : support === 'extra' ? w.sprite : true))
+    const word = rng.pick(pool)
     const shown = low(level, word.w)
     const answer = low(level, word.w[0])
+    // Distractors are letters that do not occur in the word.
     const choices = textChoices(
       rng,
       answer,
-      ALPHABET.map((l) => low(level, l)),
+      ALPHABET.filter((l) => !word.w.toUpperCase().includes(l)).map((l) => low(level, l)),
       choiceCount(level, support),
     )
     const text: Scene = { kind: 'text', text: shown, size: 'xl' }
-    const scene: Scene = word.sprite
-      ? { kind: 'group', direction: 'row', scenes: [{ kind: 'row', items: [{ sprite: word.sprite }] }, text] }
-      : text
+    const pic: Scene[] = word.sprite ? [{ kind: 'row', items: [{ sprite: word.sprite }] }] : []
+    const scene: Scene = pic.length ? { kind: 'group', direction: 'row', scenes: [...pic, text] } : text
     return {
       id: `read.letters.startsWith:${word.w.toUpperCase()}:${answer.toUpperCase()}`,
       skill: 'read.letters',
@@ -31,10 +36,15 @@ export const startsWith: Generator = {
       prompt: `Vilken bokstav börjar ${shown} på?`,
       scene,
       task: { kind: 'choice', choices, answer },
-      hints: [
-        { text: 'Titta på den första bokstaven i ordet.' },
-        { text: 'Vi tar bort en bokstav.', eliminate: wrongIds(choices, answer) },
-      ],
+      hints: withElim(
+        {
+          text: `Säg ordet långsamt. Första ljudet kommer från första bokstaven, längst till vänster.`,
+          scene: { kind: 'group', direction: 'row', scenes: [...pic, { kind: 'sign', text: shown, style: 'word' }] },
+        },
+        choices,
+        answer,
+        'Vi tar bort en bokstav.',
+      ),
       success: `Ja! ${shown} börjar på ${answer}.`,
     }
   },
@@ -57,10 +67,19 @@ export const matchLetter: Generator = {
       prompt: level === 3 ? `Vilken stor bokstav hör ihop med ${shown}?` : 'Hitta samma bokstav.',
       scene: { kind: 'text', text: shown, size: 'xl' },
       task: { kind: 'choice', choices, answer: letter },
-      hints: [
-        { text: 'Titta på formen på bokstaven.' },
-        { text: 'Vi tar bort en bokstav.', eliminate: wrongIds(choices, letter) },
-      ],
+      hints: withElim(
+        {
+          text: `Titta på formen. Bokstaven heter ${letter}.`,
+          scene: {
+            kind: 'group',
+            direction: 'row',
+            scenes: [{ kind: 'text', text: `${shown}  =  ${letter}`, size: 'xl' }],
+          },
+        },
+        choices,
+        letter,
+        'Vi tar bort en bokstav.',
+      ),
       success: `Ja! Det är ${letter}.`,
     }
   },
@@ -85,12 +104,24 @@ export const platformLetter: Generator = {
       theme: 'train',
       prompt: `Tåget går från perrong ${answer}. Vilken skylt?`,
       speech: `Tåget går från perrong ${answer}. Vilken skylt ska du trycka på?`,
-      scene: { kind: 'text', text: `PERRONG ${answer}`, size: 'xl' },
+      scene:
+        support === 'extra'
+          ? {
+              kind: 'group',
+              direction: 'row',
+              scenes: [
+                { kind: 'text', text: `PERRONG ${answer}`, size: 'xl' },
+                { kind: 'sign', text: answer, style: 'platform' },
+              ],
+            }
+          : { kind: 'text', text: `PERRONG ${answer}`, size: 'xl' },
       task: { kind: 'choice', choices, answer },
-      hints: [
-        { text: `Leta efter bokstaven ${answer}.` },
-        { text: 'Vi tar bort en skylt.', eliminate: wrongIds(choices, answer) },
-      ],
+      hints: withElim(
+        { text: `Leta efter bokstaven ${answer}.`, scene: { kind: 'sign', text: answer, style: 'platform' } },
+        choices,
+        answer,
+        'Vi tar bort en skylt.',
+      ),
       success: `Ja! Perrong ${answer}.`,
     }
   },

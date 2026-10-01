@@ -79,8 +79,7 @@ describe('every generator', () => {
 })
 
 describe('skill coverage', () => {
-  // Re-enabled by the content fix wave (read.missingLetter, read.sentences, air.compare need level 1).
-  it.skip('every catalog skill has a generator that starts at level 1', () => {
+  it('every catalog skill has a generator that starts at level 1', () => {
     for (const skill of AREAS.flatMap((a) => a.skills)) {
       expect(
         GENERATORS.some((g) => g.skill === skill && g.levels[0] === 1),
