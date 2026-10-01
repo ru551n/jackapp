@@ -38,9 +38,19 @@ export class ConfigError extends Error {
 
 /** Parse a zod env group; throws ConfigError listing variable names (never values). */
 export function parseEnv<T extends z.ZodTypeAny>(schema: T, env: NodeJS.ProcessEnv = process.env): z.infer<T> {
-  const r = schema.safeParse(env)
+  // Empty values (`KEY=` in .env) mean "unset", so defaults apply.
+  const r = schema.safeParse(Object.fromEntries(Object.entries(env).filter(([, v]) => v !== '')))
   if (r.success) return r.data
   throw new ConfigError(r.error.issues.map((i) => `${i.path.join('.') || '(env)'}: ${i.message}`))
 }
 
 export { bool as envBool }
+
+/** TRUST_PROXY → Fastify `trustProxy`: a list of IPs/CIDRs, or false (trust none). Never `true`. */
+export function trustProxyFrom(value: string): string[] | false {
+  const list = value
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean)
+  return list.length ? list : false
+}

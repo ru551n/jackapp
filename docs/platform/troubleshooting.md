@@ -1,0 +1,19 @@
+# Troubleshooting
+
+Start with `docker compose ps` and `docker compose logs <service>`. The `startup diagnostics` line in `app`/`worker` logs shows what the process sees (no secrets).
+
+| Symptom                                                              | Cause / fix                                                                                                                                                 |
+| -------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `required variable POSTGRES_PASSWORD is missing`                     | No `.env`, or the variable is empty. `cp .env.example .env` and fill it in.                                                                                 |
+| `invalid configuration` with a `problems` list, exit 1               | The listed variables are missing or invalid (e.g. `APP_SECRET` shorter than 32 chars, `PUBLIC_URL` not a URL). Values are not printed by design.            |
+| `AI_TEXT_PROVIDER: cloud provider "openai" but ALLOW_CLOUD_AI=false` | Policy conflict: change the provider or the policy.                                                                                                         |
+| `app`/`worker` never start, `migrate` exited non-zero                | `docker compose logs migrate`. Usually wrong DB credentials; note that `POSTGRES_*` only apply on the **first** start of an empty `pgdata` volume.          |
+| `/ready` 503 with `migrations: N pending`                            | The `migrate` service didn't run for this version: `docker compose up -d --build` (or `docker compose run --rm migrate`).                                   |
+| `/ready` 503 with `database` not ok                                  | Postgres down or unreachable: `docker compose ps db`, `docker compose logs db`.                                                                             |
+| `/ready` 503 on an AI check                                          | `AI_TEXT_*` missing or the endpoint unreachable. For LAN endpoints see [ai-providers.md](ai-providers.md): `localhost` inside a container is the container. |
+| `worker` unhealthy                                                   | Its heartbeat in `/data` is stale: the process hangs or `/data` isn't writable (`docker compose exec worker ls -la /data`).                                 |
+| Login loop or 401 from the proxy                                     | Authentik provider external host must equal `PUBLIC_URL`; the `/outpost.goauthentik.io/*` route must come before `forward_auth`.                            |
+| Job progress only updates at the end                                 | The proxy buffers Server-Sent Events: `flush_interval -1` in Caddy (`proxy_buffering off` in nginx).                                                        |
+| Logs show the proxy's IP for every request                           | `TRUST_PROXY` doesn't match the proxy's address. See [reverse-proxy.md](reverse-proxy.md).                                                                  |
+| Image build slow or fails in the speech step                         | Needs internet for Python packages and voices. Set `JACKAPP_SKIP_SPEECH=1` to skip it.                                                                      |
+| Reset everything (deletes all data!)                                 | `docker compose down -v`                                                                                                                                    |

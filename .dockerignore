@@ -1,0 +1,17 @@
+# Keep the build context small and free of secrets and local build output.
+.git
+.github
+node_modules
+dist
+dist-server
+.env
+.env.*
+!.env.example
+.speech
+.voices
+.venv-speech
+public/audio
+public/voices
+playwright-report
+test-results
+*.log

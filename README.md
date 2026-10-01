@@ -15,6 +15,18 @@ npm run build        # static site in dist/ (hash routing + relative paths: host
 npm run preview      # serve the production build
 ```
 
+## Platform (self-hosted, in progress)
+
+JackApp is growing into a self-hosted, AI-backed learning platform (förskoleklass to gymnasium) run with Docker Compose: `cp .env.example .env`, fill it in, `docker compose up -d --build`. It has no login; put it behind a reverse proxy that controls access.
+
+- [Architecture](docs/platform/architecture.md) and [environment variables](docs/platform/env.md)
+- [Deployment](docs/platform/deployment.md): topology, volumes and backups, upgrades, health
+- [Reverse proxy](docs/platform/reverse-proxy.md): Caddy + Authentik forward auth, `TRUST_PROXY`
+- [AI providers](docs/platform/ai-providers.md): cloud and LAN endpoints, privacy
+- [Troubleshooting](docs/platform/troubleshooting.md) and [decisions](docs/platform/decisions.md)
+
+Server scripts: `npm run dev:server`, `dev:worker`, `build:server`, `start`, `start:worker`, `db:generate`, `db:migrate`.
+
 ## Test
 
 ```bash

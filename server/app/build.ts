@@ -1,4 +1,7 @@
+import fastifyStatic from '@fastify/static'
 import Fastify, { type FastifyServerOptions } from 'fastify'
+import { existsSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { ZodError } from 'zod'
 import { API_PREFIX } from '../../shared/contracts'
 import { HttpError, sendError } from '../gate/guards'
@@ -10,6 +13,8 @@ export interface BuildOptions {
   logger?: FastifyServerOptions['logger']
   /** Fastify trustProxy value derived from TRUST_PROXY (never `true` blindly). */
   trustProxy?: FastifyServerOptions['trustProxy']
+  /** Built web app (WEB_DIST_DIR). Served at / when it contains index.html; hash routing needs no SPA fallback. */
+  webDistDir?: string
 }
 
 export async function runReadiness(checks: ReadinessCheck[]) {
@@ -29,8 +34,6 @@ export async function buildApp(opts: BuildOptions) {
   const app = Fastify({
     logger: opts.logger ?? false,
     trustProxy: opts.trustProxy ?? false,
-    // Never log cookies or auth headers.
-    disableRequestLogging: false,
   })
   const ctx: AppContext = { ...opts.ctx, log: app.log }
   app.decorate('ctx', ctx)
@@ -62,5 +65,9 @@ export async function buildApp(opts: BuildOptions) {
     },
     { prefix: API_PREFIX },
   )
+
+  if (opts.webDistDir && existsSync(resolve(opts.webDistDir, 'index.html')))
+    await app.register(fastifyStatic, { root: resolve(opts.webDistDir) })
+  else if (opts.webDistDir) app.log.warn({ webDistDir: opts.webDistDir }, 'web app not built; static serving disabled')
   return app
 }
