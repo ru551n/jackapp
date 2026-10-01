@@ -1,11 +1,12 @@
-import type { Level, SpriteId, Support } from '../../core/types'
+import type { Choice, Hint, Level, SpriteId } from '../../core/types'
+import { wrongIds } from '../helpers'
 
 /** Signs use capitals at levels 1–2; mixed case from level 3. Names are stored in mixed case. */
 export const cased = (level: Level, w: string) => (level <= 2 ? w.toUpperCase() : w)
 
-/** Number of choices: 2 at level 1 or with extra support, then 3, then 4. */
-export const choiceCount = (level: Level, support: Support) =>
-  support === 'extra' || level === 1 ? 2 : level === 2 ? 3 : 4
+/** `first` is real support; the eliminate hint is only added when it can actually remove something (3+ choices). */
+export const withElim = (first: Hint, choices: Choice[], answer: string, text: string): Hint[] =>
+  choices.length > 2 ? [first, { text, eliminate: wrongIds(choices, answer) }] : [first]
 
 export const ALPHABET = [...'ABCDEFGHIJKLMNOPQRSTUVWXYZÅÄÖ']
 
@@ -26,7 +27,8 @@ export const WORDS: Word[] = [
   { w: 'signal', sprite: 'signal' },
   { w: 'vagn', sprite: 'carriage' },
   { w: 'spår' },
-  { w: 'buss' },
+  { w: 'buss', sprite: 'bus' },
+  { w: 'bil', sprite: 'car' },
   { w: 'perrong' },
   { w: 'biljett' },
   { w: 'åka' },
@@ -48,6 +50,32 @@ export const METRO_STATIONS = [
 ]
 
 /** Real Swedish cities with train service. */
+/** Look-alike distractors for destination signs (same first letter as many cities). */
+export const CITIES_EXTRA = [
+  'Strömstad',
+  'Skövde',
+  'Sala',
+  'Södertälje',
+  'Gävle',
+  'Gnesta',
+  'Gällivare',
+  'Mora',
+  'Märsta',
+  'Mjölby',
+  'Motala',
+  'Uddevalla',
+  'Ulricehamn',
+  'Karlstad',
+  'Kalmar',
+  'Katrineholm',
+  'Lund',
+  'Ludvika',
+  'Laxå',
+  'Östersund',
+  'Örnsköldsvik',
+  'Öxnered',
+]
+
 export const CITIES = ['Stockholm', 'Göteborg', 'Malmö', 'Uppsala', 'Umeå', 'Luleå', 'Kiruna', 'Sundsvall', 'Örebro']
 
 /** Short picture names for aria labels. */
@@ -59,7 +87,7 @@ export const SPRITE_NAMES: Record<SpriteId, string> = {
   passenger: 'resenär',
   suitcase: 'väska',
   airliner: 'flygplan',
-  jet: 'jaktflygplan',
+  jet: 'stridsflygplan',
   signal: 'signal',
   station: 'station',
   bus: 'buss',
