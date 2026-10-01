@@ -1,6 +1,7 @@
 import type { Logger } from 'pino'
 import type { AiServices } from '../ai'
 import type { CoreEnv } from '../config/env'
+import { pathPlanHandler } from '../adaptive/paths'
 import { curriculumJobHandlers } from '../curriculum/service'
 import type { Db } from '../db/client'
 import { imageJobHandler } from '../images'
@@ -25,5 +26,6 @@ export function jobHandlers(deps: HandlerDeps): JobHandler[] {
     imageJobHandler({ ai: deps.ai, dataDir: deps.env.DATA_DIR }),
     ...studyHandlers(deps),
     ...researchJobHandlers(deps),
+    pathPlanHandler(deps),
   ]
 }

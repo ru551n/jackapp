@@ -127,6 +127,8 @@ export const GenerationRequest = z.object({
   hints: z.boolean().default(true),
   includeImages: z.boolean().default(false),
   useWebResearch: z.boolean().default(false),
+  /** Skill tags generated items must carry (e.g. from a learning path or remediation). */
+  skills: z.array(z.string().max(120)).max(10).optional(),
   /** Free text from the adult or learner, e.g. "10 matteuppgifter om multiplikation med tåg". */
   instructions: z.string().max(2000).optional(),
 })
