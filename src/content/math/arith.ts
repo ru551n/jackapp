@@ -113,7 +113,9 @@ function build(op: Op, s: Story, { rng, level, support }: Parameters<Generator['
         ? withNumbers
         : lvl === 3
           ? { kind: 'group', direction: 'column', scenes: [pics, equation] }
-          : equation
+          : lvl === 4
+            ? { kind: 'group', direction: 'column', scenes: [equation, pics] } // symbols first, pictures as support
+            : equation
 
   const symbolic = level === 5 && !extra
   const spoken = `${numberWord(a, 'ett')} ${op === 'add' ? 'plus' : 'minus'} ${numberWord(b, 'ett')}`

@@ -4,5 +4,11 @@
   "rules": {
     "react/rules-of-hooks": "error",
     "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
+  },
+  "overrides": [
+    {
+      "files": ["src/art/**"],
+      "rules": { "react/only-export-components": "off" }
+    }
+  ]
 }
