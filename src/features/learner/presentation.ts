@@ -1,4 +1,4 @@
-import { useEffect, type CSSProperties } from 'react'
+import { useLayoutEffect, type CSSProperties } from 'react'
 import type { AgeBand } from '../../../shared/contracts'
 import type { Presentation } from './api'
 
@@ -42,7 +42,8 @@ export function presentationFlags(p: Presentation): PresentationFlags {
 export function usePresentation(p: Presentation): PresentationFlags {
   const flags = presentationFlags(p)
   const { band, reducedMotion } = flags
-  useEffect(() => {
+  // Layout effect: set before paint (no flash of the wrong band) and before tests read it.
+  useLayoutEffect(() => {
     const root = document.documentElement.dataset
     const prevMotion = root.motion
     root.band = band
