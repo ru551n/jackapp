@@ -32,12 +32,19 @@ export function checkProviderPolicy(f: FeaturesEnv, env: NodeJS.ProcessEnv = pro
   if (problems.length) throw new ConfigError(problems)
 }
 
-/** Effective features (shape of SystemStatus.features). */
-export function activeFeatures(f: FeaturesEnv, env: NodeJS.ProcessEnv = process.env) {
+/**
+ * Effective features (shape of SystemStatus.features). `configured` defaults to "provider env set";
+ * the app passes its live AI registry instead.
+ */
+export function activeFeatures(
+  f: FeaturesEnv,
+  env: NodeJS.ProcessEnv = process.env,
+  configured: (cap: 'RESEARCH' | 'IMAGE') => boolean = (cap) => !!provider(env, cap),
+) {
   return {
-    webResearch: f.FEATURE_WEB_RESEARCH && !!provider(env, 'RESEARCH'),
+    webResearch: f.FEATURE_WEB_RESEARCH && configured('RESEARCH'),
     // ponytail: external assets have no capability of their own yet; tie to one if the research agent adds it.
     externalAssets: f.FEATURE_EXTERNAL_ASSETS,
-    imageGeneration: f.FEATURE_IMAGE_GENERATION && !!provider(env, 'IMAGE'),
+    imageGeneration: f.FEATURE_IMAGE_GENERATION && configured('IMAGE'),
   }
 }

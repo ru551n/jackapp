@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { SystemStatus } from '../../shared/contracts'
 import { buildApp } from '../app/build'
 import { createTestDb, type DbHandle } from '../db/client'
@@ -116,5 +116,17 @@ describe('GET /api/v1/system/status', () => {
     })
     expect(body.capabilities.find((c) => c.capability === 'research')!.label).toBe('Webbsökning är inte aktiverad')
     expect(res.body).not.toMatch(/SECRET|secret|127\.0\.0\.1|http|qwen|openai/)
+  })
+
+  it('reads FEATURE_* and LIMIT_* through server/config (one parser for app, worker and status)', async () => {
+    vi.stubEnv('FEATURE_IMAGE_GENERATION', 'false')
+    vi.stubEnv('LIMIT_UPLOAD_PAGES', '12')
+    const ai = createAi({ AI_TEXT_PROVIDER: 'mock', AI_IMAGE_PROVIDER: 'mock' }, { db: handle.db, log: silentLog })
+    const app = await buildApp({ ctx: { env: TEST_ENV, db: handle.db, readiness: [], ai } })
+    const body = SystemStatus.parse((await app.inject('/api/v1/system/status')).json())
+    await app.close()
+    vi.unstubAllEnvs()
+    expect(body.features.imageGeneration).toBe(false)
+    expect(body.limits.maxPagesPerSet).toBe(12)
   })
 })
