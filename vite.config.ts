@@ -22,9 +22,25 @@ export default defineConfig({
   // Relative asset paths: the build works from any folder or static host.
   base: './',
   test: {
-    environment: 'jsdom',
-    setupFiles: ['./src/test/setup.ts'],
-    include: ['src/**/*.test.{ts,tsx}'],
-    css: { modules: { classNameStrategy: 'non-scoped' } },
+    projects: [
+      {
+        extends: true,
+        test: {
+          name: 'web',
+          environment: 'jsdom',
+          setupFiles: ['./src/test/setup.ts'],
+          include: ['src/**/*.test.{ts,tsx}'],
+          css: { modules: { classNameStrategy: 'non-scoped' } },
+        },
+      },
+      {
+        test: {
+          name: 'server',
+          environment: 'node',
+          include: ['server/**/*.test.ts', 'shared/**/*.test.ts'],
+          testTimeout: 30000,
+        },
+      },
+    ],
   },
 })
