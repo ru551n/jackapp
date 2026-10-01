@@ -16,8 +16,10 @@ export function openAiChat(c: ModelCapConfig): ChatFn {
     if (req.temperature !== undefined) body.temperature = req.temperature
     if (req.json && mode === 'json_schema') {
       const name = req.json.name.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 64)
-      const strict = isStrictCompatible(req.json.jsonSchema)
-      body.response_format = { type: 'json_schema', json_schema: { name, schema: req.json.jsonSchema, strict } }
+      const strictSchema = toStrictSchema(req.json.jsonSchema)
+      const strict = isStrictCompatible(strictSchema)
+      const schema = strict ? strictSchema : req.json.jsonSchema
+      body.response_format = { type: 'json_schema', json_schema: { name, schema, strict } }
     } else if (req.json && mode === 'json_mode') body.response_format = { type: 'json_object' }
     const r = await httpJson(joinUrl(c.baseUrl, '/chat/completions'), {
       body,
@@ -28,6 +30,8 @@ export function openAiChat(c: ModelCapConfig): ChatFn {
     const choice = r?.choices?.[0]
     if (choice?.message?.refusal || choice?.finish_reason === 'content_filter')
       throw new AiError('ai_refused', { detail: 'provider refusal' })
+    if (choice?.finish_reason === 'length')
+      throw new AiError('ai_invalid_output', { detail: 'output truncated (finish_reason length)', truncated: true })
     if (typeof choice?.message?.content !== 'string')
       throw new AiError('ai_invalid_output', { detail: 'no message content' })
     return {
@@ -48,7 +52,8 @@ export function openAiChat(c: ModelCapConfig): ChatFn {
         return await send(req, mode)
       } catch (e) {
         const next = mode === 'json_schema' ? 'json_mode' : mode === 'json_mode' ? 'prompt' : undefined
-        if (!(e instanceof AiError && e.status === 400 && next)) throw e
+        // Only a 400 about response_format means the server lacks the mode (not e.g. context length).
+        if (!(e instanceof AiError && e.status === 400 && e.param === 'response_format' && next)) throw e
         compatMode = next
       }
     }
@@ -73,6 +78,42 @@ function toMessages(req: ChatRequest, mode: StructuredMode) {
           })),
         ],
       })
+  }
+  return out
+}
+
+/**
+ * Keywords OpenAI strict mode accepts (structured outputs "supported schemas"). Everything else
+ * (minLength, maxItems, minimum, pattern, format, default, ...) is dropped; zod still validates the reply.
+ */
+const STRICT_KEYWORDS = new Set([
+  'type',
+  'properties',
+  'required',
+  'additionalProperties',
+  'items',
+  'enum',
+  'const',
+  'anyOf',
+  'description',
+  '$ref',
+  '$defs',
+  'definitions',
+])
+
+/** Schema rewritten for strict mode: unsupported keywords stripped, oneOf → anyOf. */
+export function toStrictSchema(s: unknown): any {
+  if (Array.isArray(s)) return s.map(toStrictSchema)
+  if (!s || typeof s !== 'object') return s
+  const out: Record<string, unknown> = {}
+  for (const [k, v] of Object.entries(s as Record<string, unknown>)) {
+    const key = k === 'oneOf' ? 'anyOf' : k
+    if (!STRICT_KEYWORDS.has(key)) continue
+    // Property names and $defs names are data, not keywords.
+    out[key] =
+      key === 'properties' || key === '$defs' || key === 'definitions'
+        ? Object.fromEntries(Object.entries(v as object).map(([n, x]) => [n, toStrictSchema(x)]))
+        : toStrictSchema(v)
   }
   return out
 }

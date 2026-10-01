@@ -2,7 +2,7 @@ import type { FastifyBaseLogger } from 'fastify'
 import { AiCapability, REQUIRED_CAPABILITIES, type CapabilityStatus } from '../../shared/contracts'
 import type { ReadinessCheck, ReadinessResult } from '../app/context'
 import type { Db } from '../db/client'
-import { anthropicChat, anthropicProbe } from './anthropic'
+import { ANTHROPIC_DEFAULT_MAX_TOKENS, anthropicChat, anthropicProbe } from './anthropic'
 import { parseAiConfig, parseAiLimits, type AiConfig, type CapConfig, type ModelCapConfig } from './config'
 import { countRequest, Semaphore } from './limits'
 import { MOCK_PNG, mockChat, mockEmbedding, type MockScripts } from './mock'
@@ -58,6 +58,42 @@ const NAMES: Record<AiCapability, [available: string, disabled: string]> = {
 
 type Probe = ReadinessResult & { reachable: CapabilityStatus['reachable'] }
 
+/** Truncated output is retried once with this many times the limit, up to MAX_TOKENS_CAP. */
+export const MAX_TOKENS_CAP = 32_000
+
+/**
+ * Provider quirks handled once for every caller:
+ * - a 400 naming `temperature` (gpt-5 / o-series accept only the default) → retry without it and
+ *   drop temperature for this capability for the rest of the process;
+ * - truncated output (reasoning tokens count against the limit) → one retry with a doubled limit.
+ */
+export function recovering(chat: ChatFn, defaultMaxTokens?: number): ChatFn {
+  let noTemperature = false
+  return async (req) => {
+    let r = noTemperature ? { ...req, temperature: undefined } : req
+    let grown = false
+    for (;;) {
+      try {
+        return await chat(r)
+      } catch (e) {
+        if (!(e instanceof AiError)) throw e
+        if (e.status === 400 && e.param === 'temperature' && r.temperature !== undefined) {
+          noTemperature = true
+          r = { ...r, temperature: undefined }
+          continue
+        }
+        const limit = r.maxTokens ?? defaultMaxTokens
+        if (e.truncated && !grown && limit && limit < MAX_TOKENS_CAP) {
+          grown = true
+          r = { ...r, maxTokens: Math.min(MAX_TOKENS_CAP, limit * 2) }
+          continue
+        }
+        throw e
+      }
+    }
+  }
+}
+
 /** Build the AI services from env. Throws ConfigError on invalid configuration. */
 export function createAi(env: NodeJS.ProcessEnv, opts: CreateAiOptions): AiServices {
   const cfg: AiConfig = parseAiConfig(env)
@@ -84,13 +120,9 @@ export function createAi(env: NodeJS.ProcessEnv, opts: CreateAiOptions): AiServi
   }
 
   const chatFor = (c: ModelCapConfig, script?: MockScripts['text']): ChatFn => {
-    const raw =
-      c.provider === 'mock'
-        ? mockChat(c.model, script)
-        : c.provider === 'anthropic' || c.provider === 'anthropic-compatible'
-          ? anthropicChat(c)
-          : openAiChat(c)
-    return (req) => call(c, () => raw(req))
+    const anthropic = c.provider === 'anthropic' || c.provider === 'anthropic-compatible'
+    const raw = c.provider === 'mock' ? mockChat(c.model, script) : anthropic ? anthropicChat(c) : openAiChat(c)
+    return recovering((req) => call(c, () => raw(req)), anthropic ? ANTHROPIC_DEFAULT_MAX_TOKENS : undefined)
   }
 
   const services: AiServices = { status, readiness: [] }

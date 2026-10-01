@@ -21,9 +21,20 @@ export class AiError extends Error {
   readonly status?: number
   readonly detail?: string
   readonly retryAfterMs?: number
+  /** Request parameter the provider rejected ("temperature", "response_format"); never message text. */
+  readonly param?: string
+  /** Output hit the token limit (OpenAI finish_reason length, Anthropic stop_reason max_tokens). */
+  readonly truncated?: boolean
   constructor(
     code: AiErrorCode,
-    opts: { message?: string; status?: number; detail?: string; retryAfterMs?: number } = {},
+    opts: {
+      message?: string
+      status?: number
+      detail?: string
+      retryAfterMs?: number
+      param?: string
+      truncated?: boolean
+    } = {},
   ) {
     super(opts.message ?? MESSAGES[code])
     this.name = 'AiError'
@@ -32,6 +43,8 @@ export class AiError extends Error {
     this.status = opts.status
     this.detail = opts.detail
     this.retryAfterMs = opts.retryAfterMs
+    this.param = opts.param
+    this.truncated = opts.truncated
   }
 }
 

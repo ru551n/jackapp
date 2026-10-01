@@ -164,7 +164,7 @@ export async function aiReview(
       schema: AiFlags,
       schemaName: 'factual_review',
       temperature: 0,
-      maxTokens: 1500,
+      maxTokens: 1000 + 150 * items.length,
       signal: opts.signal,
     })
     return output.flags

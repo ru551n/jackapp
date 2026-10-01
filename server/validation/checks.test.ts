@@ -9,7 +9,7 @@ type Case = [name: string, item: Item, expected: string[]]
 describe('good fixtures pass every item check', () => {
   it.each(KINDS)('%s', (kind) => {
     const i = item(kind)
-    const c = ctx()
+    const c = ctx({ band: kind === 'freeText' ? 'middle' : 'early' })
     for (const check of [answers, math, leakage, language, age, safety, grounding]) expect(check(i, c)).toEqual([])
   })
 })
@@ -156,7 +156,22 @@ describe('math', () => {
     ],
     [
       'tolerance exceeded',
-      num({ prompt: 'Ungefär hur mycket är roten ur 2?', check: 'sqrt(2)', answer: 1.4, tolerance: 0.01 }),
+      num({ prompt: 'Ungefär hur mycket är roten ur 2?', check: 'sqrt(2)', answer: 1.5, tolerance: 0.01 }),
+      ['math.answer_mismatch'],
+    ],
+    [
+      'rounded answer with tolerance',
+      num({ prompt: 'Avrunda roten ur 2 till två decimaler.', check: 'sqrt(2)', answer: 1.41, tolerance: 0.005 }),
+      [],
+    ],
+    [
+      'rounded answer without tolerance warns',
+      num({ prompt: 'Avrunda 10/3 till en decimal.', check: '10/3', answer: 3.3 }),
+      ['math.rounded_without_tolerance'],
+    ],
+    [
+      'integer answer is not a rounding',
+      num({ prompt: 'Dela 10 med 3.', check: '10/3', answer: 3 }),
       ['math.answer_mismatch'],
     ],
     ['malformed check', num({ check: '7**' }), ['math.check_invalid']],
@@ -410,12 +425,83 @@ describe('safety', () => {
       item('trueFalse', { prompt: 'Gripen är ett jaktplan med deltavinge och canardvingar.' }),
       [],
     ],
-    ['aircraft + combat', item('trueFalse', { prompt: 'Gripen kan attackera fiender.' }), ['safety.aviation_combat']],
+    [
+      'aircraft + attack is only borderline',
+      item('trueFalse', { prompt: 'Gripen kan attackera.' }),
+      ['safety.borderline'],
+    ],
+    [
+      'aircraft + combat verb',
+      item('trueFalse', { prompt: 'Gripen bombar staden.' }),
+      ['safety.blocked', 'safety.aviation_combat'],
+    ],
     ['aircraft + missiles', item('trueFalse', { prompt: 'Stridsflygplanet bär missiler.' }), ['safety.blocked']],
     ['air force stays borderline', item('trueFalse', { prompt: 'Gripen flygs av flygvapnet.' }), ['safety.borderline']],
     ['pomegranate is fine', item('trueFalse', { prompt: 'Ett granatäpple är en frukt.' }), []],
     ['dead leaves are borderline', item('trueFalse', { prompt: 'Döda löv faller.' }), ['safety.borderline']],
   ])('%s', (_n, i, want) => expect(codes(safety(i, ctx()))).toEqual(want))
+
+  const at = (band: 'early' | 'middle' | 'upper', subjectCode?: string) =>
+    ctx({ band, request: request({ subjectCode }) })
+  const severity = (prompt: string, c: ReturnType<typeof ctx>) => {
+    const issues = safety(item('trueFalse', { prompt }), c)
+    return issues.some((i) => i.severity === 'error') ? 'error' : issues.length ? 'warning' : 'ok'
+  }
+  it.each([
+    ['Vita blodkroppar dödar bakterier.', at('middle', 'GRGRBIO01'), 'warning'],
+    ['Lejonet dödar sitt byte.', at('middle', 'GRGRBIO01'), 'warning'],
+    ['Lejonet dödar sitt byte.', at('upper', 'BIO'), 'warning'],
+    ['Under Förintelsen mördade nazisterna sex miljoner judar.', at('middle', 'GRGRHIS01'), 'warning'],
+    ['Under kalla kriget byggde stormakterna upp kärnvapenarsenaler.', at('upper', 'HIS'), 'warning'],
+    ['Vikingarna dödade munkar på Lindisfarne år 793.', at('middle', 'GRGRHIS01'), 'warning'],
+    ['Terrorväldet under franska revolutionen.', at('upper', 'HIS'), 'warning'],
+    ['Nobel uppfann sprängämnen som dynamit.', at('middle', 'GRGRHIS01'), 'warning'],
+    ['Atombomberna över Hiroshima och Nagasaki.', at('upper', 'HIS'), 'warning'],
+    ['Bomberna föll över London.', at('middle', 'GRGRSAM01'), 'warning'],
+    ['Korstågen var religiösa krig.', at('middle', 'GRGRREL01'), 'warning'],
+    ['Granat är ett mineral.', at('middle', 'GRGRGEO01'), 'ok'],
+    ['Granat är ett mineral.', at('early'), 'ok'],
+    ['Soldaten kastade en handgranat.', at('early'), 'error'],
+    // Younger learners and non-factual subjects stay strict.
+    ['Lejonet dödar sitt byte.', at('early', 'GRGRBIO01'), 'error'],
+    ['Atombomberna över Hiroshima.', at('middle', 'GRGRMAT01'), 'error'],
+    ['Bomberna föll.', at('early'), 'error'],
+    // Gore, instructions and glorification are errors for everyone.
+    ['Så här tillverkar man en bomb: blanda krut.', at('upper', 'HIS'), 'error'],
+    ['Det var kul att döda fienderna.', at('upper', 'HIS'), 'error'],
+    ['Krigarna lemlästade fångarna.', at('upper', 'HIS'), 'error'],
+    // Aviation: escalate only combat verbs close to the aircraft word.
+    [
+      'Bröderna Wright byggde flygplanet 1903; under första världskriget utvecklades flyget snabbt.',
+      at('middle'),
+      'warning',
+    ],
+    ['The angle of attack decides how much lift the plane gets.', at('upper', 'ENG'), 'ok'],
+    ['A fighter jet like Gripen is fast.', at('upper', 'ENG'), 'ok'],
+    ['Anfallsvinkeln avgör lyftkraften på flygplanet.', at('middle'), 'ok'],
+    ['Jaktplanet sköt ner fienden.', at('upper', 'HIS'), 'error'],
+  ])('%s', (prompt, c, want) => expect(severity(prompt, c)).toBe(want))
+})
+
+it('strict grounding: unsupported prompt terms warn, unsupported answers are errors', () => {
+  const strict = ctx({ material: MATERIAL, sourceMode: 'strict', band: 'middle' })
+  const themed = item('multipleChoice', {
+    prompt: 'Lokföraren Tåg-Tore kör ångloket genom Kirunatunneln förbi gruvorna. Vad bildas?',
+    choices: [
+      { id: 'a', text: 'Moln' },
+      { id: 'b', text: 'Sand' },
+    ],
+    sources: [upload('s3', 2, 'bildar moln')],
+  })
+  expect(grounding(themed, strict).map((i) => i.severity)).toEqual(['warning'])
+})
+
+describe('early-band suitability', () => {
+  it('warns about free text and decimal answers for the youngest', () => {
+    expect(codes(age(item('freeText'), ctx()))).toEqual(['age.free_text_early'])
+    expect(codes(age(item('freeText'), ctx({ band: 'middle' })))).toEqual([])
+    expect(codes(age(item('numeric', { answer: 2.5, check: '5/2' }), ctx()))).toContain('age.decimals_early')
+  })
 })
 
 describe('grounding', () => {
@@ -479,6 +565,12 @@ describe('grounding', () => {
     ['excerpt with ellipsis', grounded({ sources: [upload('s3', 2, 'Vattenångan kyls … bildar moln')] }), mixed, []],
     ['excerpt case/space-insensitive', grounded({ sources: [upload('s3', 2, 'BILDAR   moln')] }), mixed, []],
     ['unsupported, strict → error', grounded(offTopic), strict, ['grounding.unsupported']],
+    [
+      'strict: a themed prompt with a grounded answer passes',
+      grounded({ prompt: 'Lokföraren undrar: vad bildas när vattenångan kyls av i ångloket?' }),
+      strict,
+      [],
+    ],
     ['unsupported, sourceAndCurriculum → warning', grounded(offTopic), mixed, ['grounding.unsupported']],
     ['unsupported, extended → warning', grounded(offTopic), extended, ['grounding.unsupported']],
     ['no material, uploads cited', grounded(), ctx({ sourceMode: 'strict' }), []],

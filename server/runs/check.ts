@@ -26,11 +26,43 @@ export function normalizeText(s: string): string {
     .replace(/\s*[.!?]+$/, '')
 }
 
-const normUnit = (u: string) => u.normalize('NFKC').toLowerCase().replace(/[\s.]/g, '')
+/** Spelled-out and short forms of the same unit. */
+const UNIT_ALIASES: Record<string, string> = {
+  kronor: 'kr',
+  krona: 'kr',
+  centimeter: 'cm',
+  millimeter: 'mm',
+  decimeter: 'dm',
+  meter: 'm',
+  kilometer: 'km',
+  stycken: 'st',
+  styck: 'st',
+  gram: 'g',
+  kilogram: 'kg',
+  kilo: 'kg',
+  liter: 'l',
+  deciliter: 'dl',
+  minuter: 'min',
+  minut: 'min',
+  sekunder: 's',
+  sekund: 's',
+  sek: 's',
+  timmar: 'h',
+  timme: 'h',
+  tim: 'h',
+  procent: '%',
+}
+const normUnit = (u: string) => {
+  const n = u.normalize('NFKC').toLowerCase().replace(/[\s.]/g, '')
+  return UNIT_ALIASES[n] ?? n
+}
 
 /**
  * Parse a learner's number: comma or dot decimals, space thousands, fractions ("3/4", "1 1/2", "½"),
- * and an optional trailing unit that must match `unit` when given. Undefined = not a valid answer.
+ * and an optional trailing unit that must match `unit` when given (a missing unit is fine).
+ * Swedish convention wins on ambiguity: comma is the decimal sign, so a dot followed by exactly three
+ * digits after a non-zero integer ("1.000", "12.500.000") is a thousands separator; "3.5" and "0.125"
+ * stay decimals. Undefined = not a valid answer. Details: docs/platform/runs.md#checking
  */
 export function parseNumber(raw: string | number, unit?: string): number | undefined {
   if (typeof raw === 'number') return Number.isFinite(raw) ? raw : undefined
@@ -40,7 +72,8 @@ export function parseNumber(raw: string | number, unit?: string): number | undef
   const [, num, u] = m
   if (u && (!unit || normUnit(u) !== normUnit(unit))) return undefined
   const dec = (x: string) => {
-    const t = x.includes(',') ? x.replace(/\./g, '').replace(',', '.') : x
+    const thousands = !x.includes(',') && /^[1-9]\d{0,2}(?:\.\d{3})+$/.test(x)
+    const t = x.includes(',') || thousands ? x.replace(/\./g, '').replace(',', '.') : x
     return /^\d+(\.\d+)?$|^\.\d+$/.test(t) ? Number(t) : NaN
   }
   const frac = /^([-+]?)(?:(\d+)\s+)?([\d.,]+)\/([\d.,]+)$/.exec(num!.trim())
@@ -74,7 +107,14 @@ export function checkAnswer(item: Item, answer: unknown): CheckResult {
     }
     case 'fillBlank': {
       const a = answer as string[]
-      const ok = item.blanks.filter((b, i) => b.accepted.some((x) => normalizeText(x) === normalizeText(a[i] ?? '')))
+      const same = (x: string, given: string) => {
+        if (normalizeText(x) === normalizeText(given)) return true
+        // Numeric blanks: "3,5" equals "3.5".
+        const want = parseNumber(x)
+        const got = parseNumber(given)
+        return want !== undefined && got !== undefined && Math.abs(want - got) <= 1e-9 * Math.max(1, Math.abs(want))
+      }
+      const ok = item.blanks.filter((b, i) => b.accepted.some((x) => same(x, a[i] ?? '')))
       return result(ok.length / item.blanks.length)
     }
     case 'matching': {
@@ -83,7 +123,13 @@ export function checkAnswer(item: Item, answer: unknown): CheckResult {
     }
     case 'ordering': {
       const a = answer as string[]
-      return result(a.length === item.answer.length && a.every((x, i) => x === item.answer[i]) ? 1 : 0)
+      const n = item.answer.length
+      if (a.length !== n) return result(0)
+      if (n < 4) return result(a.every((x, i) => x === item.answer[i]) ? 1 : 0)
+      // Long sequences: partial credit for neighbours that are in the right order.
+      const pos = new Map(item.answer.map((id, i) => [id, i]))
+      const pairs = a.slice(1).filter((x, i) => pos.get(x) === (pos.get(a[i]!) ?? -9) + 1).length
+      return result(pairs / (n - 1))
     }
     case 'numeric': {
       const v = parseNumber(answer as string | number, item.unit)
@@ -225,7 +271,8 @@ export async function assessFreeText(
           }),
         },
       ],
-      maxTokens: 600,
+      // Room for reasoning models; temperature is dropped automatically where unsupported.
+      maxTokens: 1500,
       temperature: 0,
       signal: AbortSignal.timeout(30_000),
     })
