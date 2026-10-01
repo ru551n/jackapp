@@ -29,9 +29,9 @@ export async function getPinHash(db: Db): Promise<string | null> {
   return row?.adultPinHash ?? null
 }
 
-/** Set (hash) or clear (null) the household PIN. */
-export async function storePin(db: Db, pin: string | null): Promise<void> {
-  const adultPinHash = pin === null ? null : await hashPin(pin)
+/** Set (hash) the household PIN. There is no way to clear it: an unset PIN means everyone is adult. */
+export async function storePin(db: Db, pin: string): Promise<void> {
+  const adultPinHash = await hashPin(Pin.parse(pin))
   await db
     .insert(householdSettings)
     .values({ adultPinHash })

@@ -86,16 +86,57 @@ describe('adult gate', () => {
     expect(await gate(t.app, value)).toMatchObject({ adult: true })
   })
 
-  it('throttles wrong guesses: 5 misses, then a 60 s wait', async () => {
+  it('throttles wrong guesses: 5 misses, then an exponential wait', async () => {
     const t = await createTestApp()
     close = t.close
+    const now = Date.now()
+    const at = (ms: number) => vi.spyOn(Date, 'now').mockReturnValue(now + ms)
     for (let i = 0; i < 5; i++) expect((await unlock(t.app, '9999')).statusCode).toBe(403)
     const blocked = await unlock(t.app, TEST_PIN)
     expect(blocked.statusCode).toBe(429)
     expect(blocked.headers['retry-after']).toBe('60')
-    const now = Date.now()
-    vi.spyOn(Date, 'now').mockReturnValue(now + 61_000)
+    at(61_000)
+    for (let i = 0; i < 5; i++) expect((await unlock(t.app, '9999')).statusCode).toBe(403)
+    expect((await unlock(t.app, TEST_PIN)).headers['retry-after']).toBe('120') // doubled
+    at(61_000 + 121_000)
     expect((await unlock(t.app, TEST_PIN)).statusCode).toBe(200)
+  })
+
+  it('admits one PIN check at a time: 100 parallel wrong guesses verify at most 5', async () => {
+    const t = await createTestApp()
+    close = t.close
+    const res = await Promise.all(Array.from({ length: 100 }, () => unlock(t.app, '9999')))
+    const codes = res.map((r) => r.statusCode)
+    expect(codes.filter((c) => c === 403).length).toBeGreaterThan(0)
+    expect(codes.filter((c) => c === 403).length).toBeLessThanOrEqual(5) // each 403 = one scrypt verify
+    expect(codes.every((c) => c === 403 || c === 429)).toBe(true)
+  })
+
+  it('revokes open cookies when the PIN changes, and caps a cookie at 8 h however it slides', async () => {
+    const t = await createTestApp()
+    close = t.close
+    const a = gateCookie(await unlock(t.app, TEST_PIN))!
+    const b = gateCookie(await unlock(t.app, TEST_PIN))!
+    const changed = await t.app.inject({
+      method: 'POST',
+      url: '/api/v1/gate/pin',
+      payload: { pin: '13579' },
+      cookies: { [GATE_COOKIE]: a },
+    })
+    expect(changed.statusCode).toBe(200)
+    expect(await gate(t.app, b)).toMatchObject({ adult: false }) // other device: revoked
+    let c = gateCookie(changed)!
+    expect(await gate(t.app, c)).toMatchObject({ adult: true })
+
+    const t0 = Date.now()
+    for (let m = 20; m < 8 * 60; m += 20) {
+      vi.spyOn(Date, 'now').mockReturnValue(t0 + m * 60_000)
+      const r = await t.app.inject({ url: '/api/v1/gate', cookies: { [GATE_COOKIE]: c } })
+      expect(r.json()).toMatchObject({ adult: true })
+      c = gateCookie(r)!
+    }
+    vi.spyOn(Date, 'now').mockReturnValue(t0 + 8 * 3_600_000 + 1000)
+    expect(await gate(t.app, c)).toMatchObject({ adult: false })
   })
 
   it('rejects cross-origin mutating requests (CSRF) but allows same-origin and GETs', async () => {
