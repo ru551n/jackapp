@@ -27,6 +27,27 @@
   border-color: var(--accent);
 }
 
+/* Keyboard focus: thick, offset and dark, clearly unlike the hover border. */
+.card:focus-visible {
+  outline: 5px solid var(--ink);
+  outline-offset: 5px;
+  border-color: var(--accent);
+}
+
+button.card {
+  font: inherit;
+  cursor: pointer;
+  width: 100%;
+}
+
+.more {
+  height: calc(5rem * var(--visual-scale, 1));
+  display: flex;
+  align-items: center;
+  color: var(--accent);
+  margin-bottom: 0.4rem;
+}
+
 .art {
   height: calc(5rem * var(--visual-scale, 1));
   width: calc(5rem * var(--visual-scale, 1) * var(--sprite-w, 1));
@@ -54,7 +75,22 @@
 
 .footer {
   margin-top: var(--space-4);
+  display: flex;
+  justify-content: flex-end;
+}
+
+.leave {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1);
+  justify-content: flex-end;
+}
+
+.leaveQ {
+  flex-basis: 100%;
   text-align: right;
+  font-weight: 700;
 }
 
 /* Deliberately quiet so it does not compete with the destinations (still a 44 px target). */
@@ -63,4 +99,27 @@
   font-size: 0.85rem;
   padding: 0.8rem;
   display: inline-block;
+}
+
+/* Phones: two columns so more tiles fit above the fold. */
+@media (max-width: 600px) {
+  .grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--space-1);
+  }
+  .card {
+    min-height: 9rem;
+    padding: var(--space-2) var(--space-1);
+  }
+  .art {
+    height: calc(3.5rem * var(--visual-scale, 1));
+    width: calc(3.5rem * var(--visual-scale, 1) * var(--sprite-w, 1));
+  }
+  .name {
+    font-size: 1.15rem;
+    text-align: center;
+  }
+  .tagline {
+    font-size: 0.85rem;
+  }
 }
