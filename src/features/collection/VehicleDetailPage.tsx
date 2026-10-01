@@ -8,6 +8,7 @@ import { LinkButton } from '../../ui/Button'
 import { CATEGORY_WORD } from '../../content/english/vocab'
 import { Shell } from '../../ui/Shell'
 import { SpeakButton } from '../../ui/SpeakButton'
+import { vehicleSpeech } from '../../lib/spoken'
 import styles from './Collection.module.css'
 
 const CATEGORY_NAME: Record<VehicleCategory, string> = {
@@ -86,7 +87,7 @@ export function VehicleDetailPage() {
           </dl>
         )}
         <div className={styles.actions}>
-          <SpeakButton text={`${vehicle.name}. ${vehicle.facts.join(' ')}`} />
+          <SpeakButton text={vehicleSpeech(vehicle)} />
           {back}
         </div>
       </article>

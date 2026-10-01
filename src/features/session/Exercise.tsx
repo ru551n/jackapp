@@ -6,10 +6,18 @@ import { Button } from '../../ui/Button'
 import { Icon } from '../../ui/Icon'
 import { SceneView } from '../../ui/SceneView'
 import { SpeakButton } from '../../ui/SpeakButton'
+import { hintSpeech, isEnglishPrompt, promptUtterances, type Utterance } from '../../lib/spoken'
 import styles from './Exercise.module.css'
 
 /** After this many misses the correct answer is gently shown. */
 export const REVEAL_AFTER = 3
+/** First button reads the prompt; English prompts add "På svenska"; target-language audio says so. */
+function speakLabel(q: Question, u: Utterance, i: number): string {
+  if (i === 0) return 'Lyssna'
+  if (isEnglishPrompt(q) && u.lang === 'sv') return 'På svenska'
+  return u.lang === 'en' ? 'Hör på engelska' : 'Hör ordet'
+}
+
 const REVEAL_TEXT = 'Titta, den här är rätt. Tryck på den.'
 
 interface Props {
@@ -82,21 +90,9 @@ export function Exercise({ question, onDone, nextLabel }: Props) {
           {question.prompt}
         </h2>
         <div className={styles.speakers}>
-          {english ? (
-            <>
-              <SpeakButton text={question.prompt} lang="en" />
-              {question.speech && <SpeakButton text={question.speech} label="På svenska" />}
-            </>
-          ) : (
-            <SpeakButton text={question.speech ?? question.prompt} />
-          )}
-          {question.listen && !(english && question.listen.text === question.prompt) && (
-            <SpeakButton
-              text={question.listen.text}
-              lang={question.listen.lang}
-              label={question.listen.lang === 'en' ? 'Hör på engelska' : 'Hör ordet'}
-            />
-          )}
+          {promptUtterances(question).map((u, i) => (
+            <SpeakButton key={i} text={u.text} lang={u.lang} label={speakLabel(question, u, i)} />
+          ))}
         </div>
       </div>
 
@@ -182,7 +178,7 @@ export function Exercise({ question, onDone, nextLabel }: Props) {
           <div className={styles.hint}>
             <p className={styles.tryAgain}>Prova igen</p>
             <p>{reveal ? REVEAL_TEXT : hint.text}</p>
-            {!reveal && <SpeakButton text={`Prova igen. ${hint.speech ?? hint.text}`} />}
+            {!reveal && <SpeakButton text={hintSpeech(hint)} />}
             {!reveal && hint.listen && (
               <SpeakButton text={hint.listen.text} lang={hint.listen.lang} label="Hör på engelska" />
             )}

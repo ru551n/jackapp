@@ -1,19 +1,20 @@
 import { useEffect, useState } from 'react'
-import { hasSwedishVoice } from '../../lib/speech'
+import { hasSwedishSpeech, useSpeechReady } from '../../lib/speech'
 import { actions, useAppState } from '../../store/store'
 import type { Settings as S } from '../../core/types'
 import s from './parent.module.css'
 
 function useSwedishVoice() {
-  const [has, setHas] = useState(hasSwedishVoice)
+  useSpeechReady() // re-check once the bundled clips are known
+  const [has, setHas] = useState(hasSwedishSpeech)
   useEffect(() => {
     if (!('speechSynthesis' in window)) return
     const synth = window.speechSynthesis
-    const check = () => setHas(hasSwedishVoice())
+    const check = () => setHas(hasSwedishSpeech())
     synth.addEventListener?.('voiceschanged', check)
     return () => synth.removeEventListener?.('voiceschanged', check)
   }, [])
-  return has
+  return has || hasSwedishSpeech()
 }
 
 export function Settings() {

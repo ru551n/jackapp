@@ -24,3 +24,10 @@ dist-ssr
 *.sw?
 playwright-report
 test-results
+
+# Speech generation (docs/audio.md)
+.speech/
+.voices/
+.venv-speech/
+public/audio/
+public/voices/
