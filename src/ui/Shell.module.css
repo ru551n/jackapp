@@ -71,3 +71,9 @@
 .bar :focus-visible {
   outline-color: var(--sign-ink);
 }
+
+/* Focus moves here programmatically on screen change (for screen readers); no visible ring needed. */
+.bar .title:focus,
+.bar .title:focus-visible {
+  outline: none;
+}
