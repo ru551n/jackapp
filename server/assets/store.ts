@@ -1,13 +1,14 @@
 import { createHash } from 'node:crypto'
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
-import { eq } from 'drizzle-orm'
+import { and, eq, lt, notExists, sql } from 'drizzle-orm'
 import type { AssetLicense, MediaRef } from '../../shared/contracts'
 import type { Db } from '../db/client'
-import { assets } from '../db/schema'
+import { artifactVersions, assets } from '../db/schema'
 
 // Asset storage shared by research (licensed images) and image generation. Content-addressed
-// files under <dataDir>/assets; duplicates (same bytes) reuse the existing row.
+// files under <dataDir>/assets; duplicates (same bytes) reuse the existing row. No SVG: it can
+// carry script. Unreferenced assets are garbage-collected (gcAssets).
 
 export interface StoreAssetInput {
   data: Buffer
@@ -21,7 +22,6 @@ const EXT: Record<string, string> = {
   'image/png': 'png',
   'image/jpeg': 'jpg',
   'image/webp': 'webp',
-  'image/svg+xml': 'svg',
 }
 
 export async function storeAsset(db: Db, dataDir: string, input: StoreAssetInput) {
@@ -63,3 +63,29 @@ export const toMediaRef = (row: typeof assets.$inferSelect): MediaRef => ({
   generated: row.generated,
   license: row.license,
 })
+
+/**
+ * Delete assets (rows + files) that no artifact version references, after a grace period that
+ * covers jobs still on their way to applying them. Read-only on artifact_versions.
+ * ponytail: jsonpath scan of every version per asset; add an asset↔version link table if slow.
+ */
+export async function gcAssets(db: Db, dataDir: string, graceDays = 7) {
+  const gone = await db
+    .delete(assets)
+    .where(
+      and(
+        lt(assets.createdAt, sql`now() - ${graceDays} * interval '1 day'`),
+        notExists(
+          db
+            .select({ v: artifactVersions.version })
+            .from(artifactVersions)
+            .where(
+              sql`jsonb_path_exists(${artifactVersions.content}, '$.** ? (@.assetId == $id)', jsonb_build_object('id', ${assets.id}::text))`,
+            ),
+        ),
+      ),
+    )
+    .returning({ path: assets.path })
+  for (const a of gone) await rm(join(dataDir, 'assets', a.path), { force: true })
+  return gone.length
+}

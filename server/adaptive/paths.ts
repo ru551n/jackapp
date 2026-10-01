@@ -92,7 +92,7 @@ const SYSTEM = [
 ].join('\n')
 
 function toJobFailure(e: unknown): never {
-  if (e instanceof AiError) throw new JobFailure(e.code, e.message, e.retryable)
+  if (e instanceof AiError) throw new JobFailure(e.code, e.message, e.retryable, e.retryAfterMs)
   throw e
 }
 

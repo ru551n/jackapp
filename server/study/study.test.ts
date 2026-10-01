@@ -2,7 +2,7 @@ import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, utimesSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { eq } from 'drizzle-orm'
+import { and, eq, gt } from 'drizzle-orm'
 import { pino } from 'pino'
 import sharp from 'sharp'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -12,10 +12,10 @@ import type { MockScripts } from '../ai/mock'
 import { makeItems } from '../curriculum/import'
 import { syncCurriculumSnapshot } from '../curriculum/service'
 import type { Db } from '../db/client'
-import { jobs, learners, studySets } from '../db/schema'
+import { jobs, learners, studyPageExtractions, studyPages, studySets } from '../db/schema'
 import { getJob, JobFailure, toJobError, type JobTools } from '../jobs'
 import { asAdult, createTestApp, seedLearner, TEST_ENV } from '../test/helpers'
-import { cleanupUploads, studyHandlers } from './process'
+import { cleanupUploads, gcExtractions, studyHandlers } from './process'
 import { sniff, uploadDir } from './service'
 
 const hasPoppler = (() => {
@@ -158,14 +158,14 @@ function deps(vision = true) {
 }
 
 /** Runs study.process for an uploaded set's job, like the worker would. */
-async function process(jobId: string, vision = true) {
+async function process(jobId: string, vision = true, ctrl = new AbortController(), onStep = (_s: string) => {}) {
   const job = (await getJob(db, jobId))!
   const steps: string[] = []
   const tools: JobTools = {
     db,
     log,
-    signal: new AbortController().signal,
-    progress: async (_p, s) => void steps.push(s!),
+    signal: ctrl.signal,
+    progress: async (_p, s) => void (steps.push(s!), onStep(s!)),
     fail: (code, msg, retryable) => {
       throw new JobFailure(code, msg, retryable)
     },
@@ -173,7 +173,10 @@ async function process(jobId: string, vision = true) {
   const handler = studyHandlers(deps(vision)).find((h) => h.type === 'study.process')!
   const r = await handler.run({ ...job, attempts: 1 }, tools).then(
     (id) => ({ id, error: undefined }),
-    (e: unknown) => ({ id: undefined, error: toJobError(e) }),
+    (e: unknown) => ({
+      id: undefined,
+      error: toJobError(e, ctrl.signal, { timeoutRetryable: handler.retryOnTimeout }),
+    }),
   )
   return { ...r, steps }
 }
@@ -351,6 +354,31 @@ describe.skipIf(!hasPoppler)('processing', () => {
     expect(ready.statusCode).toBe(409)
   })
 
+  it('scales the timeout by page count; a timed-out run never commits and is requeued', async () => {
+    const s = (await upload([['t.jpg', await image('#321')]])).json()
+    const handler = studyHandlers(deps()).find((h) => h.type === 'study.process')!
+    const job = (await getJob(db, s.jobId))!
+    expect(await handler.timeoutMs!(job, db)).toBe(1_200_000) // 1 page: the default floor
+    await db.insert(studyPages).values(
+      Array.from({ length: 79 }, (_, i) => ({
+        setId: s.set.id,
+        page: i + 2,
+        file: 'x',
+        mimeType: 'image/jpeg',
+        bytes: 1,
+        sha256: 'x',
+      })),
+    )
+    expect(await handler.timeoutMs!(job, db)).toBe(80 * 60_000)
+    await db.delete(studyPages).where(and(eq(studyPages.setId, s.set.id), gt(studyPages.page, 1)))
+
+    const ctrl = new AbortController()
+    const r = await process(s.jobId, true, ctrl, (step) => step === 'Sparar materialet' && ctrl.abort('timeout'))
+    expect(r.error).toMatchObject({ code: 'timeout', retryable: true })
+    expect((await getSet(s.set.id)).status).toBe('queued') // requeued, not failed
+    expect((await t.app.inject({ url: `${setUrl(s.set.id)}/material`, headers: asAdult })).statusCode).toBe(409)
+  })
+
   it('fails cleanly on invalid model output and keeps the originals', async () => {
     visionOutput = () => ({ segments: [{ kind: 'nonsense', text: 1 }] })
     const s = (await upload([['x.jpg', await image('#123')]])).json()
@@ -399,6 +427,43 @@ describe('cleanup', () => {
     expect((await getSet(failed)).pages[0]!.sourceDeleted).toBe(true)
     const res = await t.app.inject({ method: 'POST', url: `${setUrl(failed)}/reprocess`, headers: asAdult })
     expect(res.statusCode).toBe(409)
+  })
+
+  it("keeps a slow upload that is still streaming; removes a deleted learner's originals and stale cache", async () => {
+    const old = new Date(Date.now() - 3 * 3_600_000)
+    const [slow] = await db
+      .insert(studySets)
+      .values({ learnerId, title: 'x', status: 'uploading', createdAt: old, updatedAt: new Date() })
+      .returning()
+    mkdirSync(uploadDir(TEST_ENV.DATA_DIR, slow!.id), { recursive: true })
+
+    const other = await seedLearner(db)
+    const [gone] = await db.insert(studySets).values({ learnerId: other.id, title: 'y', status: 'ready' }).returning()
+    const goneDir = uploadDir(TEST_ENV.DATA_DIR, gone!.id)
+    mkdirSync(goneDir, { recursive: true })
+    await db.delete(learners).where(eq(learners.id, other.id)) // cascades rows only
+    utimesSync(goneDir, old, old)
+    await db
+      .insert(studyPageExtractions)
+      .values({
+        sha256: 'f'.repeat(64),
+        pdfPage: 0,
+        segments: [],
+        model: 'm',
+        createdAt: new Date(Date.now() - 30 * 3_600_000),
+      })
+
+    await cleanupUploads(db, TEST_ENV.DATA_DIR, 168)
+    expect(existsSync(uploadDir(TEST_ENV.DATA_DIR, slow!.id))).toBe(true)
+    expect((await db.select().from(studySets).where(eq(studySets.id, slow!.id))).length).toBe(1)
+    expect(existsSync(goneDir)).toBe(false)
+    expect(await gcExtractions(db)).toBeGreaterThanOrEqual(1)
+    expect(
+      await db
+        .select()
+        .from(studyPageExtractions)
+        .where(eq(studyPageExtractions.sha256, 'f'.repeat(64))),
+    ).toEqual([])
   })
 
   it('deletes a set with everything it owns', async () => {

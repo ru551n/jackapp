@@ -1,6 +1,6 @@
 import { readdir, readFile, stat } from 'node:fs/promises'
 import { join } from 'node:path'
-import { and, asc, eq, inArray, isNull, lt, sql } from 'drizzle-orm'
+import { and, asc, eq, inArray, isNull, lt, notExists, sql } from 'drizzle-orm'
 import { z } from 'zod'
 import { ProcessedStudyMaterial, StudySegment } from '../../shared/contracts'
 import { AiError } from '../ai'
@@ -17,22 +17,29 @@ import {
   studySegments,
   studySets,
 } from '../db/schema'
-import { defineJobHandler, JobFailure, type JobHandler, type JobTools } from '../jobs'
+import { defineJobHandler, JobFailure, JobsEnv, type JobHandler, type JobTools } from '../jobs'
 import type { HandlerDeps } from '../worker/handlers'
+import { gcAssets } from '../assets/store'
 import { removeOriginals, run, uploadDir } from './service'
 
 // study.process (upload → normalized page images → vision per page → one text call → store)
 // and uploads.cleanup. Lifecycle and guarantees: docs/platform/uploads.md.
+
+const HOUR = 3_600_000
 
 const PageExtraction = z.object({ segments: z.array(StudySegment.omit({ id: true, page: true })).max(80) })
 type Extracted = z.infer<typeof PageExtraction>['segments']
 type PageRow = typeof studyPages.$inferSelect
 
 const MAX_SIDE = 2000
+/** Decompression-bomb guard for sharp (pixels in the decoded input). */
+const MAX_INPUT_PIXELS = 50e6
+/** study.process timeout: per page (vision + cache keeps progress across retries), capped. */
+const TIMEOUT_PER_PAGE_MS = 60_000
+const MAX_TIMEOUT_MS = 4 * HOUR
 const MIN_TEXT_LAYER_CHARS = 20
 /** ponytail: the understanding call sees at most this much text; chunk + merge summaries if sets get huge. */
 const MAX_UNDERSTAND_CHARS = 60_000
-const HOUR = 3_600_000
 
 const VISION_SYSTEM = `Du läser en sida ur studiematerial (lärobok, stencil, anteckningar) åt en svensk skolelev.
 Dela upp sidan i segment i läsordning. Regler:
@@ -58,6 +65,8 @@ Använd bara det som står i materialet.`
 async function pageImage(dir: string, p: PageRow, signal: AbortSignal) {
   const src = join(dir, p.file)
   const sharp = (await import('sharp')).default
+  sharp.concurrency(1) // one libvips thread: page images are processed one at a time anyway
+  const opts = { limitInputPixels: MAX_INPUT_PIXELS }
   if (p.pdfPage) {
     const n = String(p.pdfPage)
     const args = ['-f', n, '-l', n, '-scale-to', String(MAX_SIDE), '-png', '-singlefile', src]
@@ -67,10 +76,10 @@ async function pageImage(dir: string, p: PageRow, signal: AbortSignal) {
       timeout: 120_000,
       signal,
     })
-    const data = await sharp(stdout).png({ compressionLevel: 9 }).toBuffer()
+    const data = await sharp(stdout, opts).png({ compressionLevel: 9 }).toBuffer()
     return { data, mimeType: 'image/png' }
   }
-  const data = await sharp(await readFile(src))
+  const data = await sharp(await readFile(src), opts)
     .rotate()
     .resize({ width: MAX_SIDE, height: MAX_SIDE, fit: 'inside', withoutEnlargement: true })
     .jpeg({ quality: 88 })
@@ -103,7 +112,7 @@ const fromTextLayer = (t: string): Extracted =>
 export async function processSet(
   deps: HandlerDeps,
   setId: string,
-  tools: Pick<JobTools, 'signal' | 'progress' | 'fail'>,
+  tools: Pick<JobTools, 'signal' | 'progress' | 'fail' | 'assertActive'>,
 ) {
   const { db, ai, log } = deps
   const { signal, progress } = tools
@@ -133,7 +142,9 @@ export async function processSet(
   // Text-only path: no vision, but every page is a PDF page with a usable text layer.
   let layers: string[] | undefined
   if (!ai.vision) {
-    layers = pages.every((p) => p.pdfPage) ? await Promise.all(pages.map((p) => textLayer(dir, p, signal))) : []
+    layers = []
+    // Sequential: one pdftotext process at a time, however many pages.
+    if (pages.every((p) => p.pdfPage)) for (const p of pages) layers.push(await textLayer(dir, p, signal))
     if (layers.length !== pages.length || !layers.every(usable))
       tools.fail('ai_unavailable', 'Bildtolkning (AI-vision) är inte konfigurerad.', false)
   }
@@ -238,7 +249,9 @@ export async function processSet(
   const m = parsed.data
 
   await progress(0.95, 'Sparar materialet')
+  signal.throwIfAborted() // a timed-out or cancelled run must not commit
   await db.transaction(async (tx) => {
+    await tools.assertActive?.(tx as unknown as Db)
     const [ok] = await tx
       .update(studySets)
       .set({ status: 'ready', updatedAt: new Date() })
@@ -287,42 +300,80 @@ async function deleteOriginalsAfterCommit(db: Db, dataDir: string, setId: string
   await db.update(studySets).set({ sourcesDeletedAt: new Date() }).where(eq(studySets.id, setId))
 }
 
+/** Scaled by page count: big uploads get more time; the page cache keeps progress across retries. */
+async function processTimeoutMs(job: { payload: Record<string, unknown> }, db: Db, defaultMs: number) {
+  const setId = z.string().uuid().parse(job.payload.setId)
+  const [{ n }] = (await db
+    .select({ n: sql<number>`count(*)::int` })
+    .from(studyPages)
+    .where(eq(studyPages.setId, setId))) as [{ n: number }]
+  return Math.max(defaultMs, Math.min(n * TIMEOUT_PER_PAGE_MS, MAX_TIMEOUT_MS))
+}
+
 export function studyHandlers(deps: HandlerDeps): JobHandler[] {
+  const defaultMs = parseEnv(JobsEnv).LIMIT_JOB_TIMEOUT_SECONDS * 1000
   return [
-    defineJobHandler('study.process', async (job, tools) => {
-      const setId = z.string().uuid().parse(job.payload.setId)
-      try {
-        return await processSet(deps, setId, tools)
-      } catch (e) {
-        const reason = tools.signal.aborted ? tools.signal.reason : undefined
-        const failure =
-          e instanceof JobFailure
-            ? e.jobError
-            : e instanceof AiError
-              ? { code: e.code, adultMessage: e.message, retryable: e.retryable }
-              : {
-                  code: reason === 'cancelled' ? 'cancelled' : 'internal',
-                  adultMessage: 'Bearbetningen avbröts.',
-                  retryable: false,
-                }
-        const requeued = reason === 'shutdown' || (!reason && failure.retryable && job.attempts < job.maxAttempts)
-        await deps.db
-          .update(studySets)
-          .set(
-            requeued
-              ? { status: 'queued', updatedAt: new Date() }
-              : { status: 'failed', failure: failure.adultMessage, failedAt: new Date(), updatedAt: new Date() },
-          )
-          .where(and(eq(studySets.id, setId), eq(studySets.status, 'processing')))
-        deps.log.warn({ studySetId: setId, code: failure.code, requeued }, 'study set processing failed')
-        if (e instanceof AiError) tools.fail(e.code, e.message, e.retryable)
-        throw e
-      }
-    }),
+    {
+      ...processHandler(deps),
+      timeoutMs: (job, db) => processTimeoutMs(job, db, defaultMs),
+      retryOnTimeout: true,
+    },
     defineJobHandler('uploads.cleanup', async () => {
-      await cleanupUploads(deps.db, deps.env.DATA_DIR, parseEnv(LimitsEnv).UPLOAD_FAILED_RETENTION_HOURS)
+      const dataDir = deps.env.DATA_DIR
+      await cleanupUploads(deps.db, dataDir, parseEnv(LimitsEnv).UPLOAD_FAILED_RETENTION_HOURS)
+      await gcExtractions(deps.db)
+      await gcAssets(deps.db, dataDir)
     }),
   ]
+}
+
+function processHandler(deps: HandlerDeps) {
+  return defineJobHandler('study.process', async (job, tools) => {
+    const setId = z.string().uuid().parse(job.payload.setId)
+    try {
+      return await processSet(deps, setId, tools)
+    } catch (e) {
+      const reason = tools.signal.aborted ? tools.signal.reason : undefined
+      const failure =
+        e instanceof JobFailure
+          ? e.jobError
+          : e instanceof AiError
+            ? { code: e.code, adultMessage: e.message, retryable: e.retryable }
+            : {
+                code: reason === 'cancelled' ? 'cancelled' : reason === 'timeout' ? 'timeout' : 'internal',
+                adultMessage: 'Bearbetningen avbröts.',
+                retryable: false,
+              }
+      // A timeout is retried: cached pages are not sent to vision again, so each attempt gets further.
+      const retryable = reason === 'timeout' || (!reason && failure.retryable)
+      const requeued = reason === 'shutdown' || (retryable && job.attempts < job.maxAttempts)
+      await deps.db
+        .update(studySets)
+        .set(
+          requeued
+            ? { status: 'queued', updatedAt: new Date() }
+            : { status: 'failed', failure: failure.adultMessage, failedAt: new Date(), updatedAt: new Date() },
+        )
+        .where(and(eq(studySets.id, setId), eq(studySets.status, 'processing')))
+      deps.log.warn({ studySetId: setId, code: failure.code, requeued }, 'study set processing failed')
+      if (e instanceof AiError) throw new JobFailure(e.code, e.message, e.retryable, e.retryAfterMs)
+      throw e
+    }
+  })
+}
+
+/** Vision cache rows whose source file no longer belongs to any page (sets deleted, learners deleted). */
+export async function gcExtractions(db: Db, graceHours = 24) {
+  const r = await db
+    .delete(studyPageExtractions)
+    .where(
+      and(
+        lt(studyPageExtractions.createdAt, sql`now() - ${graceHours} * interval '1 hour'`),
+        notExists(db.select().from(studyPages).where(eq(studyPages.sha256, studyPageExtractions.sha256))),
+      ),
+    )
+    .returning({ sha256: studyPageExtractions.sha256 })
+  return r.length
 }
 
 /**
@@ -343,10 +394,10 @@ export async function cleanupUploads(db: Db, dataDir: string, retentionHours: nu
           and ${jobs.state} in ('queued', 'processing'))`,
       ),
     )
-  // Interrupted uploads (app restarted mid-request).
+  // Interrupted uploads (app restarted mid-request). A live upload bumps updatedAt while streaming.
   const dead = await db
     .delete(studySets)
-    .where(and(eq(studySets.status, 'uploading'), lt(studySets.createdAt, hourAgo)))
+    .where(and(eq(studySets.status, 'uploading'), lt(studySets.updatedAt, hourAgo)))
     .returning({ id: studySets.id })
   for (const s of dead) await removeOriginals(dataDir, s.id)
 
