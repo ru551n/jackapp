@@ -11,7 +11,7 @@ The profile is `LearnerProfileInput` (`shared/contracts/learner.ts`), validated 
 - `strengths`, `difficulties`: adult notes, functional only (no medical or diagnostic data). Never sent to learners or AI prompts.
 - `subjectLevels`: **academic level** per subject (description + optional 1–5 relative level).
 - `support`: **presentation support** (text amount, visual support, max choices, read-aloud, pace, step by step, …). It changes how material looks and is paced, never how hard the concepts are. Academic level and support are deliberately separate: a learner can work above year level with minimal text.
-- `generation`: whether the learner may request material, and whether it needs adult approval.
+- `generation`: whether the learner may request material, and whether it needs adult approval (`parent`, the default for new F–3 learners; otherwise `immediate`). Material a learner requests always waits for an adult.
 
 ## Routes
 

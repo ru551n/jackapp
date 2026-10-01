@@ -25,6 +25,8 @@ Code: `server/gate/plugin.ts` (cookie, hooks, routes), `server/gate/pin.ts` (has
 
 Locking only clears this device's cookie. Changing the PIN revokes all devices' open windows.
 
+The start page (`/`, the learner picker) calls `POST /gate/lock` when it opens: a device back at the picker may be handed to a child.
+
 ## Forgotten PIN
 
 There is no web reset. The host administrator runs, in the Docker Compose deployment (the `app` container already has `DATABASE_URL`):

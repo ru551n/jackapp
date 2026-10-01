@@ -77,7 +77,14 @@ When a caller passes a zod `schema`, it is converted with zod's built-in `z.toJS
 | `json_mode`   | `json_object` plus the schema in the system prompt                                                             | same                                                                           | Schema in the system prompt                         |
 | `prompt`      | Schema in the system prompt; JSON is extracted from the text (code fences and surrounding prose are tolerated) | same                                                                           | same                                                |
 
-For compatible servers, the step-down is remembered for the life of the process. If a server needs a fixed mode, set it explicitly.
+For compatible servers, the step-down happens only on a 400 that names `response_format` (not on e.g. a context-length 400), and it is remembered for the life of the process. If a server needs a fixed mode, set it explicitly.
+
+**Strict schemas** (`json_schema`): the schema sent is rewritten with `toStrictSchema`: keywords OpenAI strict mode does not accept (`minLength`, `maxItems`, `minimum`, `pattern`, `format`, `default`, …) are stripped and `oneOf` becomes `anyOf`; zod still validates the reply against the full schema. `strict: true` is set only when every object has all properties required and `additionalProperties: false`, otherwise the original schema goes non-strict. Generation's item schemas make optional fields **nullable and required** (`null` when absent), so they qualify for strict mode.
+
+**Automatic retries** (`recovering`, `server/ai/index.ts`, for every caller):
+
+- A 400 naming `temperature` (models that accept only the default, e.g. gpt-5 and the o-series) is retried without it, and temperature is dropped for that capability for the rest of the process.
+- Truncated output (`finish_reason: length`, `stop_reason: max_tokens`; reasoning tokens count against the limit) is retried once with the token limit doubled, capped at 32 000 (`MAX_TOKENS_CAP`).
 
 Every response is validated with zod, whatever the mode. If parsing or validation fails, the adapter runs **one repair round**: it sends back the model's answer and the zod errors, then validates again. If that also fails, it throws `AiError('ai_invalid_output')`. Token usage is summed across both rounds.
 
@@ -85,14 +92,14 @@ Every response is validated with zod, whatever the mode. If parsing or validatio
 
 Every failure is an `AiError` with a `code`, a `retryable` flag, a safe Swedish `message` and a log-safe `detail`.
 
-| Code                | Cause                                                                                     | Retryable |
-| ------------------- | ----------------------------------------------------------------------------------------- | --------- |
-| `ai_unavailable`    | Network failure, timeout (`AI_<CAP>_TIMEOUT_MS`), 5xx/408, or a non-JSON body             | yes       |
-| `ai_rate_limited`   | Provider 429 (`retryAfterMs` when given) or the hourly limit `LIMIT_AI_REQUESTS_PER_HOUR` | yes       |
-| `ai_auth`           | 401/403. An admin needs to fix the key                                                    | no        |
-| `ai_config`         | Other 4xx (wrong model, unsupported parameter, bad base URL)                              | no        |
-| `ai_invalid_output` | Output still invalid after the repair round, or an empty response                         | no        |
-| `ai_refused`        | Provider refusal (OpenAI `refusal`/`content_filter`, Anthropic `stop_reason: refusal`)    | no        |
+| Code                | Cause                                                                                                                                                                                       | Retryable |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------- |
+| `ai_unavailable`    | Network failure, timeout (`AI_<CAP>_TIMEOUT_MS`), 5xx/408, or a non-JSON body                                                                                                               | yes       |
+| `ai_rate_limited`   | Provider 429 (`retryAfterMs` from `Retry-After`) or the hourly limit `LIMIT_AI_REQUESTS_PER_HOUR` (`retryAfterMs` until the next hour bucket); jobs wait at least that long before retrying | yes       |
+| `ai_auth`           | 401/403. An admin needs to fix the key                                                                                                                                                      | no        |
+| `ai_config`         | Other 4xx (wrong model, unsupported parameter, bad base URL)                                                                                                                                | no        |
+| `ai_invalid_output` | Output still invalid after the repair round, or an empty response                                                                                                                           | no        |
+| `ai_refused`        | Provider refusal (OpenAI `refusal`/`content_filter`, Anthropic `stop_reason: refusal`)                                                                                                      | no        |
 
 When the caller aborts through `signal`, the abort error is rethrown as is, not wrapped in an `AiError`.
 
