@@ -44,7 +44,9 @@ caddy:
 # and under volumes:  caddy_data:
 ```
 
-(Authentik must be reachable from Caddy as `authentik-server`; join its network or use its address.) Caddy on the host instead? Use `reverse_proxy 127.0.0.1:3000`.
+Authentik must be reachable from Caddy under the name used in the `Caddyfile`. With Authentik's **official** `docker-compose.yml` the service is called `server` (not `authentik-server`), so either join Caddy to Authentik's network (`networks: [egress, authentik]` with `authentik: { external: true, name: authentik_default }`) and use `http://server:9000`, or use Authentik's host address and published port. Caddy on the host instead? Use `reverse_proxy 127.0.0.1:3000`.
+
+`trusted_proxies private_ranges` (from Authentik's example) tells Caddy to believe `X-Forwarded-*` headers from any private address. Keep it only if another proxy or load balancer sits in front of Caddy, and then narrow it to that proxy's address. If Caddy is the first hop, remove the line: otherwise any device on the LAN can send a forged `X-Forwarded-For` through to Authentik's policies.
 
 ## TRUST_PROXY
 

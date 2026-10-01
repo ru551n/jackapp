@@ -1,42 +1,54 @@
 # JackApp
 
-A calm learning web app for a Swedish first grader who loves trains, metros, trams, airliners and fighter aircraft. Transport is not a reward after learning. It is the world the learning happens in.
+A calm, self-hosted Swedish learning platform for a household's children, from förskoleklass to gymnasium. An adult describes what a child needs ("multiplikation åk 4", a photographed worksheet, an interest like trains); JackApp uses AI to create exercises tied to Skolverket's curriculum, checks them, and lets the adult approve them before the child practises. The original transport-themed app for a first grader (below) is part of it.
 
-- **Audience:** a child in Swedish årskurs 1 (designed for an autistic child in a special-education class; usable independently), with a separate parent area.
-- **Language:** the UI is Swedish. English is taught as a subject in its own area.
-- **Privacy:** no accounts, no backend, no analytics, no AI calls. Everything is stored in the browser on the device.
+- **Self-hosted:** runs on your own server with Docker Compose (Postgres, app, worker). Data stays in your database and volumes.
+- **AI is required:** text generation needs an AI provider, either a cloud API (OpenAI, Anthropic) or a model on your LAN (llama.cpp, vLLM, Ollama…). `ALLOW_CLOUD_AI=false` keeps everything on your network. See [AI providers](docs/platform/ai-providers.md).
+- **No login:** whoever reaches JackApp is trusted. Put it behind a reverse proxy that controls access (Caddy + Authentik example). An adult PIN keeps children out of the adult area.
+- **Language:** the UI is Swedish. English is taught as a subject.
 
-## Run
+## Run (Docker)
+
+```bash
+cp .env.example .env     # fill in PUBLIC_URL, APP_SECRET, POSTGRES_PASSWORD and one AI_TEXT_* block
+docker compose up -d --build --wait
+curl -s http://127.0.0.1:3000/ready
+```
+
+Then point the reverse proxy at `127.0.0.1:3000`. Details: [deployment](docs/platform/deployment.md) (topology, backups and restore, upgrades), [reverse proxy](docs/platform/reverse-proxy.md), [troubleshooting](docs/platform/troubleshooting.md).
+
+## Documentation
+
+- [Architecture](docs/platform/architecture.md), [environment variables](docs/platform/env.md), [decisions](docs/platform/decisions.md)
+- [Curriculum](docs/platform/curriculum.md), [generation](docs/platform/generation.md), [validation](docs/platform/validation.md), [adaptive difficulty](docs/platform/adaptive.md)
+- [Study material uploads](docs/platform/uploads.md), [images](docs/platform/images.md), [web research and licensing](docs/platform/research-and-licensing.md)
+- [Frontend](docs/platform/frontend.md), [learners](docs/platform/learners.md), [runs](docs/platform/runs.md), [jobs](docs/platform/jobs.md), [audio](docs/audio.md)
+
+## Develop
 
 ```bash
 npm install
-npm run dev          # http://localhost:5173
-npm run build        # static site in dist/ (hash routing + relative paths: host anywhere, even a subfolder)
-npm run preview      # serve the production build
-```
-
-## Platform (self-hosted, in progress)
-
-JackApp is growing into a self-hosted, AI-backed learning platform (förskoleklass to gymnasium) run with Docker Compose: `cp .env.example .env`, fill it in, `docker compose up -d --build`. It has no login; put it behind a reverse proxy that controls access.
-
-- [Architecture](docs/platform/architecture.md) and [environment variables](docs/platform/env.md)
-- [Deployment](docs/platform/deployment.md): topology, volumes and backups, upgrades, health
-- [Reverse proxy](docs/platform/reverse-proxy.md): Caddy + Authentik forward auth, `TRUST_PROXY`
-- [AI providers](docs/platform/ai-providers.md): cloud and LAN endpoints, privacy
-- [Troubleshooting](docs/platform/troubleshooting.md) and [decisions](docs/platform/decisions.md)
-
-Server scripts: `npm run dev:server`, `dev:worker`, `build:server`, `start`, `start:worker`, `db:generate`, `db:migrate`.
-
-## Test
-
-```bash
+npm run dev:all      # app + worker with an in-process database; web dev server: npm run dev
 npm run check        # typecheck + oxlint + prettier --check + vitest
 npm run test:e2e     # Playwright on a production build (tablet 1024×768 and phone profiles)
 ```
 
-First e2e run: `npx playwright install chromium`. CI (`.github/workflows/ci.yml`) runs both.
+Server scripts: `dev:server`, `dev:worker`, `build:server`, `start`, `start:worker`, `db:generate`, `db:migrate`. First e2e run: `npx playwright install chromium`. CI (`.github/workflows/ci.yml`) runs both.
 
-## What's in it
+## Licence and credits
+
+JackApp is MIT-licensed ([LICENSE](LICENSE)). The web app also ships third-party components, including **espeak-ng (GPL-3.0)** inside the in-browser speech engine; see `public/THIRD_PARTY_NOTICES.txt` (served as `/THIRD_PARTY_NOTICES.txt`), [docs/audio.md](docs/audio.md#credits-and-licences) for what that means when you redistribute a build, and the "Om appen" page in the adult area. Swedish voice: Alma by Daniel Nylander, CC BY 4.0. Curriculum: Skolverket, CC0.
+
+## The transport learning app
+
+The original app: a calm learning web app for a Swedish first grader who loves trains, metros, trams, airliners and fighter aircraft. Transport is not a reward after learning. It is the world the learning happens in. It runs entirely in the browser (designed for an autistic child in a special-education class; usable independently) and is now the early-band learner experience of the platform. It still builds as a static site:
+
+```bash
+npm run build        # static site in dist/ (hash routing + relative paths: host anywhere, even a subfolder)
+npm run preview      # serve the production build
+```
+
+### What's in it
 
 | Area               | Subject                    | Examples                                                                                                                           |
 | ------------------ | -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
@@ -50,7 +62,7 @@ First e2e run: `npx playwright install chromium`. CI (`.github/workflows/ci.yml`
 
 A mission ("uppdrag") is 4 short tasks: **Start → Uppgift → Återkoppling → Nästa → Klart**. Wrong answers get a calm "Prova igen" and escalating hints. Nothing is ever red or "fel". After 3 tries the answer is shown gently.
 
-## Architecture
+### Architecture
 
 Vite + React + TypeScript (strict), React Router (hash), CSS modules with design tokens, a tiny store over `useSyncExternalStore` + localStorage, Vitest + Testing Library, Playwright, oxlint, Prettier. Details and decisions are in [docs/architecture.md](docs/architecture.md).
 
@@ -64,14 +76,14 @@ src/ui        Shell, Button, SceneView (renders declarative scenes), SpeakButton
 src/features  home, session, collection, parent, freeplay
 ```
 
-### Where content lives
+#### Where content lives
 
 - **Learning activities:** `src/content/{reading,math,logic,aviation,english}/`. Each file exports `Generator`s that produce `Question` data (prompt, `Scene`, task, hints). See [docs/content-guide.md](docs/content-guide.md).
 - **Transport and aircraft facts:** `src/content/vehicles/rail.ts` and `aircraft.ts`, with verified specs and `sources`. They are reused by the collection, recognition, reading, comparison and English activities.
 - **Illustrations:** `src/art/sprites.tsx` (generic sprites), `src/art/vehicles/{rail,aircraft}.tsx` (per-vehicle art). All original vector drawings; no third-party images.
 - **English vocabulary:** `src/content/english/vocab.ts`.
 
-### Adding content
+#### Adding content
 
 1. Write a `Generator` in the right area folder and add it to that folder's `index.ts`.
 2. Run `npm test`. `src/content/content.test.ts` automatically checks every generator: deterministic, the answer is present, hints never remove the answer, picture choices have accessible names, every skill starts at level 1.
@@ -79,26 +91,18 @@ src/features  home, session, collection, parent, freeplay
 
 A future content source (curated packs, or generated content) only needs to produce `Generator`/`Question` objects that pass the same tests. The engine and UI stay unchanged.
 
-## Adaptive difficulty
+### Adaptive difficulty
 
 Each skill (e.g. `math.add`, `read.sentences`, `en.colors`) has its own level 1–5. There is no global level. Four first-try answers in a row → level +1. Two of the last three needing strong help → level −1. Recent struggle → extra visual support (grouping, fewer choices, pictures back). Parents can set and lock levels. Full rules: [docs/adaptive-difficulty.md](docs/adaptive-difficulty.md).
 
-## Progress storage
+### Progress storage
 
-All state is one JSON object in `localStorage['jackapp:v1']`: per-skill progress, missions per area, recent sessions, settings, the parent PIN and the free-play line. It never leaves the device. Clearing the browser's site data resets the app. Corrupt or unknown data falls back to defaults.
+In this part of the app, progress is one JSON object per learner in `localStorage['jackapp:v1:<learnerId>']`: per-skill progress, missions per area, recent sessions, settings and the free-play line. The old global `jackapp:v1` key is offered for import into a learner on first use (see [frontend.md](docs/platform/frontend.md)). Corrupt or unknown data falls back to defaults.
 
-## Parent mode
+### Parent mode
 
-"För vuxna" (small link on the home screen) → `#/vuxen`.
+Replaced by the platform's adult area (`#/vuxen`, behind the household PIN): learners, generated material for approval, progress, study material and the "Om appen" credits page. See [frontend.md](docs/platform/frontend.md) and [gate.md](docs/platform/gate.md).
 
-- **Gate:** the first visit asks an adult arithmetic question and then a 4-digit PIN. After that it asks for the PIN. "Glömt koden?" re-runs the arithmetic check. The PIN is stored locally in plain text: it keeps a child out, not an attacker.
-- **Dashboard:** missions per area; what is going well and what needs support; per-skill level, status, attempts and first-try share (marked "för lite data än" below 3 attempts); manual level + lock; recent sessions; collection progress. English is reported separately from Swedish reading.
-- **Settings:** sound effects (off by default), read-aloud button, motion (system / reduced / full), free play on/off. There is also reset progress and change PIN.
+### Audio
 
-## Audio
-
-Optional and never automatic. A "Lyssna" button reads the prompt with the browser's Swedish voice (`speechSynthesis`, `sv-SE`). English tasks add "Hör på engelska" (`en-GB`). Buttons are hidden when speech is unsupported or turned off. Voice quality depends on the device: iOS, Android, Windows and macOS ship Swedish voices, while some Linux browsers do not. Every task is solvable without sound.
-
-## Ljud och röster
-
-Uppläsningen använder förgenererade Piper-klipp (svenska: Alma, engelska: Cori), sedan Piper i appen för ny text och till sist enhetens röst. `npm run speech` bygger klippen; se [docs/audio.md](docs/audio.md) för hur det funkar, hur man byter röst samt licenser och tack.
+Optional and never automatic. A "Lyssna" button reads the prompt aloud; English tasks add "Hör på engelska". Speech is tried in this order: pre-generated Piper clips (Swedish: Alma, English: Cori), Piper running in the browser for new text, then the device's own voice. Every task is solvable without sound. `npm run speech` builds the clips; [docs/audio.md](docs/audio.md) explains how it works, how to change a voice, and the licences and credits.

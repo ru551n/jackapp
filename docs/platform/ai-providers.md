@@ -23,7 +23,7 @@ Inside a container, `localhost` is **the container itself**, not your machine.
   ```yaml
   extra_hosts: ['host.docker.internal:host-gateway']
   ```
-  The host's server must listen on an address the Docker bridge can reach (`0.0.0.0`, or the bridge IP), and a host firewall may need to allow it.
+  The host's server must listen on an address the Docker bridge can reach (`0.0.0.0`, or the bridge IP), and a host firewall may need to allow it. Ollama listens on 127.0.0.1 by default: set `OLLAMA_HOST=0.0.0.0` (e.g. `systemctl edit ollama` → `Environment="OLLAMA_HOST=0.0.0.0"`).
 
 Check from inside: `docker compose exec app node -e "fetch('http://192.168.1.50:8080/v1/models').then(r=>console.log(r.status))"`.
 

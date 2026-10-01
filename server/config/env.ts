@@ -12,12 +12,19 @@ const bool = (def: boolean) =>
 export const CoreEnv = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   PORT: z.coerce.number().int().default(3000),
-  HOST: z.string().default('0.0.0.0'),
+  /** Loopback unless told otherwise; the Docker image and compose set 0.0.0.0. */
+  HOST: z.string().default('127.0.0.1'),
   /** Externally visible origin, e.g. https://jackapp.example.se (behind Caddy). */
   PUBLIC_URL: z.string().url(),
-  DATABASE_URL: z.string().min(1),
+  DATABASE_URL: z
+    .string()
+    .min(1)
+    .refine((v) => !isPlaceholder(dbPassword(v)), 'database password is a placeholder (set POSTGRES_PASSWORD)'),
   /** ≥32 random chars; signs the adult-gate cookie. */
-  APP_SECRET: z.string().min(32),
+  APP_SECRET: z
+    .string()
+    .min(32)
+    .refine((v) => !isPlaceholder(v), 'is a placeholder; generate one with openssl rand -hex 32'),
   /** Root for persistent files (generated assets, processed material, temporary uploads). */
   DATA_DIR: z.string().default('/data'),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info'),
@@ -27,6 +34,21 @@ export const CoreEnv = z.object({
   WEB_DIST_DIR: z.string().default('dist'),
 })
 export type CoreEnv = z.infer<typeof CoreEnv>
+
+/** Obvious example values from docs/.env.example that must never reach production. */
+export function isPlaceholder(v: string | undefined): boolean {
+  if (!v) return false
+  const s = v.toLowerCase()
+  return /^(change-?me|replace-?me|your-|example|placeholder)/.test(s) || ['secret', 'password'].includes(s)
+}
+
+function dbPassword(url: string): string | undefined {
+  try {
+    return decodeURIComponent(new URL(url).password) || undefined
+  } catch {
+    return undefined
+  }
+}
 
 export class ConfigError extends Error {
   readonly problems: string[]

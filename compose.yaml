@@ -1,6 +1,11 @@
 # JackApp: docker compose up -d --build   (see docs/platform/deployment.md)
 name: jackapp
 
+# Bounded json-file logs for every service (default is unbounded).
+x-logging: &logging
+  driver: json-file
+  options: { max-size: '10m', max-file: '5' }
+
 x-jackapp: &jackapp
   image: jackapp:local
   build:
@@ -10,8 +15,11 @@ x-jackapp: &jackapp
   env_file: .env
   environment:
     NODE_ENV: production
+    # Containers must listen on all interfaces; the published port stays loopback-only (see app).
+    HOST: 0.0.0.0
     DATABASE_URL: postgres://${POSTGRES_USER:-jackapp}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@db:5432/${POSTGRES_DB:-jackapp}
   restart: unless-stopped
+  logging: *logging
 
 services:
   db:
@@ -29,6 +37,7 @@ services:
       timeout: 5s
       retries: 20
     restart: unless-stopped
+    logging: *logging
 
   migrate:
     <<: *jackapp
@@ -49,6 +58,7 @@ services:
     networks: [backend, egress]
     depends_on:
       migrate: { condition: service_completed_successfully }
+    stop_grace_period: 15s
 
   worker:
     <<: *jackapp
@@ -58,6 +68,8 @@ services:
     networks: [backend, egress]
     depends_on:
       migrate: { condition: service_completed_successfully }
+    # The worker drains running jobs for up to 30 s on SIGTERM; Docker's default 10 s would kill it mid-job.
+    stop_grace_period: 45s
     healthcheck:
       test: ['CMD', 'node', 'dist-server/worker-health.js']
       interval: 30s

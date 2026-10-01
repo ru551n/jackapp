@@ -4,7 +4,7 @@ The host administrator configures everything technical here. Each subsystem pars
 
 ## Application (`server/config/env.ts`)
 
-`NODE_ENV`, `PORT` (3000), `HOST`, `PUBLIC_URL` (required, external origin), `DATABASE_URL` (required), `APP_SECRET` (required, ≥32 chars; signs the adult-gate cookie), `DATA_DIR` (/data), `LOG_LEVEL` (info), `TRUST_PROXY` (comma-separated IPs/CIDRs of the reverse proxy; empty = trust none), `WEB_DIST_DIR`.
+`NODE_ENV`, `PORT` (3000), `HOST` (127.0.0.1; the Docker image and compose set 0.0.0.0), `PUBLIC_URL` (required, external origin), `DATABASE_URL` (required; a `change-me` password is rejected), `APP_SECRET` (required, ≥32 chars, not a placeholder such as `change-me…`; signs the adult-gate cookie), `DATA_DIR` (/data), `LOG_LEVEL` (info), `TRUST_PROXY` (comma-separated IPs/CIDRs of the reverse proxy; empty = trust none), `WEB_DIST_DIR`.
 
 ## Database (Compose)
 

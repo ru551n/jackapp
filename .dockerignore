@@ -15,3 +15,8 @@ public/voices
 playwright-report
 test-results
 *.log
+# Backups (docs/platform/deployment.md): keep them out of the build context.
+backups
+*.dump
+*.tgz
+*.sql.gz
