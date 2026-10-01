@@ -6,6 +6,7 @@ import type { Db } from '../db/client'
 import { imageJobHandler } from '../images'
 import { defineJobHandler, type JobHandler } from '../jobs/runtime'
 import { studyHandlers } from '../study/process'
+import { researchJobHandlers } from '../research/jobs'
 
 /** Services handlers may need beyond the per-job tools (db/log/signal/progress). */
 export interface HandlerDeps {
@@ -23,5 +24,6 @@ export function jobHandlers(deps: HandlerDeps): JobHandler[] {
     }),
     imageJobHandler({ ai: deps.ai, dataDir: deps.env.DATA_DIR }),
     ...studyHandlers(deps),
+    ...researchJobHandlers(deps),
   ]
 }
