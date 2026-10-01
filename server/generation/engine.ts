@@ -70,19 +70,32 @@ interface Slot {
 export const ITEM_TOKENS = 600
 const TEXT_TOKENS_PER_WORD = 4
 
+/** Smooth weighted round-robin: `n` kinds spread evenly by weight (equal weights = plain round-robin). */
+export function kindSequence(kinds: ItemKind[], n: number, mix?: Record<string, number>): ItemKind[] {
+  let w = kinds.map((k) => (mix ? (mix[k] ?? 0) : 1))
+  if (!w.some((x) => x > 0)) w = kinds.map(() => 1)
+  const total = w.reduce((a, b) => a + b, 0)
+  const used = kinds.map(() => 0)
+  return Array.from({ length: n }, (_, j) => {
+    const lag = (i: number) => (w[i]! * (j + 1)) / total - used[i]!
+    const best = kinds.reduce((b, _, i) => (lag(i) > lag(b) ? i : b), 0)
+    used[best]!++
+    return kinds[best]!
+  })
+}
+
 /** Practice test: difficulty rises across the test and item kinds are spread evenly over it. */
 function practiceTest(r: ResolvedRequest): Slot[] {
   const n = r.questionCount
   const parts = Math.ceil(n / CHUNK)
   const lo = Math.max(1, r.difficulty - 1)
   const hi = Math.min(5, r.difficulty + 1)
-  const kinds = r.itemKinds
+  const seq = kindSequence(r.itemKinds, n, r.kindMix)
   return Array.from({ length: parts }, (_, i) => {
     const start = i * CHUNK
     const count = Math.min(CHUNK, n - start)
     const quota: Partial<Record<ItemKind, number>> = {}
-    for (let j = start; j < start + count; j++)
-      quota[kinds[j % kinds.length]!] = (quota[kinds[j % kinds.length]!] ?? 0) + 1
+    for (const k of seq.slice(start, start + count)) quota[k] = (quota[k] ?? 0) + 1
     const at = (x: number) => Math.round(lo + ((hi - lo) * x) / n)
     return {
       kind: 'check' as const,

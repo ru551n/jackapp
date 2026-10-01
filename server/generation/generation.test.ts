@@ -941,6 +941,20 @@ describe('practice tests, repair and recovery', () => {
     expect(task).toMatch(/5 st flerval, 5 st numeriskt svar/)
   })
 
+  it('practice tests honour a kind mix (Flerval + eget svar ~70/30, free text last in each part)', () => {
+    const r = resolved('practiceTest', {
+      questionCount: 20,
+      itemKinds: ['multipleChoice', 'freeText'],
+      kindMix: { multipleChoice: 7, freeText: 3 },
+    })
+    const slots = blueprint(r)
+    expect(slots.map((s) => s.quota)).toEqual([
+      { multipleChoice: 7, freeText: 3 },
+      { multipleChoice: 7, freeText: 3 },
+    ])
+    expect(itemsTask({ count: 10, kinds: r.itemKinds, quota: slots[0]!.quota })).toContain('fritt svar sist')
+  })
+
   it('early learners never get free text outside writing tasks', () => {
     const early = LearnerProfileInput.parse({ displayName: 'A', school: { stage: 'grundskola', year: 1 } })
     const r = resolveRequest(

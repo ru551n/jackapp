@@ -20,6 +20,22 @@ export const AnswerByKind = {
   flashcard: SelfRating,
 } satisfies Record<ItemKind, z.ZodType>
 
+export const KeyPointVerdict = z.enum(['met', 'partly', 'missing'])
+export type KeyPointVerdict = z.infer<typeof KeyPointVerdict>
+
+/** Free text: advisory AI assessment. Score = (met + 0.5 × partly) / key points; correct = all met. */
+export const FreeTextAssessment = z.object({
+  /** 0-based indices of the rubric key points the answer covers fully. */
+  keyPointsMet: z.array(z.number().int().min(0)),
+  feedback: z.string(),
+  score: z.number().min(0).max(1),
+  /** One entry per rubric key point, in rubric order, with a short quote from the answer (absent in older rows). */
+  keyPoints: z
+    .array(z.object({ point: z.string(), verdict: KeyPointVerdict, evidence: z.string().optional() }))
+    .optional(),
+})
+export type FreeTextAssessment = z.infer<typeof FreeTextAssessment>
+
 export const StartRunRequest = z.object({ artifactId: z.string().uuid() })
 
 export const SubmitAnswerRequest = z.object({
@@ -29,6 +45,9 @@ export const SubmitAnswerRequest = z.object({
   /** Validated against AnswerByKind[item.kind]. */
   answer: z.unknown(),
 })
+
+/** Adult override of a (free-text) answer's outcome. */
+export const OverrideRequest = z.object({ itemId: z.string().max(200), done: z.boolean() })
 
 export const HintRequest = z.object({ itemId: z.string().max(200) })
 
@@ -49,8 +68,10 @@ export const AnswerFeedback = z.object({
   /** Correct answer in display form, when solved or revealed. */
   solution: z.string().optional(),
   explanation: z.string().optional(),
-  /** Free text: advisory AI assessment (indices into the rubric). */
-  ai: z.object({ keyPointsMet: z.array(z.number().int()), feedback: z.string(), score: z.number() }).optional(),
+  /** Free text: advisory AI assessment. */
+  ai: FreeTextAssessment.optional(),
+  /** An adult changed the outcome ("Räkna som klar" / "Inte ännu"). */
+  override: z.enum(['done', 'notYet']).optional(),
   /** Free text without AI: show the rubric and sample answer, resubmit with `selfRating`. */
   selfAssess: z.object({ rubric: z.array(z.string()), sampleAnswer: z.string().optional() }).optional(),
 })
@@ -92,6 +113,18 @@ export const RunSummary = z.object({
       sampleAnswer: z.string().optional(),
     }),
   ),
+  /** AI-graded free-text answers: covered and missing key points plus the feedback line (absent in older summaries). */
+  freeText: z
+    .array(
+      z.object({
+        itemId: z.string(),
+        prompt: z.string(),
+        answer: z.string(),
+        ai: FreeTextAssessment,
+        sampleAnswer: z.string().optional(),
+      }),
+    )
+    .optional(),
 })
 export type RunSummary = z.infer<typeof RunSummary>
 

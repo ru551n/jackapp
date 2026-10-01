@@ -1,4 +1,4 @@
-import { and, desc, eq, type SQL } from 'drizzle-orm'
+import { and, desc, eq, gte, inArray, lte, type SQL } from 'drizzle-orm'
 import type { FastifyRequest } from 'fastify'
 import { z } from 'zod'
 import { ageBand, type AgeBand, type Artifact, type Item, type SkillEvidence } from '../../shared/contracts'
@@ -7,18 +7,21 @@ import { onEvidence } from '../adaptive/paths'
 import { skillLabel } from '../adaptive/skills'
 import type { AppContext, RouteModule } from '../app/context'
 import type { Db } from '../db/client'
-import { runAnswers, runs } from '../db/schema'
+import { runAnswers, runs, skillEvidence, studySegments } from '../db/schema'
 import { HttpError, requireAdult, requireLearner } from '../gate/guards'
 import {
   AnswerByKind,
   HintRequest,
+  OverrideRequest,
   StartRunRequest,
   SubmitAnswerRequest,
   type AnswerFeedback,
+  type FreeTextAssessment,
   type RunSummary,
   type RunView,
 } from './api'
-import { assessFreeText, checkAnswer, publicItem, solutionText, type FreeTextAssessment } from './check'
+import { targetLanguage } from '../validation/subjects'
+import { assessFreeText, checkAnswer, publicItem, solutionText } from './check'
 
 // Interactive runs: start, answer, hint, finish, abandon, adult history. Docs: docs/platform/runs.md
 
@@ -46,6 +49,7 @@ export const MSG = {
   notFinished: 'Här är svaret, så kan du titta på det igen.',
 }
 
+type FreeTextItem = Extract<Item, { kind: 'freeText' }>
 type Run = typeof runs.$inferSelect
 type AnswerRow = typeof runAnswers.$inferSelect
 type Tx = Parameters<Parameters<Db['transaction']>[0]>[0]
@@ -119,6 +123,7 @@ function summarize(run: Run, items: Item[], rows: AnswerRow[]): RunSummary {
     return { skill, label: skillLabel(skill), correct: ok, total: its.length, note }
   })
   const pending = (i: Item) => last(i)?.correct === null
+  const ai = (i: Item) => (last(i)?.feedback as AnswerFeedback | undefined)?.ai
   const firstTry = (i: Item) => solved(i) && (run.feedback === 'end' || last(i)!.attempt === 1)
   return {
     answered: answered.length,
@@ -129,7 +134,7 @@ function summarize(run: Run, items: Item[], rows: AnswerRow[]): RunSummary {
       : `Du klarade ${correct} av ${items.length}. ${correct === items.length ? 'Fantastiskt!' : 'Bra kämpat!'}`,
     skills,
     review: items
-      .filter((i) => !pending(i) && !firstTry(i))
+      .filter((i) => !pending(i) && !firstTry(i) && !ai(i))
       .map((i) => ({ itemId: i.id, prompt: i.prompt, solution: solutionText(i), explanation: i.explanation })),
     selfAssess: items.filter(pending).map((i) => {
       const it = i as Extract<Item, { kind: 'freeText' }>
@@ -140,6 +145,15 @@ function summarize(run: Run, items: Item[], rows: AnswerRow[]): RunSummary {
         sampleAnswer: it.sampleAnswer,
       }
     }),
+    freeText: items
+      .filter((i) => i.kind === 'freeText' && !pending(i) && ai(i))
+      .map((i) => ({
+        itemId: i.id,
+        prompt: i.prompt,
+        answer: (last(i)!.answer as { text: string }).text,
+        ai: ai(i)!,
+        sampleAnswer: (i as FreeTextItem).sampleAnswer,
+      })),
   }
 }
 
@@ -160,6 +174,34 @@ export const runRoutes: RouteModule = (app, ctx: AppContext) => {
     const art = await loadArtifact(run.artifactId, run.artifactVersion)
     if (!art) throw new HttpError(404, 'not_found', 'Materialet finns inte längre.')
     return { run, art }
+  }
+
+  /** AI grading against the item's uploaded source segments (short excerpts). Never sends learner details. */
+  async function grade(art: Artifact, item: FreeTextItem, text: string, band: AgeBand) {
+    const ups = item.sources.flatMap((s) => (s.kind === 'upload' ? [s] : [])).slice(0, 4)
+    const rows = ups.length
+      ? await db
+          .select({ setId: studySegments.setId, id: studySegments.id, text: studySegments.text })
+          .from(studySegments)
+          .where(
+            and(
+              inArray(studySegments.setId, [...new Set(ups.map((u) => u.studySetId))]),
+              inArray(
+                studySegments.id,
+                ups.map((u) => u.segmentId),
+              ),
+            ),
+          )
+      : []
+    const sources = ups
+      .map((u) =>
+        (rows.find((r) => r.setId === u.studySetId && r.id === u.segmentId)?.text ?? u.excerpt ?? '').slice(0, 600),
+      )
+      .filter(Boolean)
+    return assessFreeText(ctx.ai?.text, item, text, band, {
+      sources,
+      languageSubject: !!targetLanguage(art.subjectCode),
+    })
   }
 
   const lockRun = async (tx: Tx, runId: string) =>
@@ -271,7 +313,7 @@ export const runRoutes: RouteModule = (app, ctx: AppContext) => {
         ? await answersOf(db, runId, eq(runAnswers.itemId, item.id), eq(runAnswers.attempt, body.attempt))
         : []
       if (dup) return shown(run0, dup.feedback as AnswerFeedback)
-      assessment = await assessFreeText(ctx.ai?.text, item, (answer as { text: string }).text, band)
+      assessment = await grade(art, item, (answer as { text: string }).text, band)
     }
 
     return db.transaction(async (tx) => {
@@ -395,8 +437,22 @@ export const runRoutes: RouteModule = (app, ctx: AppContext) => {
   /** Settle every attempted item, record evidence, store and return the summary. Idempotent. */
   app.post('/learners/:id/runs/:runId/finish', async (req) => {
     const { id, runId } = RunParams.parse(req.params)
-    await requireLearner(db, id)
-    const { art } = await loadRun(id, runId)
+    const learner = await requireLearner(db, id)
+    const { run: run0, art } = await loadRun(id, runId)
+    // Free text the AI could not grade at answer time: one more try (outside the transaction) before self-assessment.
+    const retry = new Map<string, FreeTextAssessment>()
+    if (run0.state === 'active') {
+      const g0 = byItem(await answersOf(db, runId))
+      const band = ageBand(learner.profile.school)
+      await Promise.all(
+        itemsOf(art).map(async (item) => {
+          const last = g0.get(item.id)?.at(-1)
+          if (item.kind !== 'freeText' || !last || last.final || last.correct !== null) return
+          const a = await grade(art, item, (last.answer as { text: string }).text, band)
+          if (a) retry.set(item.id, a)
+        }),
+      )
+    }
     return db.transaction(async (tx) => {
       const run = await lockRun(tx, runId)
       if (run.state === 'finished') return run.summary as RunSummary
@@ -407,12 +463,24 @@ export const runRoutes: RouteModule = (app, ctx: AppContext) => {
       for (const item of items) {
         const rows = g.get(item.id)
         const last = rows?.at(-1)
+        const a = retry.get(item.id)
+        if (last && !last.final && last.correct === null && a) {
+          last.correct = a.keyPointsMet.length === (item as FreeTextItem).rubric.length
+          last.score = a.score
+          last.aiAssessed = true
+          last.feedback = { ...(last.feedback as AnswerFeedback), ai: a }
+          await tx
+            .update(runAnswers)
+            .set({ correct: last.correct, score: last.score, aiAssessed: true })
+            .where(eq(runAnswers.id, last.id))
+        }
         if (!last || last.final || last.correct === null) continue
         const asked = askedHints(run, item.id, rows!) // before the row's feedback is replaced below
         const end = run.feedback === 'end'
-        const msg = end ? (last.correct ? MSG.correct : MSG.notFinished) : MSG.notFinished
+        const ai = (last.feedback as AnswerFeedback).ai
+        const msg = ai?.feedback ?? (end ? (last.correct ? MSG.correct : MSG.notFinished) : MSG.notFinished)
         last.final = true
-        last.feedback = { ...settled(item, last, msg), ai: (last.feedback as AnswerFeedback).ai }
+        last.feedback = { ...settled(item, last, msg), ai }
         await tx.update(runAnswers).set({ final: true, feedback: last.feedback }).where(eq(runAnswers.id, last.id))
         const misses = end ? (last.correct ? 0 : 1) : last.attempt
         ev.push(...evidence(run, art, item, last.correct, misses, asked))
@@ -441,6 +509,55 @@ export const runRoutes: RouteModule = (app, ctx: AppContext) => {
     return { state: run.state }
   })
 
+  /** Adult override of an answer's outcome; evidence and the summary follow it. */
+  app.post('/learners/:id/runs/:runId/override', async (req) => {
+    requireAdult(req)
+    const { id, runId } = RunParams.parse(req.params)
+    await requireLearner(db, id)
+    const { itemId, done } = OverrideRequest.parse(req.body)
+    const { art } = await loadRun(id, runId)
+    const item = itemsOf(art).find((i) => i.id === itemId)
+    if (!item) throw new HttpError(404, 'not_found', 'Uppgiften finns inte.')
+    return db.transaction(async (tx) => {
+      const run = await lockRun(tx, runId)
+      const last = (await answersOf(tx, runId, eq(runAnswers.itemId, itemId)))
+        .sort((a, b) => a.attempt - b.attempt)
+        .at(-1)
+      if (!last) throw new HttpError(404, 'not_found', 'Uppgiften är inte besvarad.')
+      const fb = last.feedback as AnswerFeedback
+      const score = done ? 1 : 0
+      const msg = fb.done ? fb.message : (fb.ai?.feedback ?? MSG.rated)
+      const feedback: AnswerFeedback = {
+        ...settled(item, { attempt: last.attempt, correct: done, score }, msg, fb.revealed),
+        ai: fb.ai,
+        override: done ? 'done' : 'notYet',
+      }
+      await tx.update(runAnswers).set({ correct: done, score, final: true, feedback }).where(eq(runAnswers.id, last.id))
+      // Replace this run's evidence for the item (runs of one artifact never overlap in time).
+      await tx
+        .delete(skillEvidence)
+        .where(
+          and(
+            eq(skillEvidence.learnerId, id),
+            eq(skillEvidence.artifactId, art.id),
+            eq(skillEvidence.itemId, itemId),
+            gte(skillEvidence.at, run.startedAt),
+            run.finishedAt ? lte(skillEvidence.at, run.finishedAt) : undefined,
+          ),
+        )
+      const at = (run.finishedAt ?? new Date()).toISOString() // inside the run's window, so a later override replaces it
+      const ev = evidence(run, art, item, done, done ? 0 : 1, last.hintsShown).map((e) => ({ ...e, at }))
+      await recordEvidence(tx as unknown as Db, ev)
+      wroteEvidence.add(req)
+      if (run.state !== 'active')
+        await tx
+          .update(runs)
+          .set({ summary: summarize(run, itemsOf(art), await answersOf(tx, runId)) })
+          .where(eq(runs.id, runId))
+      return feedback
+    })
+  })
+
   /** Adult history with every attempt; AI assessments are marked as advisory. */
   app.get('/learners/:id/runs', async (req) => {
     requireAdult(req)
@@ -459,7 +576,15 @@ export const runRoutes: RouteModule = (app, ctx: AppContext) => {
           .sort((a, b) => a.itemId.localeCompare(b.itemId) || a.attempt - b.attempt)
           .map((a) => ({
             ...a,
-            assessedBy: a.aiAssessed ? 'ai' : a.correct === null ? 'pending' : isSelf(a.answer) ? 'self' : 'auto',
+            assessedBy: (a.feedback as AnswerFeedback | null)?.override
+              ? 'adult'
+              : a.aiAssessed
+                ? 'ai'
+                : a.correct === null
+                  ? 'pending'
+                  : isSelf(a.answer)
+                    ? 'self'
+                    : 'auto',
           })),
       })),
     )

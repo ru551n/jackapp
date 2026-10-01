@@ -78,13 +78,32 @@ function item(kind: string, n: number, skill: string) {
 
 const SEGMENT = /^\[([^\]]+)\] \(sida \d+, [^)]+\) (.+)$/gm
 
-/** Strict source mode: true/false items quoting the longest uploaded segments, each citing its segment. */
+/**
+ * Strict source mode: items cite the longest uploaded segments. True/false and free-text items quote
+ * the segment (free text: its rubric point is the segment's opening words).
+ */
 function grounded(out: { items: Record<string, unknown>[] }, system: string, kinds: string[]) {
   const segs = [...system.matchAll(SEGMENT)].map((m) => ({ id: m[1]!, text: m[2]!.trim() }))
   if (!segs.length) return out
   segs.sort((a, b) => b.text.length - a.text.length)
   out.items = out.items.map((item, i) => {
     const seg = segs[i % segs.length]!
+    if (item.kind === 'freeText') {
+      const words = seg.text
+        .split(/\s+/)
+        .slice(0, 3)
+        .join(' ')
+        .replace(/[.!?,;:]$/, '')
+      return {
+        ...item,
+        prompt: `Skriv med egna ord vad texten berättar om "${words}".`,
+        rubric: [seg.text.slice(0, 200)],
+        sampleAnswer: seg.text.slice(0, 500),
+        hints: ['Läs texten en gång till.'],
+        explanation: `Det står i texten: ${seg.text.slice(0, 300)}`,
+        sourceSegmentIds: [seg.id],
+      }
+    }
     if (!kinds.includes('trueFalse')) return { ...item, sourceSegmentIds: [seg.id] }
     return {
       kind: 'trueFalse',
@@ -100,6 +119,23 @@ function grounded(out: { items: Record<string, unknown>[] }, system: string, kin
   return out
 }
 
+const words = (s: string) => new Set(s.toLowerCase().match(/\p{L}{4,}/gu) ?? [])
+
+/** Free-text grading: a key point is met when the answer shares a word (4+ letters) with it. */
+function assess(content: string) {
+  const { nyckelpunkter = [], elevsvar = '' } = JSON.parse(content) as { nyckelpunkter?: string[]; elevsvar?: string }
+  const said = words(elevsvar)
+  const keyPoints = nyckelpunkter.map((p, index) => {
+    const hit = [...words(p.replace(/^\d+: /, ''))].find((w) => said.has(w))
+    return { index, verdict: hit ? 'met' : 'missing', evidence: hit ?? '' }
+  })
+  const met = keyPoints.filter((k) => k.verdict === 'met').length
+  return {
+    keyPoints,
+    feedback: met ? 'Bra! Du har fått med något viktigt.' : 'Bra försök! Titta på punkterna och lägg till mer.',
+  }
+}
+
 let counter = 0
 
 export const devMockText: MockChatHandler = (req) => {
@@ -107,6 +143,8 @@ export const devMockText: MockChatHandler = (req) => {
   switch (req.json?.name) {
     case 'request_fields':
       return {}
+    case 'free_text_assessment':
+      return assess(String(req.messages.at(-1)?.content ?? '{}'))
     case 'artifact_texts':
       return {
         title: 'Addition i vardagen',
