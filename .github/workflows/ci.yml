@@ -25,4 +25,22 @@ jobs:
       - run: npm run check
       - run: npm run build
       - run: npx playwright install --with-deps chromium
-      - run: npm run test:e2e
+      # Poppler: PDF study uploads in the platform e2e project (real backend).
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends poppler-utils
+      - run: npm run test:e2e # mocked (tablet, phone) + platform (real backend, e2e/platform.spec.ts)
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-results
+          path: test-results
+  docker-smoke:
+    # Separate, slower job: real image build + compose stack + mock AI (scripts/docker-smoke.sh).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run smoke:docker

@@ -1,0 +1,42 @@
+# Docker smoke test overlay, used by scripts/docker-smoke.sh only:
+#   docker compose -p jackapp-smoke-test -f compose.yaml -f compose.smoke.yaml --env-file <tmp .env> up -d --build --wait
+# Adds a mock OpenAI-compatible AI (scripts/mock-openai.ts) on the internal network, so text and vision
+# go through the real HTTP adapter. Secrets come from the script's temp env file, never the repo .env.
+
+x-smoke-env: &smoke-env
+  env_file: !override ['${SMOKE_ENV_FILE:?run scripts/docker-smoke.sh}']
+
+services:
+  mockai:
+    # The image's build stage has the sources and dev dependencies (tsx).
+    build: { context: ., target: server }
+    image: jackapp-smoke-mockai:local
+    command: ['node', '--import', 'tsx', 'scripts/mock-openai.ts']
+    environment: { MOCK_AI_PORT: '8080' }
+    networks: [backend]
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:8080/v1/models').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))",
+        ]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+  migrate:
+    <<: *smoke-env
+
+  app:
+    <<: *smoke-env
+    ports: !override ['127.0.0.1:${SMOKE_PORT:-3399}:3000']
+    depends_on:
+      mockai: { condition: service_healthy }
+
+  worker:
+    <<: *smoke-env
+    healthcheck: { interval: 5s, start_period: 5s } # faster `up --wait`
+    depends_on:
+      mockai: { condition: service_healthy }
