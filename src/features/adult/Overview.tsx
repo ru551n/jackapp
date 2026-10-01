@@ -170,6 +170,7 @@ export function Overview() {
         <aside className={s.stack}>
           <StatusPanel />
           <ChangePin />
+          <Link to="/vuxen/om">Om appen: tack och licenser</Link>
         </aside>
       </div>
     </Page>

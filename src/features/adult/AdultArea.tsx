@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Navigate, Route, Routes, useNavigate } from 'react-router'
 import { ApiRequestError } from '../../api/client'
+import { About } from './About'
 import { ADULT_REQUIRED_EVENT, adultApi, paths, useResource, type GateState } from './api'
 import { ArtifactView } from './ArtifactView'
 import { Generate } from './Generate'
@@ -96,6 +97,7 @@ export function AdultArea() {
       <Routes>
         <Route index element={<Overview />} />
         <Route path="ny" element={<NewLearner />} />
+        <Route path="om" element={<About />} />
         <Route path="elev/:id" element={<LearnerLayout />}>
           <Route index element={<ProfileEditor />} />
           <Route path="skapa" element={<Generate />} />

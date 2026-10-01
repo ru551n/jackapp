@@ -12,6 +12,17 @@ VOICES, AUDIO, PUB_VOICES = ROOT / ".voices", ROOT / "public/audio", ROOT / "pub
 voices = json.loads((ROOT / "scripts/speech/voices.json").read_text())
 phrases = json.loads((ROOT / ".speech/phrases.json").read_text())
 _loaded = {}
+# Shipped next to the voice models in public/voices (and dist/voices). Keep in sync with docs/audio.md.
+VOICE_NOTICE = """Piper voice models served by JackApp
+
+sv_SE-alma-medium: "Alma" by Daniel Nylander, CC BY 4.0
+  https://huggingface.co/yeagersthlm/piper-voice-sv-alma
+  https://creativecommons.org/licenses/by/4.0/
+en_GB-cori-high: "Cori", trained on LibriVox recordings read by Bryce Beattie (public domain)
+  https://huggingface.co/rhasspy/piper-voices
+
+The pre-generated clips in /audio are synthesized with these voices.
+"""
 
 
 def voice(lang):
@@ -61,6 +72,7 @@ def main():
     VOICES.mkdir(exist_ok=True)
     AUDIO.mkdir(parents=True, exist_ok=True)
     PUB_VOICES.mkdir(parents=True, exist_ok=True)
+    (PUB_VOICES / "NOTICE").write_text(VOICE_NOTICE)
     langs = {p["lang"] for p in phrases}
     for lang in langs:
         vid = voices[lang]

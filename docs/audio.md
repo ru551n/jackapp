@@ -27,6 +27,15 @@ About 2,640 clips (sv 2,326, en 309), roughly 40 MB of MP3. Full run on 32 cores
 
 ## Credits and licences
 
-- **Alma** (`sv_SE-alma-medium`): CC BY 4.0, trained on NST (Språkbanken). Model card: https://huggingface.co/yeagersthlm/piper-voice-sv-alma (verify before release).
-- **Cori** (`en_GB-cori-high`): public domain (LibriVox recordings).
-- **Piper** engine (piper1-gpl): GPL-3.0, used only as a build tool; no Piper code ships in the app clips.
+The app credits these on the adult "Om appen" page; the full list ships as `THIRD_PARTY_NOTICES.txt` (from `public/`) with licence texts in `licenses/`, and `synth.py` writes `voices/NOTICE` next to the models.
+
+- **Alma** (`sv_SE-alma-medium`): "Alma" by Daniel Nylander, CC BY 4.0, trained on the NST Swedish speech corpus distributed by Språkbanken at the National Library of Norway. Model card: https://huggingface.co/yeagersthlm/piper-voice-sv-alma
+- **Cori** (`en_GB-cori-high`): public domain (LibriVox recordings read by Bryce Beattie).
+- **espeak-ng** (GPL-3.0-or-later) **ships to browsers**: it is compiled into `assets/piper_phonemize-*.wasm` and its `.data` file (from `@diffusionstudio/piper-wasm`), which in-app Piper uses as its phonemizer. Source: https://github.com/rhasspy/espeak-ng at commit `0f65aa301e0d6bae5e172cc74197d32a6182200f` (pinned by piper-phonemize), built per the piper-wasm README.
+- **piper-phonemize**, **@diffusionstudio/piper-wasm**, **onnxruntime-web**: MIT, ship to browsers.
+- **Atkinson Hyperlegible** font: SIL OFL 1.1, ships to browsers.
+- **Piper** engine (piper1-gpl): GPL-3.0, used only as a build tool for the clips; clips are its output, not Piper code.
+
+### GPL and redistribution
+
+Serving the web app copies the espeak-ng wasm to every browser that loads it, which counts as conveying it under GPL-3.0. Whoever serves or redistributes a build must therefore keep `THIRD_PARTY_NOTICES.txt` and `licenses/GPL-3.0.txt` in the served output and keep the corresponding espeak-ng source available (the links above; mirror them if you distribute builds widely). JackApp's own MIT licence is GPL-compatible, so the combination may be conveyed under GPL-3.0 terms. If you modify or rebuild the phonemizer wasm, publish your changed source and update the notices. If that is unacceptable, drop in-app Piper (bundled clips and the device voice still work).

@@ -1,0 +1,56 @@
+JackApp - third-party notices
+==============================
+
+JackApp itself is MIT-licensed (see LICENSE in the source repository). The web app served to
+browsers also contains the third-party components below. Full licence texts are in /licenses/.
+Overview and redistribution notes: docs/audio.md ("Credits and licences").
+
+
+Shipped to browsers
+-------------------
+
+espeak-ng - GPL-3.0-or-later
+  Compiled into assets/piper_phonemize-*.wasm and its data file assets/piper_phonemize-*.data
+  (phonemizer for in-app Piper speech), via @diffusionstudio/piper-wasm 1.0.0.
+  Code:    https://github.com/rhasspy/espeak-ng/tree/0f65aa301e0d6bae5e172cc74197d32a6182200f
+           (commit pinned by piper-phonemize's CMakeLists.txt)
+  Data:    espeak-ng-data from https://github.com/rhasspy/espeak-ng (built per the script below)
+  Build:   https://github.com/diffusion-studio/piper-wasm (README, "As of JUN 2024")
+           https://github.com/wide-video/piper-wasm
+  Licence: /licenses/GPL-3.0.txt  (https://www.gnu.org/licenses/gpl-3.0.html)
+  Source offer: the complete corresponding source is available from the links above. If a link
+  stops working, ask the operator of this JackApp instance for a copy of the source.
+
+piper-phonemize - MIT
+  Copyright (c) 2023 Michael Hansen. Fork used for the wasm build:
+  https://github.com/wide-video/piper-phonemize (upstream https://github.com/rhasspy/piper-phonemize)
+
+@diffusionstudio/piper-wasm - MIT
+  Copyright (c) Konstantin Paulus. https://github.com/diffusion-studio/piper-wasm
+
+onnxruntime-web 1.30 - MIT
+  Copyright (c) Microsoft Corporation. https://github.com/microsoft/onnxruntime
+
+Atkinson Hyperlegible (font, via @fontsource/atkinson-hyperlegible) - SIL Open Font License 1.1
+  Copyright 2020 Braille Institute of America, Inc.
+  Licence: /licenses/OFL-1.1-Atkinson-Hyperlegible.txt
+
+Voice models (in /voices; see /voices/NOTICE)
+  Alma (sv_SE-alma-medium) by Daniel Nylander - CC BY 4.0
+    https://huggingface.co/yeagersthlm/piper-voice-sv-alma
+    https://creativecommons.org/licenses/by/4.0/
+  Cori (en_GB-cori-high) - trained on LibriVox recordings read by Bryce Beattie, public domain
+    https://huggingface.co/rhasspy/piper-voices
+
+
+Build tools only (not shipped)
+------------------------------
+
+Piper (piper-tts / piper1-gpl) - GPL-3.0. Generates the pre-recorded clips in /audio at build
+  time; the clips are output, not Piper code. https://github.com/OHF-Voice/piper1-gpl
+
+
+Curriculum data
+---------------
+
+Skolverket syllabi (Lgr22 / gymnasium) - CC0 1.0. https://www.skolverket.se
