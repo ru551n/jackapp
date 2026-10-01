@@ -4,6 +4,7 @@ import { z } from 'zod'
 import { ageBand, type AgeBand, type Artifact, type Item, type SkillEvidence } from '../../shared/contracts'
 import { recordEvidence } from '../adaptive/evidence'
 import { onEvidence } from '../adaptive/paths'
+import { skillLabel } from '../adaptive/skills'
 import type { AppContext, RouteModule } from '../app/context'
 import type { Db } from '../db/client'
 import { runAnswers, runs } from '../db/schema'
@@ -115,7 +116,7 @@ function summarize(run: Run, items: Item[], rows: AnswerRow[]): RunSummary {
     const ok = its.filter(solved).length
     const note =
       ok === its.length ? 'Det här sitter bra.' : ok * 2 >= its.length ? 'På god väg.' : 'Värt att öva lite mer på.'
-    return { skill, correct: ok, total: its.length, note }
+    return { skill, label: skillLabel(skill), correct: ok, total: its.length, note }
   })
   const pending = (i: Item) => last(i)?.correct === null
   const firstTry = (i: Item) => solved(i) && (run.feedback === 'end' || last(i)!.attempt === 1)

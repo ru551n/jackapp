@@ -25,6 +25,8 @@ export interface HandlerDeps {
 /**
  * Completion hooks, composed here so domains never import each other: a finished image or
  * licensed-asset job lands in its artifact as a new version (server/generation/media.ts).
+ * They run as part of the job before it is marked completed (at-least-once; failures retry),
+ * so they must be idempotent, which applyJobMedia is.
  */
 const ON_COMPLETED: Partial<Record<JobHandler['type'], JobHandler['onCompleted']>> = {
   'image.generate': applyJobMedia,

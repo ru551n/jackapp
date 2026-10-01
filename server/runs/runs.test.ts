@@ -204,9 +204,16 @@ describe('immediate feedback', () => {
     const summary = (await t.call('POST', `/runs/${run.id}/finish`)).json()
     expect(summary).toMatchObject({ answered: 2, total: 4, correct: 1, message: 'Du klarade 1 av 4. Bra kämpat!' })
     expect(summary.review.map((r: { itemId: string }) => r.itemId)).toEqual(['q1', 'q3', 'q4'])
-    expect(summary.skills).toContainEqual({ skill: 'ma.units', correct: 1, total: 1, note: 'Det här sitter bra.' })
+    expect(summary.skills).toContainEqual({
+      skill: 'ma.units',
+      label: 'enheter',
+      correct: 1,
+      total: 1,
+      note: 'Det här sitter bra.',
+    })
     expect(summary.skills).toContainEqual({
       skill: 'sv.letters',
+      label: 'bokstäver',
       correct: 0,
       total: 1,
       note: 'Värt att öva lite mer på.',

@@ -443,15 +443,13 @@ describe('cleanup', () => {
     mkdirSync(goneDir, { recursive: true })
     await db.delete(learners).where(eq(learners.id, other.id)) // cascades rows only
     utimesSync(goneDir, old, old)
-    await db
-      .insert(studyPageExtractions)
-      .values({
-        sha256: 'f'.repeat(64),
-        pdfPage: 0,
-        segments: [],
-        model: 'm',
-        createdAt: new Date(Date.now() - 30 * 3_600_000),
-      })
+    await db.insert(studyPageExtractions).values({
+      sha256: 'f'.repeat(64),
+      pdfPage: 0,
+      segments: [],
+      model: 'm',
+      createdAt: new Date(Date.now() - 30 * 3_600_000),
+    })
 
     await cleanupUploads(db, TEST_ENV.DATA_DIR, 168)
     expect(existsSync(uploadDir(TEST_ENV.DATA_DIR, slow!.id))).toBe(true)
