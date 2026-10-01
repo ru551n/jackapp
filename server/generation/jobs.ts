@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm'
+import { and, eq } from 'drizzle-orm'
 import { z } from 'zod'
 import {
   GenerationRequest,
@@ -18,6 +18,7 @@ import {
   generateArtifact,
   regenerateItem,
   type EngineDeps,
+  type Generated,
   type MaterialLoader,
   type Prepared,
 } from './engine'
@@ -26,7 +27,7 @@ import { PROMPT_VERSION, TRANSFORM_SV, transformContext, type TransformKind } fr
 import { interpretInstructions, resolveRequest, scrubRequest, type ResolvedRequest } from './request'
 import { loadBrief, researchBrief, type BriefResult, type ResearchOptions } from '../research/brief'
 import { enqueueIllustrations } from './media'
-import { addVersion, approvalFor, createArtifact, loadArtifact, type StoredArtifact } from './store'
+import { addVersion, approvalFor, artifactForJob, createArtifact, loadArtifact, type StoredArtifact } from './store'
 
 // Job payloads and handlers: artifact.generate (new + transforms) and artifact.regenerateItem.
 
@@ -91,11 +92,15 @@ async function profileOf(db: Db, learnerId: string, tools: JobTools): Promise<Le
 
 async function material(deps: GenerationDeps, db: Db, r: ResolvedRequest, tools: JobTools) {
   if (!r.studySetId) return undefined
+  // Only the learner's own study sets (a payload may name any id).
+  const [set] = await db
+    .select({ status: studySets.status })
+    .from(studySets)
+    .where(and(eq(studySets.id, r.studySetId), eq(studySets.learnerId, r.learnerId)))
+  if (!set) tools.fail('not_found', 'Studiematerialet finns inte längre.', false)
   const m = await (deps.loadMaterial ?? defaultMaterialLoader)(db, r.studySetId)
   if (m) return m
   // Only a set that is still being processed is worth retrying for.
-  const [set] = await db.select({ status: studySets.status }).from(studySets).where(eq(studySets.id, r.studySetId))
-  if (!set) tools.fail('not_found', 'Studiematerialet finns inte längre.', false)
   if (set.status === 'failed')
     tools.fail('material_failed', 'Studiematerialet kunde inte bearbetas. Försök bearbeta det igen först.', false)
   tools.fail('material_unavailable', 'Studiematerialet är inte färdigbehandlat ännu.', true)
@@ -172,6 +177,19 @@ function previousVersion(a: Artifact): string {
   ).slice(0, 10_000)
 }
 
+/** Learner-made requests: at most this many items. */
+export const LEARNER_MAX_QUESTIONS = 20
+
+/**
+ * Approval for new material. Learner-made material always waits for an adult; the profile's
+ * `immediate` covers adult- and system-made material.
+ */
+export const newApproval = (policy: GenerationPolicy['approval'], createdBy: string, ok: boolean) =>
+  approvalFor(createdBy === 'learner' ? 'parent' : policy, ok)
+
+const conflictFail = (tools: JobTools): never =>
+  tools.fail('version_conflict', 'Materialet ändrades medan det bearbetades. Försöker igen.', true)
+
 async function aiGuard<T>(tools: JobTools, fn: () => Promise<T>): Promise<T> {
   try {
     return await fn()
@@ -186,18 +204,22 @@ export function generationJobHandlers(deps: GenerationDeps): JobHandler[] {
     if (!deps.ai.text) tools.fail('ai_unavailable', 'AI-textgenerering är inte konfigurerad.', false)
     return { db: tools.db, text: deps.ai.text, validate: deps.validate, signal: tools.signal, progress: tools.progress }
   }
-  const meta = (origin: string, model?: string) => ({
+  const meta = (origin: string, model?: string, truncated?: Generated['truncated']) => ({
     origin,
     model,
     providerKind: deps.providerKind,
     promptVersion: PROMPT_VERSION,
+    truncated,
   })
 
   const generate = defineJobHandler('artifact.generate', async (job, tools) => {
     const payload = GeneratePayload.parse(job.payload)
     const eng = engine(tools)
     return aiGuard(tools, async () => {
-      if ('transform' in payload) return transform(eng, payload.transform, tools)
+      // A retried job reuses what an earlier attempt already stored (artifacts.job_id is unique).
+      const existing = await artifactForJob(tools.db, job.id)
+      if (existing) return existing
+      if ('transform' in payload) return transform(eng, payload.transform, tools, job.id)
       const { explicit, createdBy } = payload
       const profile = await profileOf(tools.db, payload.request.learnerId, tools)
       const request = scrubRequest(payload.request, profile.displayName)
@@ -205,9 +227,15 @@ export function generationJobHandlers(deps: GenerationDeps): JobHandler[] {
       if (request.instructions) {
         await tools.progress(0.05, 'Tolkar önskemålet')
         const subjects = await subjectsFor(tools.db, request.school ?? profile.school).catch(() => [])
-        interpreted = await interpretInstructions(eng.text, request.instructions, subjects, tools.signal)
+        // Interpretation is a convenience: on failure, explicit fields and the profile still make a request.
+        interpreted = await interpretInstructions(eng.text, request.instructions, subjects, tools.signal).catch((e) => {
+          if (tools.signal.aborted) throw e
+          tools.log.warn({ err: { name: (e as Error).name, code: (e as AiError).code } }, 'interpretation failed')
+          return {}
+        })
       }
       const resolved = resolveRequest(request, explicit, interpreted, profile)
+      if (createdBy === 'learner') resolved.questionCount = Math.min(LEARNER_MAX_QUESTIONS, resolved.questionCount)
       const m = await material(deps, tools.db, resolved, tools)
       const web = await research(deps, resolved, m, tools)
       if (web) resolved.researchBriefId = web.briefId
@@ -216,12 +244,13 @@ export function generationJobHandlers(deps: GenerationDeps): JobHandler[] {
         { request: resolved, profile, material: m, research: web },
         { id: crypto.randomUUID(), learnerId: request.learnerId, createdBy, version: 1 },
       )
-      const a = { ...g.artifact, approval: approvalFor(profile.generation.approval, g.ok) }
+      const a = { ...g.artifact, approval: newApproval(profile.generation.approval, createdBy, g.ok) }
       await createArtifact(tools.db, a, resolved, {
-        ...meta('generate', g.model),
+        ...meta('generate', g.model, g.truncated),
         illustrations: g.illustrations,
         jobId: job.id,
       })
+      if (g.truncated) tools.log.info({ truncated: g.truncated }, 'study material truncated for the prompt')
       if (!g.ok) tools.fail('validation_failed', validationFailedMessage(a, true), false)
       await enqueueIllustrations(
         tools.db,
@@ -239,6 +268,7 @@ export function generationJobHandlers(deps: GenerationDeps): JobHandler[] {
     eng: EngineDeps,
     t: { artifactId: string; kind: TransformKind; theme?: string },
     tools: JobTools,
+    jobId: string,
   ): Promise<string> {
     const stored = await loadOrFail(tools, t.artifactId)
     const profile = await profileOf(tools.db, stored.row.learnerId, tools)
@@ -262,8 +292,12 @@ export function generationJobHandlers(deps: GenerationDeps): JobHandler[] {
     })
     const policy = profile.generation.approval
     if (isNew) {
-      const a = { ...g.artifact, approval: approvalFor(policy, g.ok) }
-      await createArtifact(tools.db, a, request, { ...meta('transform:more', g.model), illustrations: g.illustrations })
+      const a = { ...g.artifact, approval: newApproval(policy, prev.createdBy, g.ok) }
+      await createArtifact(tools.db, a, request, {
+        ...meta('transform:more', g.model, g.truncated),
+        illustrations: g.illustrations,
+        jobId,
+      })
       if (!g.ok) tools.fail('validation_failed', validationFailedMessage(a, true), false)
       await enqueueIllustrations(
         tools.db,
@@ -278,12 +312,15 @@ export function generationJobHandlers(deps: GenerationDeps): JobHandler[] {
     const keep = prev.approval === 'draft'
     const a = { ...g.artifact, createdAt: prev.createdAt, approval: nextApproval(prev.approval, g.ok, policy) }
     if (!g.ok && !keep) tools.fail('validation_failed', validationFailedMessage(a, false), false)
+    // Approval is re-read inside the transaction; a newer version means this transform is stale.
     const saved = await addVersion(
       tools.db,
       a,
-      { ...meta(`transform:${t.kind}`, g.model), illustrations: g.illustrations },
+      { ...meta(`transform:${t.kind}`, g.model, g.truncated), illustrations: g.illustrations },
       request,
+      { expectVersion: prev.version, approval: (cur) => nextApproval(cur, g.ok, policy) },
     )
+    if (!saved) conflictFail(tools)
     if (!g.ok) tools.fail('validation_failed', validationFailedMessage(a, true), false)
     await enqueueIllustrations(
       tools.db,
@@ -311,7 +348,12 @@ export function generationJobHandlers(deps: GenerationDeps): JobHandler[] {
       if (!r.ok && prev.approval !== 'draft') tools.fail('validation_failed', validationFailedMessage(a, false), false)
       const illustrations = [...stored.illustrations.filter((i) => i.itemId !== itemId)]
       if (r.illustration) illustrations.push(r.illustration)
-      const saved = await addVersion(tools.db, a, { ...meta('regenerateItem', r.model), illustrations })
+      const policy = profile.generation.approval
+      const saved = await addVersion(tools.db, a, { ...meta('regenerateItem', r.model), illustrations }, undefined, {
+        expectVersion: prev.version,
+        approval: (cur) => nextApproval(cur, r.ok, policy),
+      })
+      if (!saved) conflictFail(tools)
       if (!r.ok) tools.fail('validation_failed', validationFailedMessage(a, true), false)
       // Only the new item's illustration: the others already had their chance.
       const mine = illustrations.filter((i) => i.itemId === itemId)

@@ -86,7 +86,8 @@ export async function interpretInstructions(
     messages: [{ role: 'user', content: instructions }],
     schema: Interpretation,
     schemaName: 'request_fields',
-    maxTokens: 600,
+    // Room for reasoning models; temperature is dropped automatically where unsupported.
+    maxTokens: 1500,
     temperature: 0,
     signal,
   })
@@ -145,13 +146,11 @@ export function resolveRequest(
   const band = ageBand(school)
 
   const allowed = DEFAULT_KINDS[merged.type]
-  let kinds = (merged.itemKinds ?? []).filter((k): k is ItemKind => (ITEM_KINDS as readonly string[]).includes(k))
-  // Young learners don't get free writing outside writing tasks.
-  if (!kinds.length)
-    kinds =
-      band === 'early' && merged.type !== 'writingPrompt' && merged.type !== 'project'
-        ? allowed.filter((k) => k !== 'freeText')
-        : allowed
+  // Young learners don't get free writing outside writing tasks (not even when asked for).
+  const writing = merged.type === 'writingPrompt' || merged.type === 'project'
+  const fit = (ks: ItemKind[]) => (band === 'early' && !writing ? ks.filter((k) => k !== 'freeText') : ks)
+  let kinds = fit((merged.itemKinds ?? []).filter((k): k is ItemKind => (ITEM_KINDS as readonly string[]).includes(k)))
+  if (!kinds.length) kinds = fit(allowed)
   if (!kinds.length) kinds = allowed
 
   const duration = merged.durationMinutes ?? support.sessionMinutes

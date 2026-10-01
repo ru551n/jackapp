@@ -32,11 +32,28 @@ describe('checkers', () => {
     expect(score(ms, ['a', 'b', 'c', 'd'])).toBe(0)
   })
 
-  it('ordering is all or nothing', () => {
+  it('short ordering is all or nothing; long ordering credits neighbours in order', () => {
     const o = item({ kind: 'ordering', items: choices.slice(0, 3), answer: ['c', 'a', 'b'] })
     expect(score(o, ['c', 'a', 'b'])).toBe(1)
     expect(score(o, ['a', 'c', 'b'])).toBe(0)
     expect(score(o, ['c', 'a'])).toBe(0)
+    const ids = ['a', 'b', 'c', 'd', 'e']
+    const long = item({
+      kind: 'ordering',
+      items: ids.map((id) => ({ id, text: id })),
+      answer: ids,
+    })
+    expect(checkAnswer(long, ids)).toEqual({ score: 1, correct: true })
+    expect(score(long, ['b', 'a', 'c', 'd', 'e'])).toBe(0.5) // c-d, d-e
+    expect(checkAnswer(long, ['a', 'b', 'c', 'e', 'd']).correct).toBe(false)
+    expect(score(long, ['e', 'd', 'c', 'b', 'a'])).toBe(0)
+  })
+
+  it('numeric blanks compare as numbers', () => {
+    const f = item({ kind: 'fillBlank', text: '7/2 = ___', blanks: [{ accepted: ['3,5'] }] })
+    expect(score(f, ['3.5'])).toBe(1)
+    expect(score(f, ['3,50'])).toBe(1)
+    expect(score(f, ['3'])).toBe(0)
   })
 
   it('matching gives per-pair credit', () => {
@@ -78,6 +95,16 @@ describe('checkers', () => {
     expect(parseNumber('-1 1/2')).toBe(-1.5)
     expect(parseNumber('½')).toBe(0.5)
     expect(parseNumber('1 000')).toBe(1000)
+    // Swedish convention: a dot before exactly three digits groups thousands.
+    expect(parseNumber('1.000')).toBe(1000)
+    expect(parseNumber('12.500.000')).toBe(12_500_000)
+    expect(parseNumber('0.125')).toBe(0.125)
+    expect(parseNumber('1.000,5')).toBe(1000.5)
+    expect(parseNumber('12 kronor', 'kr')).toBe(12)
+    expect(parseNumber('12 kr', 'kronor')).toBe(12)
+    expect(parseNumber('5 centimeter', 'cm')).toBe(5)
+    expect(parseNumber('3 stycken', 'st')).toBe(3)
+    expect(parseNumber('12', 'kr')).toBe(12)
     expect(parseNumber('−4')).toBe(-4)
     expect(parseNumber('12 cm', 'cm')).toBe(12)
     expect(parseNumber('12cm', 'CM')).toBe(12)

@@ -1,3 +1,4 @@
+import { and, eq } from 'drizzle-orm'
 import { loadProcessedMaterial } from '../study/material'
 import { z } from 'zod'
 import {
@@ -16,11 +17,21 @@ import type { TextGeneration } from '../ai'
 import type { BriefResult } from '../research/brief'
 import { isValidRef, subject, suggestRefs } from '../curriculum/service'
 import type { Db } from '../db/client'
-import type { IllustrationRequest } from '../db/schema'
+import { skillEvidence, type IllustrationRequest } from '../db/schema'
 import { promptProfile } from '../learners/profile'
 import { validateArtifact, type ValidationContext } from '../validation'
-import { describeItem, genItemsSchema, toItem, type GenItem, type ItemContext } from './items'
-import { buildSystemPrompt, itemsTask, repairTask, textsTask, type OfferedRef, type PromptInput } from './prompts'
+import { describeItem, fallbackSkill, genItemsSchema, toItem, type ItemContext } from './items'
+import {
+  buildSystemPrompt,
+  itemsTask,
+  repairTask,
+  selectMaterial,
+  textRepairTask,
+  textsTask,
+  type MaterialSelection,
+  type OfferedRef,
+  type PromptInput,
+} from './prompts'
 import type { ResolvedRequest } from './request'
 
 // Structured generation: blueprint → text call → item calls in chunks → checks → one targeted repair.
@@ -50,7 +61,37 @@ interface Slot {
   title?: string
   words?: number
   items?: number
-  kinds?: ItemKind[]
+  /** Practice tests: difficulty ramp and kind quota for this chunk. */
+  ramp?: [number, number]
+  quota?: Partial<Record<ItemKind, number>>
+}
+
+/** Output budget per call: room for the JSON plus reasoning tokens (truncation doubles it once). */
+export const ITEM_TOKENS = 600
+const TEXT_TOKENS_PER_WORD = 4
+
+/** Practice test: difficulty rises across the test and item kinds are spread evenly over it. */
+function practiceTest(r: ResolvedRequest): Slot[] {
+  const n = r.questionCount
+  const parts = Math.ceil(n / CHUNK)
+  const lo = Math.max(1, r.difficulty - 1)
+  const hi = Math.min(5, r.difficulty + 1)
+  const kinds = r.itemKinds
+  return Array.from({ length: parts }, (_, i) => {
+    const start = i * CHUNK
+    const count = Math.min(CHUNK, n - start)
+    const quota: Partial<Record<ItemKind, number>> = {}
+    for (let j = start; j < start + count; j++)
+      quota[kinds[j % kinds.length]!] = (quota[kinds[j % kinds.length]!] ?? 0) + 1
+    const at = (x: number) => Math.round(lo + ((hi - lo) * x) / n)
+    return {
+      kind: 'check' as const,
+      title: parts > 1 ? `Del ${i + 1}` : undefined,
+      items: count,
+      ramp: [at(start), at(start + count)] as [number, number],
+      quota,
+    }
+  })
 }
 
 const WORDS = { early: 40, middle: 90, upper: 160 } as const
@@ -110,7 +151,7 @@ export function blueprint(r: ResolvedRequest): Slot[] {
     case 'worksheet':
       return chunked('task', n)
     case 'practiceTest':
-      return chunked('check', n)
+      return practiceTest(r)
     default:
       return chunked('practice', n)
   }
@@ -135,6 +176,7 @@ function itemContext(p: Prepared, curriculum: Map<string, CurriculumRef>): ItemC
     maxChoices: r.support.maxChoices,
     includeHints: r.hints,
     skills: r.skills,
+    fallbackSkill: fallbackSkill(r.subjectCode, r.topic),
     web: r.sourceMode === 'strict' ? undefined : new Map(p.research?.sources.map((s, i) => [`W${i + 1}`, s])),
   }
 }
@@ -146,7 +188,12 @@ export interface Generated {
   illustrations: IllustrationRequest[]
   model?: string
   repaired: boolean
+  /** Which material reached the prompt when it did not all fit. */
+  truncated?: MaterialSelection['truncated']
 }
+
+/** Förskoleklass has one curriculum chapter instead of subjects. */
+export const FK_CURRICULUM = 'LGR22-FK'
 
 /** Curriculum offered to the model: real central-content texts with local ids C1..Cn. */
 export async function offerCurriculum(
@@ -170,14 +217,23 @@ export async function offerCurriculum(
     if (s && item) add(ref, s.name, item.text, item.area)
   }
   const q = [r.topic, r.instructions, material?.topic, material?.concepts.join(' ')].filter(Boolean).join(' ')
+  // Förskoleklass: grundskola subject codes don't apply at year 0; search its own chapter instead.
+  const fk = r.school.stage === 'forskoleklass'
   const hits = q
-    ? await suggestRefs(db, { position: r.school, subjectCode: r.subjectCode, text: q, limit: 8 }).catch(() => [])
+    ? await suggestRefs(db, {
+        position: r.school,
+        subjectCode: fk ? undefined : r.subjectCode,
+        text: q,
+        limit: 8,
+      }).catch(() => [])
     : []
   for (const h of hits) add(h.ref, h.subjectName, h.text, h.area)
   // Lexical search can miss (e.g. "multiplikation" vs "räknesätten"): fall back to the subject's content.
-  if (!hits.length && r.subjectCode) {
-    const s = await subject(db, r.subjectCode, r.school.year).catch(() => null)
-    for (const i of s?.items.filter((x) => x.kind === 'central_content').slice(0, 8) ?? [])
+  const fallback = fk ? FK_CURRICULUM : r.subjectCode
+  if (!hits.length && fallback) {
+    const s = await subject(db, fallback, fk ? undefined : r.school.year).catch(() => null)
+    const kinds = fk ? ['central_content', 'goal'] : ['central_content']
+    for (const i of s?.items.filter((x) => kinds.includes(x.kind)).slice(0, 8) ?? [])
       add(
         {
           source: 'skolverket',
@@ -195,7 +251,27 @@ export async function offerCurriculum(
   return { offered: offered.slice(0, 10), refs }
 }
 
-export function promptInputFor(p: Prepared, offered: OfferedRef[]): PromptInput {
+/** The learner's existing skill tags in this subject, so the model reuses them. */
+export async function knownSkills(db: Db, learnerId: string, subjectCode?: string): Promise<string[]> {
+  const rows = await db
+    .selectDistinct({ skill: skillEvidence.skill })
+    .from(skillEvidence)
+    .where(
+      and(eq(skillEvidence.learnerId, learnerId), subjectCode ? eq(skillEvidence.subjectCode, subjectCode) : undefined),
+    )
+    .limit(40)
+    .catch(() => [])
+  return rows.map((r) => r.skill)
+}
+
+/** Material that fits the prompt, chosen by relevance to the request. */
+export function materialFor(p: Prepared): MaterialSelection | undefined {
+  const r = p.request
+  if (!p.material) return undefined
+  return selectMaterial(p.material, [r.topic, r.instructions, r.skills?.join(' ')].filter(Boolean).join(' '))
+}
+
+export function promptInputFor(p: Prepared, offered: OfferedRef[], knownSkillTags?: string[]): PromptInput {
   const r = p.request
   return {
     type: r.type,
@@ -216,6 +292,7 @@ export function promptInputFor(p: Prepared, offered: OfferedRef[]): PromptInput 
     durationMinutes: r.durationMinutes,
     includeImages: r.includeImages,
     skills: r.skills,
+    knownSkills: knownSkillTags,
     research: p.research && {
       ...p.research.brief,
       sources: p.research.sources.map((s) =>
@@ -274,15 +351,18 @@ export async function generateArtifact(
   const cur = strict
     ? { offered: [], refs: new Map<string, CurriculumRef>() }
     : await offerCurriculum(deps.db, r, p.material)
-  const system = buildSystemPrompt(promptInputFor(p, cur.offered))
+  const sel = materialFor(p)
+  const skillTags = await knownSkills(deps.db, base.learnerId, r.subjectCode)
+  const system = buildSystemPrompt(promptInputFor({ ...p, material: sel?.material }, cur.offered, skillTags))
   const itemCtx = itemContext(p, cur.refs)
   let model: string | undefined
-  const call = async <T>(schema: z.ZodType<T>, schemaName: string, task: string): Promise<T> => {
+  const call = async <T>(schema: z.ZodType<T>, schemaName: string, task: string, maxTokens: number): Promise<T> => {
     const res = await deps.text.generate({
       system,
       messages: [{ role: 'user', content: task }],
       schema,
       schemaName,
+      maxTokens,
       signal: deps.signal,
     })
     model = res.model
@@ -291,19 +371,21 @@ export async function generateArtifact(
 
   const slots = blueprint(r)
   const textSlots = slots.filter((s) => s.words)
+  const textsSchema = z.object({
+    title: z.string().min(1).max(200),
+    bodies: z.array(z.string().min(1).max(12000)).min(textSlots.length).max(textSlots.length),
+  })
+  const textTask = textsTask({ type: r.type, sections: textSlots.map((s) => ({ kind: s.kind, words: s.words! })) })
+  const textTokens = 600 + TEXT_TOKENS_PER_WORD * textSlots.reduce((n, s) => n + s.words!, 0)
   let title: string | undefined
   const bodies: string[] = []
   if (textSlots.length) {
     await deps.progress?.(0.1, 'Skriver texterna')
     const out = await call(
-      z.object({
-        title: z.string().min(1).max(200),
-        bodies: z.array(z.string().min(1).max(12000)).min(textSlots.length).max(textSlots.length),
-      }),
+      textsSchema,
       'artifact_texts',
-      [textsTask({ type: r.type, sections: textSlots.map((s) => ({ kind: s.kind, words: s.words! })) }), p.extraContext]
-        .filter(Boolean)
-        .join('\n\n'),
+      [textTask, p.extraContext].filter(Boolean).join('\n\n'),
+      textTokens,
     )
     title = out.title
     bodies.push(...out.bodies)
@@ -331,9 +413,18 @@ export async function generateArtifact(
       const out = await call(
         genItemsSchema(r.itemKinds, count),
         'artifact_items',
-        itemsTask({ count, kinds: r.itemKinds, sectionTitle: slot.title, context, avoid: prompts.slice(-30) }),
+        itemsTask({
+          count,
+          kinds: r.itemKinds,
+          sectionTitle: slot.title,
+          context,
+          avoid: prompts.slice(-30),
+          ramp: slot.ramp,
+          quota: slot.quota,
+        }),
+        400 + ITEM_TOKENS * count,
       )
-      title ??= out.title
+      title ??= out.title ?? undefined
       for (const g of out.items) {
         const { item, illustration } = toItem(g, `i${nextId++}`, itemCtx)
         section.items.push(item)
@@ -366,24 +457,50 @@ export async function generateArtifact(
   let report = await check(deps, artifact, vctx)
   let repaired = false
   const errors = report.issues.filter((i) => i.severity === 'error')
-  const failing = new Set(errors.map((e) => e.itemId))
-  if (errors.length && !failing.has(undefined)) {
-    // One targeted regeneration of the failing items only.
+  // Item errors are repaired per item; safety problems in titles/bodies (no itemId) by rewriting the texts.
+  const textErrors = errors.filter((e) => !e.itemId && e.code.startsWith('safety.'))
+  const unrepairable = errors.some((e) => !e.itemId && !e.code.startsWith('safety.'))
+  if (errors.length && !unrepairable) {
     repaired = true
     await deps.progress?.(0.9, 'Förbättrar uppgifter')
+    if (textErrors.length) {
+      if (textSlots.length) {
+        const out = await call(
+          textsSchema,
+          'artifact_texts',
+          [
+            textRepairTask(textErrors.map((e) => e.message)),
+            textTask,
+            `Underkända texter:\n${JSON.stringify({ title: artifact.title, bodies })}`,
+          ].join('\n\n'),
+          textTokens,
+        )
+        let n = 0
+        artifact = {
+          ...artifact,
+          title: out.title.slice(0, 200),
+          sections: artifact.sections.map((s, i) => (slots[i]!.words ? { ...s, body: out.bodies[n++] } : s)),
+        }
+      } else artifact = { ...artifact, title: (r.topic ?? 'Material').slice(0, 200) }
+    }
+    const failing = new Set(errors.flatMap((e) => (e.itemId ? [e.itemId] : [])))
     const bad = allItems(artifact).filter((i) => failing.has(i.id))
-    const kinds = [...new Set(bad.map((i) => i.kind))]
-    const out = await call(
-      genItemsSchema(kinds, bad.length),
-      'artifact_items',
-      repairTask(
-        errors.map((e) => `${e.itemId}: ${e.message}`),
-        bad.map(describeItem),
-      ),
-    )
-    const replacement = new Map<string, { item: Item; illustration?: IllustrationRequest }>(
-      bad.map((b, n) => [b.id, toItem(out.items[n] as GenItem, b.id, itemCtx)]),
-    )
+    const replacement = new Map<string, { item: Item; illustration?: IllustrationRequest }>()
+    // One call per kind: replacements are matched by kind and order within the kind, never across kinds.
+    for (const kind of [...new Set(bad.map((i) => i.kind))]) {
+      const group = bad.filter((i) => i.kind === kind)
+      const ids = new Set(group.map((i) => i.id))
+      const out = await call(
+        genItemsSchema([kind], group.length),
+        'artifact_items',
+        repairTask(
+          errors.filter((e) => ids.has(e.itemId!)).map((e) => `${e.itemId}: ${e.message}`),
+          group.map((b) => ({ id: b.id, ...describeItem(b) })),
+        ),
+        400 + ITEM_TOKENS * group.length,
+      )
+      group.forEach((b, n) => replacement.set(b.id, toItem(out.items[n]!, b.id, itemCtx)))
+    }
     artifact = {
       ...artifact,
       sections: artifact.sections.map((s) => ({
@@ -398,7 +515,14 @@ export async function generateArtifact(
     }
     report = await check(deps, artifact, vctx)
   }
-  return { artifact: { ...artifact, validation: report }, ok: report.ok, illustrations, model, repaired }
+  return {
+    artifact: { ...artifact, validation: report },
+    ok: report.ok,
+    illustrations,
+    model,
+    repaired,
+    truncated: sel?.truncated,
+  }
 }
 
 /** Generate one replacement item of the same kind (artifact.regenerateItem). */
@@ -416,7 +540,13 @@ export async function regenerateItem(
   const old = allItems(artifact).find((i) => i.id === itemId)
   if (!old) throw new Error('item missing')
   const res = await deps.text.generate({
-    system: buildSystemPrompt(promptInputFor(p, cur.offered)),
+    system: buildSystemPrompt(
+      promptInputFor(
+        { ...p, material: materialFor(p)?.material },
+        cur.offered,
+        await knownSkills(deps.db, artifact.learnerId, r.subjectCode),
+      ),
+    ),
     messages: [
       {
         role: 'user',
@@ -430,6 +560,7 @@ export async function regenerateItem(
     ],
     schema: genItemsSchema([old.kind], 1),
     schemaName: 'artifact_items',
+    maxTokens: 400 + ITEM_TOKENS,
     signal: deps.signal,
   })
   const { item, illustration } = toItem(res.output.items[0]!, itemId, itemContext(p, cur.refs))

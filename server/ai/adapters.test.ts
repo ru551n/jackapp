@@ -142,11 +142,118 @@ describe('OpenAI', () => {
   })
 })
 
+describe('OpenAI strict schemas and reasoning models', () => {
+  const sent = async (schema: z.ZodType) => {
+    const ai = await aiWith(openai, () => ({ json: chatCompletion('{}') }))
+    await caught(ai.text!.generate({ ...ask, schema, schemaName: 's' }))
+    return server!.requests[0]!.body.response_format.json_schema
+  }
+  const keywords = (s: unknown): string[] =>
+    !s || typeof s !== 'object'
+      ? []
+      : Array.isArray(s)
+        ? s.flatMap(keywords)
+        : Object.entries(s).flatMap(([k, v]) => [k, ...keywords(v)])
+  const BANNED = ['minLength', 'maxLength', 'minItems', 'maxItems', 'minimum', 'maximum', 'oneOf', 'pattern', 'default']
+
+  it.each([
+    [
+      'artifact_texts',
+      z.object({ title: z.string().min(1).max(200), bodies: z.array(z.string().min(1).max(12000)).min(2).max(2) }),
+    ],
+    [
+      'study_material',
+      z.object({
+        language: z.string().min(2).max(5),
+        subjectCode: z.string().nullable(),
+        topic: z.string().min(1).max(200),
+        concepts: z.array(z.string().min(1).max(120)).max(60),
+        curriculumRefs: z.array(z.number().int().min(0)).max(20),
+      }),
+    ],
+    [
+      'free_text_assessment',
+      z.object({
+        keyPointsMet: z.array(z.number().int().min(0)).max(8),
+        feedback: z.string().min(1).max(300),
+        score: z.number().min(0).max(1),
+      }),
+    ],
+    [
+      'research_brief',
+      z
+        .object({
+          summary: z.string().min(1).max(1500),
+          keyPoints: z
+            .array(
+              z.object({ text: z.string().min(1).max(300), sources: z.array(z.number().int().min(1)).min(1) }).strict(),
+            )
+            .min(1)
+            .max(10),
+        })
+        .strict(),
+    ],
+    ['factual_review', z.object({ flags: z.array(z.object({ itemId: z.string(), problem: z.string() })).max(60) })],
+    [
+      'discriminated union',
+      z.object({
+        items: z.array(
+          z.discriminatedUnion('kind', [
+            z.object({ kind: z.literal('a'), x: z.string().max(5) }),
+            z.object({ kind: z.literal('b'), y: z.number().min(0) }),
+          ]),
+        ),
+      }),
+    ],
+  ])('%s is sent strict with only supported keywords', async (_name, schema) => {
+    const js = await sent(schema)
+    expect(js.strict).toBe(true)
+    const used = keywords(js.schema)
+    for (const k of BANNED) expect(used).not.toContain(k)
+  })
+
+  it('keeps optional-field schemas non-strict and untouched', async () => {
+    const js = await sent(z.object({ a: z.string().min(1), b: z.string().optional() }))
+    expect(js.strict).toBe(false)
+    expect(js.schema.properties.a.minLength).toBe(1)
+  })
+
+  it('retries without temperature once and remembers it', async () => {
+    const ai = await aiWith(openai, (r) =>
+      'temperature' in r.body
+        ? {
+            status: 400,
+            json: {
+              error: { message: "Unsupported value: 'temperature'", param: 'temperature', code: 'unsupported_value' },
+            },
+          }
+        : { json: chatCompletion('ok') },
+    )
+    expect((await ai.text!.generate({ ...ask, temperature: 0 })).output).toBe('ok')
+    expect((await ai.text!.generate({ ...ask, temperature: 0 })).output).toBe('ok')
+    expect(server!.requests.map((r) => 'temperature' in r.body)).toEqual([true, false, false])
+  })
+
+  it('treats finish_reason length as truncation and retries once with a doubled limit', async () => {
+    const truncated = { json: { choices: [{ message: { content: '{"quest' }, finish_reason: 'length' }] } }
+    const ai = await aiWith(openai, (_r, n) =>
+      n === 0 || n >= 2 ? truncated : { json: chatCompletion('{"question":"q","answer":1}') },
+    )
+    expect((await ai.text!.generate({ ...ask, schema: Exercise, maxTokens: 500 })).output.answer).toBe(1)
+    expect(server!.requests.map((r) => r.body.max_completion_tokens)).toEqual([500, 1000])
+    const e = await caught(ai.text!.generate({ ...ask, schema: Exercise, maxTokens: 500 }))
+    expect(e).toMatchObject({ code: 'ai_invalid_output', truncated: true })
+    // No repair round with the same limit: exactly one doubled retry.
+    expect(server!.requests.slice(2).map((r) => r.body.max_completion_tokens)).toEqual([500, 1000])
+  })
+})
+
 describe('OpenAI-compatible', () => {
   it('falls back json_schema → json_object → prompt and remembers it', async () => {
+    const unsupported = { status: 400, json: { error: { message: "'response_format' is not supported" } } }
     const ai = await aiWith(compat, (r) =>
       r.body.response_format
-        ? { status: 400 }
+        ? unsupported
         : { json: chatCompletion('Här:\n```json\n{"question":"q","answer":1}\n```') },
     )
     expect((await ai.text!.generate({ ...ask, schema: Exercise })).output).toEqual({ question: 'q', answer: 1 })
@@ -156,6 +263,17 @@ describe('OpenAI-compatible', () => {
     expect(server!.requests[2]!.headers.authorization).toBeUndefined()
     await ai.text!.generate({ ...ask, schema: Exercise })
     expect(server!.requests).toHaveLength(4)
+  })
+
+  it('does not downgrade on a 400 unrelated to response_format', async () => {
+    const ai = await aiWith(compat, (_r, n) =>
+      n === 0
+        ? { status: 400, json: { error: { code: 'context_length_exceeded', message: 'too long' } } }
+        : { json: chatCompletion('{"question":"q","answer":1}') },
+    )
+    expect((await caught(ai.text!.generate({ ...ask, schema: Exercise }))).code).toBe('ai_config')
+    await ai.text!.generate({ ...ask, schema: Exercise })
+    expect(server!.requests.map((r) => r.body.response_format?.type)).toEqual(['json_schema', 'json_schema'])
   })
 
   it('honours an explicit structured mode', async () => {
@@ -212,6 +330,46 @@ describe('Anthropic', () => {
     expect(server!.requests[0]!.path).toBe('/v1/messages')
     const e = await caught(ai.vision!.generate({ ...ask, images: [{ data: MOCK_PNG, mimeType: 'image/png' }] }))
     expect(e.code).toBe('ai_refused')
+  })
+})
+
+describe('Anthropic errors and limits', () => {
+  it.each([
+    [401, { type: 'error', error: { type: 'authentication_error', message: 'x' } }, 'ai_auth', false],
+    [429, { type: 'error', error: { type: 'rate_limit_error', message: 'slow down' } }, 'ai_rate_limited', true],
+    [529, { type: 'error', error: { type: 'overloaded_error', message: 'Overloaded' } }, 'ai_unavailable', true],
+    [
+      400,
+      { type: 'error', error: { type: 'invalid_request_error', message: 'Your credit balance is too low' } },
+      'ai_config',
+      false,
+    ],
+  ])('HTTP %i is classified', async (status, json, code, retryable) => {
+    const ai = await aiWith(anthropic, () => ({ status, json }))
+    const e = await caught(ai.text!.generate(ask))
+    expect(e).toMatchObject({ code, retryable })
+    if (status === 400) expect(e.message).toMatch(/krediter/)
+  })
+
+  it('returns text without a schema and sends no tools', async () => {
+    const ai = await aiWith(anthropic, () => ({
+      json: { content: [{ type: 'text', text: 'Hej!' }], usage: { input_tokens: 1, output_tokens: 1 } },
+    }))
+    expect((await ai.text!.generate(ask)).output).toBe('Hej!')
+    expect(server!.requests[0]!.body.tools).toBeUndefined()
+    expect(server!.requests[0]!.body.max_tokens).toBe(4096)
+  })
+
+  it('passes maxTokens through and retries max_tokens truncation with a doubled limit', async () => {
+    const ai = await aiWith(anthropic, (_r, n) => ({
+      json: {
+        stop_reason: n === 0 ? 'max_tokens' : 'tool_use',
+        content: [{ type: 'tool_use', id: 't', name: 'r', input: n === 0 ? {} : { question: 'q', answer: 1 } }],
+        usage: { input_tokens: 1, output_tokens: 1 },
+      },
+    }))
+    await ai.text!.generate({ ...ask, schema: Exercise, maxTokens: 6000 })
+    expect(server!.requests.map((r) => r.body.max_tokens)).toEqual([6000, 12000])
   })
 })
 

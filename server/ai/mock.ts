@@ -25,7 +25,10 @@ export function sample(s: any): unknown {
   if (!s || typeof s !== 'object') return null
   if ('const' in s) return s.const
   if (s.enum) return s.enum[0]
-  if (s.anyOf ?? s.oneOf) return sample((s.anyOf ?? s.oneOf)[0])
+  // Nullable (model-facing optional) fields: the minimal value is null.
+  if (Array.isArray(s.type) && s.type.includes('null')) return null
+  const alts = s.anyOf ?? s.oneOf
+  if (alts) return alts.some((a: any) => a?.type === 'null') ? null : sample(alts[0])
   const type = Array.isArray(s.type) ? s.type[0] : s.type
   switch (type) {
     case 'object':

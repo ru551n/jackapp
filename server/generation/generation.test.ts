@@ -15,12 +15,24 @@ import type { Db } from '../db/client'
 import { artifactVersions, learners, studySets } from '../db/schema'
 import { claim, JobFailure, type JobHandler, type JobTools } from '../jobs'
 import { asAdult, createTestApp, seedLearner } from '../test/helpers'
-import { blueprint, generateArtifact } from './engine'
-import { itemSkills } from './items'
+import { toProviderSchema } from '../ai/structured'
+import { isStrictCompatible, toStrictSchema } from '../ai/openai'
+import { jobsServices } from '../jobs'
+import { targetLanguage } from '../validation/subjects'
+import { blueprint, generateArtifact, offerCurriculum } from './engine'
+import { fallbackSkill, genItemsSchema, ITEM_KINDS, itemSkills, normalizeSkill, toItem } from './items'
 import { generationJobHandlers } from './jobs'
-import { buildSystemPrompt, PROMPT_VERSION, type PromptInput } from './prompts'
+import {
+  buildSystemPrompt,
+  itemsTask,
+  languageBlock,
+  PROMPT_VERSION,
+  safetyBlock,
+  selectMaterial,
+  type PromptInput,
+} from './prompts'
 import { clampInterpretation, resolveRequest } from './request'
-import { loadArtifact } from './store'
+import { loadArtifact, setApproval } from './store'
 import { forLearner, requestedIllustrations } from './view'
 
 const silentLog = { info() {}, warn() {} }
@@ -68,7 +80,8 @@ const kindsOf = (req: ChatRequest): string[] => {
 }
 
 interface Script {
-  interpret?: Record<string, unknown>
+  interpret?: Record<string, unknown> | 'broken'
+  texts?: (call: number, req: ChatRequest) => { title: string; bodies: string[] } | undefined
   item?: (kind: string, n: number, req: ChatRequest) => Record<string, unknown>
 }
 
@@ -77,6 +90,7 @@ function scriptedAi(db: Db, s: Script = {}) {
   const calls: ChatRequest[] = []
   const vision = vi.fn(() => ({}))
   let n = 0
+  let textCall = 0
   const ai = createAi(
     { AI_TEXT_PROVIDER: 'mock', AI_VISION_PROVIDER: 'mock', LIMIT_AI_REQUESTS_PER_HOUR: '10000' },
     {
@@ -89,17 +103,19 @@ function scriptedAi(db: Db, s: Script = {}) {
           const js = req.json!.jsonSchema as any
           switch (req.json!.name) {
             case 'request_fields':
-              return s.interpret ?? {}
+              return s.interpret === 'broken' ? 'inte json' : (s.interpret ?? {})
             case 'research_brief':
               return {
                 summary: 'Vulkaner bildas där magma tränger upp genom jordskorpan.',
                 keyPoints: [{ text: 'Island har många aktiva vulkaner.', sources: [1] }],
               }
             case 'artifact_texts':
-              return {
-                title: 'Vulkaner',
-                bodies: Array.from({ length: js.properties.bodies.minItems }, (_, i) => `Text ${i + 1}`),
-              }
+              return (
+                s.texts?.(textCall++, req) ?? {
+                  title: 'Vulkaner',
+                  bodies: Array.from({ length: js.properties.bodies.minItems }, (_, i) => `Text ${i + 1}`),
+                }
+              )
             default: {
               const kinds = kindsOf(req)
               return {
@@ -150,6 +166,7 @@ async function setup(profile: Partial<LearnerProfileInput> = {}) {
   const t = await createTestApp()
   close = t.close
   const l = await seedLearner(t.db)
+  await t.db.insert(studySets).values({ id: SET_ID, learnerId: l.id, title: 'Vulkaner', status: 'ready' })
   if (Object.keys(profile).length)
     await t.db
       .update(learners)
@@ -397,7 +414,7 @@ describe('strict mode and the validation-failure path', () => {
   it('fails at once (no retries) when the study set failed processing', async () => {
     const t = await setup()
     const { ai } = scriptedAi(t.db, {})
-    await t.db.insert(studySets).values({ id: SET_ID, learnerId: t.learnerId, title: 'X', status: 'failed' })
+    await t.db.update(studySets).set({ status: 'failed' }).where(eq(studySets.id, SET_ID))
     await post(t, `/learners/${t.learnerId}/generate`, { type: 'exercises', sourceMode: 'strict', studySetId: SET_ID })
     const { error } = await runNext(
       t.db,
@@ -445,7 +462,10 @@ describe('strict mode and the validation-failure path', () => {
     const { error } = await runNext(t.db, generationJobHandlers({ ai, loadMaterial }), 'artifact.generate')
     expect(error).toMatchObject({ code: 'validation_failed', retryable: false })
     expect(error!.adultMessage).toMatch(/utkast/)
-    expect(calls.filter((c) => c.messages[0]!.content.includes('underkändes'))).toHaveLength(1)
+    // One repair round: one call per failing item kind, each kind once.
+    const repairKinds = calls.filter((c) => c.messages[0]!.content.includes('underkändes')).map(kindsOf)
+    expect(repairKinds.length).toBeGreaterThan(0)
+    expect(new Set(repairKinds.flat()).size).toBe(repairKinds.length)
     const list = await t.app.inject({ url: `/api/v1/learners/${t.learnerId}/artifacts`, headers: asAdult })
     expect(list.json()).toHaveLength(1)
     const a = (await loadArtifact(t.db, list.json()[0].id))!.artifact
@@ -762,5 +782,392 @@ describe('web research (useWebResearch)', () => {
     await post(t, `/learners/${t.learnerId}/generate`, { ...body, sourceMode: 'strict', studySetId: SET_ID })
     await runNext(t.db, h, 'artifact.generate')
     expect(strict.search).not.toHaveBeenCalled()
+  })
+})
+
+describe('model-facing schemas and items', () => {
+  it('item schemas are OpenAI strict compatible (nullable + required, anyOf)', () => {
+    for (const kinds of [['multipleChoice'], ITEM_KINDS] as const) {
+      const { jsonSchema } = toProviderSchema(genItemsSchema(kinds, 3))
+      const strict = toStrictSchema(jsonSchema)
+      expect(isStrictCompatible(strict)).toBe(true)
+      expect(JSON.stringify(strict)).not.toMatch(/"oneOf"|"minLength"|"default"/)
+    }
+    const parsed = genItemsSchema(['trueFalse'], 1).parse({
+      items: [{ kind: 'trueFalse', prompt: 'P', difficulty: 2, skills: ['a.b'], answer: true }],
+    })
+    expect(parsed.title).toBeNull()
+    const { item } = toItem(parsed.items[0]!, 'i1', { curriculum: new Map(), maxChoices: 4, includeHints: true })
+    expect(item).not.toHaveProperty('explanation', null)
+    expect(item.lang).toBe('sv')
+  })
+
+  it('multiSelect keeps a wrong option; becomes multiple choice when maxChoices is too small', () => {
+    const ctx = (maxChoices: number) => ({ curriculum: new Map(), maxChoices, includeHints: true })
+    const g = {
+      kind: 'multiSelect' as const,
+      prompt: 'Vilka är jämna?',
+      difficulty: 2,
+      skills: ['math.even'],
+      choices: ['2', '4', '5', '7'],
+      correctIndexes: [0, 1],
+    }
+    const three = toItem(g, 'i1', ctx(3)).item
+    expect(three.kind).toBe('multiSelect')
+    if (three.kind !== 'multiSelect') throw new Error('kind')
+    expect(three.choices.map((c) => c.text)).toEqual(['2', '4', '5'])
+    const two = toItem(g, 'i1', ctx(2)).item
+    expect(two.kind).toBe('multipleChoice')
+    if (two.kind !== 'multipleChoice') throw new Error('kind')
+    expect(two.choices.map((c) => c.text)).toEqual(['2', '5'])
+    expect(two.choices.find((c) => c.id === two.answer)!.text).toBe('2')
+  })
+
+  it('normalizes skill tags and falls back to a subject-derived tag', () => {
+    expect(normalizeSkill('Math.Multiplication Tables')).toBe('math.multiplication-tables')
+    expect(normalizeSkill('Svenska.Läsförståelse')).toBe('svenska.lasforstaelse')
+    expect(normalizeSkill('multiplikation')).toBeUndefined()
+    expect(itemSkills(['Multiplikation!'], undefined, 'mat.multiplikation')).toEqual(['mat.multiplikation'])
+    expect(fallbackSkill('GRGRMAT01', 'Multiplikation 6–9')).toBe('mat.multiplikation-6-9')
+    expect(fallbackSkill(undefined, undefined)).toBe('allmant.allmant')
+  })
+})
+
+describe('prompt safety, languages and material selection', () => {
+  it('safety rules depend on age band and subject', () => {
+    expect(safetyBlock('early')).toMatch(/Inget våld, inga vapen/)
+    expect(safetyBlock('middle', 'GRGRMAT01')).toMatch(/Inget våld/)
+    for (const [band, code] of [
+      ['middle', 'GRGRHIS01'],
+      ['upper', 'MAT'],
+    ] as const) {
+      const b = safetyBlock(band, code)
+      expect(b).toContain('Historiska konflikter, krig och död')
+      expect(b).toContain('sakligt och åldersanpassat, utan detaljerat våld')
+      expect(b).not.toMatch(/Inget våld/)
+    }
+    expect(safetyBlock('upper')).toMatch(/stridsflygplan behandlas bara som teknik/)
+  })
+
+  it('language subjects: modern languages and English are target languages, Modersmål is not', () => {
+    expect(targetLanguage('GRGRMSP01')).toBe('foreign')
+    expect(targetLanguage('MODY')).toBe('foreign')
+    expect(targetLanguage('GRGRENG01')).toBe('en')
+    expect(targetLanguage('GRGRMOD01')).toBeUndefined()
+    expect(targetLanguage('MODE')).toBeUndefined()
+    expect(targetLanguage('SAM')).toBeUndefined()
+    expect(languageBlock('GRGRMSP01', undefined)).toMatch(/språkämne/)
+    expect(languageBlock('GRGRMOD01', undefined)).not.toMatch(/språkämne/)
+  })
+
+  const big: ProcessedStudyMaterial = {
+    ...material,
+    segments: Array.from({ length: 60 }, (_, i) => ({
+      id: `p${i + 1}`,
+      page: i + 1,
+      kind: 'text' as const,
+      text: (i === 41 ? 'Fotosyntes gör socker av ljus. ' : 'Magma och lava i vulkaner. ').repeat(20),
+      confidence: 'high' as const,
+    })),
+  }
+
+  it('selects relevant segments when the material is too large, and honours a page range', () => {
+    expect(selectMaterial(material, 'vulkaner')).toEqual({ material })
+    const sel = selectMaterial(big, 'fotosyntes')
+    expect(sel.material.segments.map((s) => s.id)).toContain('p42')
+    expect(sel.truncated).toMatchObject({ segmentsTotal: 60 })
+    expect(sel.truncated!.pagesUsed).toContain(42)
+    const ranged = selectMaterial(big, 'Öva på sidorna 10-12')
+    expect(ranged.truncated).toMatchObject({ pagesUsed: [10, 11, 12], pageRange: [10, 12] })
+  })
+
+  it('records truncation on the version and shows it in the adult view', async () => {
+    const t = await setup()
+    const { ai, calls } = scriptedAi(t.db, { item: (k, n) => fakeItem(k, n, { sourceSegmentIds: ['p42'] }) })
+    await post(t, `/learners/${t.learnerId}/generate`, {
+      type: 'exercises',
+      studySetId: SET_ID,
+      topic: 'fotosyntes',
+      questionCount: 1,
+      itemKinds: ['trueFalse'],
+    })
+    const { resultId } = await runNext(
+      t.db,
+      generationJobHandlers({ ai, loadMaterial: async () => big }),
+      'artifact.generate',
+    )
+    expect(calls.at(-1)!.system).toContain('[p42]')
+    const adult = await t.app.inject({ url: `/api/v1/artifacts/${resultId}`, headers: asAdult })
+    expect(adult.json().materialTruncated).toMatchObject({ segmentsTotal: 60 })
+    expect(adult.json().materialTruncated.pagesUsed).toContain(42)
+  })
+
+  it('förskoleklass gets its own curriculum chapter', async () => {
+    const t = await setup({ school: { stage: 'forskoleklass', year: 0 } })
+    await syncBundledCurriculum(t.db)
+    const r = resolveRequest(
+      GenerationRequest.parse({ learnerId: t.learnerId, type: 'exercises', subjectCode: 'GRGRMAT01', topic: 'xyzzy' }),
+      ['type', 'subjectCode', 'topic'],
+      {},
+      LearnerProfileInput.parse({ displayName: 'A', school: { stage: 'forskoleklass', year: 0 } }),
+    )
+    const { offered } = await offerCurriculum(t.db, r)
+    expect(offered.length).toBeGreaterThan(0)
+    expect(offered[0]!.subjectName).toBe('Förskoleklass')
+  }, 120_000)
+})
+
+describe('practice tests, repair and recovery', () => {
+  const profile = LearnerProfileInput.parse({ displayName: 'Jack', school: { stage: 'grundskola', year: 5 } })
+  const resolved = (type: ArtifactType, extra: Partial<GenerationRequest> = {}) =>
+    resolveRequest(
+      GenerationRequest.parse({ learnerId: crypto.randomUUID(), type, ...extra }),
+      Object.keys(extra),
+      {},
+      profile,
+    )
+
+  it('practice tests ramp difficulty and spread item kinds', () => {
+    const slots = blueprint(
+      resolved('practiceTest', { questionCount: 20, difficulty: 3, itemKinds: ['multipleChoice', 'numeric'] }),
+    )
+    expect(slots.map((s) => s.ramp)).toEqual([
+      [2, 3],
+      [3, 4],
+    ])
+    expect(slots[0]!.quota).toEqual({ multipleChoice: 5, numeric: 5 })
+    const task = itemsTask({ count: 10, kinds: ['multipleChoice', 'numeric'], ramp: [2, 3], quota: slots[0]!.quota })
+    expect(task).toContain('första uppgiften difficulty 2, sista 3')
+    expect(task).toMatch(/5 st flerval, 5 st numeriskt svar/)
+  })
+
+  it('early learners never get free text outside writing tasks', () => {
+    const early = LearnerProfileInput.parse({ displayName: 'A', school: { stage: 'grundskola', year: 1 } })
+    const r = resolveRequest(
+      GenerationRequest.parse({
+        learnerId: crypto.randomUUID(),
+        type: 'exercises',
+        itemKinds: ['freeText', 'numeric'],
+      }),
+      ['type', 'itemKinds'],
+      {},
+      early,
+    )
+    expect(r.itemKinds).toEqual(['numeric'])
+  })
+
+  it('rewrites texts once when a body breaks the safety rules (no instant failure)', async () => {
+    const t = await setup()
+    const { ai, calls } = scriptedAi(t.db, {
+      texts: (n, req) => ({
+        title: 'Vulkaner',
+        bodies: Array.from({ length: (req.json!.jsonSchema as any).properties.bodies.minItems }, () =>
+          n === 0 ? 'Vulkanen dödar alla.' : 'Vulkaner sprutar lava.',
+        ),
+      }),
+    })
+    const g = await generateArtifact(
+      { db: t.db, text: ai.text! },
+      { request: resolved('explanation', { questionCount: 1 }), profile },
+      { id: crypto.randomUUID(), learnerId: t.learnerId, createdBy: 'adult', version: 1 },
+    )
+    expect(g.repaired).toBe(true)
+    expect(g.ok).toBe(true)
+    expect(calls.filter((c) => c.json!.name === 'artifact_texts')).toHaveLength(2)
+    expect(g.artifact.sections[0]!.body).toBe('Vulkaner sprutar lava.')
+  })
+
+  it('repairs per item kind, never matching replacements across kinds', async () => {
+    const t = await setup()
+    let repairing = false
+    const { ai, calls } = scriptedAi(t.db, {
+      item: (k, n, req) => {
+        repairing = req.messages[0]!.content.includes('underkändes')
+        return fakeItem(k, n, repairing ? { prompt: `Ny ${k}` } : { prompt: 'Ett vapen.' })
+      },
+    })
+    const g = await generateArtifact(
+      { db: t.db, text: ai.text! },
+      { request: resolved('exercises', { questionCount: 2, itemKinds: ['trueFalse', 'flashcard'] }), profile },
+      { id: crypto.randomUUID(), learnerId: t.learnerId, createdBy: 'adult', version: 1 },
+    )
+    const repairs = calls.filter((c) => c.messages[0]!.content.includes('underkändes'))
+    expect(repairs.map(kindsOf)).toEqual([['trueFalse'], ['flashcard']])
+    expect(g.artifact.sections[0]!.items.map((i) => [i.kind, i.prompt])).toEqual([
+      ['trueFalse', 'Ny trueFalse'],
+      ['flashcard', 'Ny flashcard'],
+    ])
+    expect(g.ok).toBe(true)
+  })
+
+  it('a failed interpretation falls back to explicit fields and the profile', async () => {
+    const t = await setup()
+    const { ai } = scriptedAi(t.db, { interpret: 'broken' })
+    await post(t, `/learners/${t.learnerId}/generate`, { instructions: 'Något om tåg', questionCount: 2 })
+    const { resultId, error } = await runNext(t.db, generationJobHandlers({ ai }), 'artifact.generate')
+    expect(error).toBeUndefined()
+    expect((await loadArtifact(t.db, resultId!))!.artifact.sections.flatMap((s) => s.items)).toHaveLength(2)
+  })
+
+  it('a retried generate job reuses the artifact of the earlier attempt', async () => {
+    const t = await setup()
+    const { ai, calls } = scriptedAi(t.db)
+    const handlers = generationJobHandlers({ ai })
+    await post(t, `/learners/${t.learnerId}/generate`, { type: 'flashcards', questionCount: 2 })
+    const job = (await claim(t.db, 'test', ['artifact.generate']))!
+    const tools: JobTools = {
+      db: t.db,
+      log: silentLog as never,
+      signal: new AbortController().signal,
+      progress: async () => {},
+      fail: (code, msg, retryable) => {
+        throw new JobFailure(code, msg, retryable)
+      },
+    }
+    const h = handlers.find((x) => x.type === 'artifact.generate')!
+    const first = await h.run(job, tools)
+    const before = calls.length
+    expect(await h.run(job, tools)).toBe(first)
+    expect(calls.length).toBe(before)
+    const list = await t.app.inject({ url: `/api/v1/learners/${t.learnerId}/artifacts`, headers: asAdult })
+    expect(list.json()).toHaveLength(1)
+  })
+})
+
+describe('learner access and learner-made requests', () => {
+  it('learners never see answers, also with immediate feedback; the view can be scoped to a learner', async () => {
+    const t = await setup()
+    const { ai } = scriptedAi(t.db)
+    await post(t, `/learners/${t.learnerId}/generate`, {
+      type: 'exercises',
+      questionCount: 2,
+      feedback: 'immediate',
+      itemKinds: ['multipleChoice', 'numeric'],
+    })
+    const { resultId } = await runNext(t.db, generationJobHandlers({ ai }), 'artifact.generate')
+    const url = `/api/v1/artifacts/${resultId}`
+    const r = await t.app.inject({ url })
+    expect(r.statusCode).toBe(200)
+    expect(JSON.stringify(r.json())).not.toMatch(/"answer"|"explanation"|"check"|"validation"/)
+    expect((await t.app.inject({ url: `${url}?learnerId=${t.learnerId}` })).statusCode).toBe(200)
+    const other = await seedLearner(t.db)
+    expect((await t.app.inject({ url: `${url}?learnerId=${other.id}` })).statusCode).toBe(404)
+  })
+
+  it("another learner's study set is 404 in the route and fails in the job", async () => {
+    const t = await setup()
+    const other = await seedLearner(t.db)
+    const OTHER_SET = '22222222-2222-4222-8222-222222222222'
+    await t.db.insert(studySets).values({ id: OTHER_SET, learnerId: other.id, title: 'Y', status: 'ready' })
+    const r = await post(t, `/learners/${t.learnerId}/generate`, { type: 'exercises', studySetId: OTHER_SET })
+    expect(r.statusCode).toBe(404)
+    // A payload enqueued some other way is checked again by the job.
+    const { ai } = scriptedAi(t.db)
+    await jobsServices({ db: t.db } as never).enqueue({
+      type: 'artifact.generate',
+      payload: {
+        request: { learnerId: t.learnerId, type: 'exercises', studySetId: OTHER_SET },
+        explicit: [],
+        createdBy: 'adult',
+      },
+      learnerId: t.learnerId,
+    })
+    const { error } = await runNext(
+      t.db,
+      generationJobHandlers({ ai, loadMaterial: async () => material }),
+      'artifact.generate',
+    )
+    expect(error).toMatchObject({ code: 'not_found', retryable: false })
+  })
+
+  it('learner requests drop adult-only fields, cap the count, wait for approval and have a daily cap', async () => {
+    const t = await setup({ generation: { approval: 'immediate', learnerRequestsAllowed: true } })
+    const r = await post(
+      t,
+      `/learners/${t.learnerId}/generate`,
+      {
+        type: 'exercises',
+        questionCount: 50,
+        useWebResearch: true,
+        includeImages: true,
+        school: { stage: 'gymnasieskola', year: 3 },
+        support: { maxChoices: 6 },
+      },
+      false,
+    )
+    expect(r.statusCode).toBe(202)
+    const job = await t.app.inject({ url: `/api/v1/jobs/${r.json().jobId}` })
+    expect(job.statusCode).toBe(200)
+    const { ai } = scriptedAi(t.db)
+    const { resultId } = await runNext(t.db, generationJobHandlers({ ai }), 'artifact.generate')
+    const a = (await loadArtifact(t.db, resultId!))!
+    expect(a.artifact.approval).toBe('pendingApproval')
+    expect(a.artifact.sections.flatMap((s) => s.items)).toHaveLength(20)
+    expect(a.row.request).toMatchObject({ useWebResearch: false, includeImages: false })
+    expect(a.artifact.school).toEqual({ stage: 'grundskola', year: 1 })
+
+    for (let i = 1; i < 20; i++) await post(t, `/learners/${t.learnerId}/generate`, { type: 'exercises' }, false)
+    const capped = await post(t, `/learners/${t.learnerId}/generate`, { type: 'exercises' }, false)
+    expect(capped.statusCode).toBe(429)
+    expect(capped.json().error.message).not.toMatch(/fel/i)
+    expect((await post(t, `/learners/${t.learnerId}/generate`, { type: 'exercises' })).statusCode).toBe(202)
+  })
+})
+
+describe('version races', () => {
+  async function made() {
+    const t = await setup({ generation: { approval: 'parent', learnerRequestsAllowed: true } })
+    const s = scriptedAi(t.db)
+    const handlers = generationJobHandlers({ ai: s.ai })
+    await post(t, `/learners/${t.learnerId}/generate`, {
+      type: 'exercises',
+      questionCount: 2,
+      itemKinds: ['multipleChoice'],
+    })
+    const { resultId } = await runNext(t.db, handlers, 'artifact.generate')
+    return { t, handlers, id: resultId! }
+  }
+  const patch = (t: { app: any }, id: string, payload: object) =>
+    t.app.inject({ method: 'PATCH', url: `/api/v1/artifacts/${id}`, payload, headers: asAdult })
+
+  it('PATCH and approve refuse a stale version (body field or If-Match)', async () => {
+    const { t, id } = await made()
+    expect((await patch(t, id, { title: 'A', version: 1 })).statusCode).toBe(200)
+    const stale = await patch(t, id, { title: 'B', version: 1 })
+    expect(stale.statusCode).toBe(409)
+    expect(stale.json().error.code).toBe('version_conflict')
+    expect((await post(t, `/artifacts/${id}/approve`, { version: 1 })).statusCode).toBe(409)
+    const ifMatch = await t.app.inject({
+      method: 'POST',
+      url: `/api/v1/artifacts/${id}/approve`,
+      headers: { ...asAdult, 'if-match': '"1"' },
+    })
+    expect(ifMatch.statusCode).toBe(409)
+    expect((await post(t, `/artifacts/${id}/approve`, { version: 2 })).json().approval).toBe('approved')
+  })
+
+  it('setApproval only applies to the version that is still current', async () => {
+    const { t, id } = await made()
+    expect(await setApproval(t.db, id, 'approved', 2)).toBe(false)
+    expect(await setApproval(t.db, id, 'approved', 1)).toBe(true)
+  })
+
+  it('an item regeneration that lost the race fails retryable instead of overwriting', async () => {
+    const { t, id } = await made()
+    await post(t, `/artifacts/${id}/items/i1/regenerate`, {})
+    const { ai } = scriptedAi(t.db)
+    // An adult edit lands while the model is working on the replacement.
+    const racing = {
+      text: {
+        generate: async (input: any) => {
+          expect((await patch(t, id, { title: 'Under tiden' })).statusCode).toBe(200)
+          return ai.text!.generate(input)
+        },
+      } as never,
+    }
+    const { error } = await runNext(t.db, generationJobHandlers({ ai: racing }), 'artifact.regenerateItem')
+    expect(error).toMatchObject({ code: 'version_conflict', retryable: true })
+    const a = (await loadArtifact(t.db, id))!.artifact
+    expect([a.title, a.version]).toEqual(['Under tiden', 2])
   })
 })

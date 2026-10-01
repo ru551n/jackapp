@@ -12,6 +12,9 @@ const headers = (c: ModelCapConfig): Record<string, string> => ({
   ...(c.apiKey ? { 'x-api-key': c.apiKey } : {}),
 })
 
+/** Used when the caller gives no maxTokens (Anthropic requires one). Callers scale it to the work. */
+export const ANTHROPIC_DEFAULT_MAX_TOKENS = 4096
+
 export function anthropicChat(c: ModelCapConfig): ChatFn {
   return async (req) => {
     const useTool = !!req.json && (req.json.mode === 'auto' || req.json.mode === 'json_schema')
@@ -20,7 +23,7 @@ export function anthropicChat(c: ModelCapConfig): ChatFn {
     const toolName = req.json?.name.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 64)
     const body: Record<string, unknown> = {
       model: c.model,
-      max_tokens: req.maxTokens ?? 4096,
+      max_tokens: req.maxTokens ?? ANTHROPIC_DEFAULT_MAX_TOKENS,
       messages: req.messages.map((m) => ({
         role: m.role,
         content: m.images?.length
@@ -47,6 +50,8 @@ export function anthropicChat(c: ModelCapConfig): ChatFn {
       signal: req.signal,
     })
     if (r?.stop_reason === 'refusal') throw new AiError('ai_refused', { detail: 'provider refusal' })
+    if (r?.stop_reason === 'max_tokens')
+      throw new AiError('ai_invalid_output', { detail: 'output truncated (stop_reason max_tokens)', truncated: true })
     const content: { type: string; text?: string; input?: unknown }[] = r?.content ?? []
     const tool = content.find((b) => b.type === 'tool_use')
     return {

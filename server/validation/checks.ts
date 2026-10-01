@@ -10,6 +10,7 @@ import type {
 } from '../../shared/contracts'
 import { approxEqual, evaluate, promptExpression } from './expr'
 import { scanSafety } from './safety'
+import { targetLanguage } from './subjects'
 import { containsWords, detectLanguage, keyTerms, normalize, sentences, stem, tokens } from './text'
 
 // The programmatic checks. Each is pure: (item | artifact, ctx) => issues. Codes, severities and
@@ -87,6 +88,33 @@ function itemTexts(item: Item): string[] {
   }
 }
 
+/** Plain-Swedish labels for adult-facing messages (same wording as the adult UI). */
+const TYPE_SV: Record<Artifact['type'], string> = {
+  practiceTest: 'Övningsprov',
+  exercises: 'Övningar',
+  lesson: 'Lektion',
+  revision: 'Repetition',
+  worksheet: 'Arbetsblad',
+  flashcards: 'Kort att vända',
+  readingComprehension: 'Läsförståelse',
+  explanation: 'Förklaring',
+  summary: 'Sammanfattning',
+  story: 'Berättelse',
+  writingPrompt: 'Skrivuppgift',
+  project: 'Projekt',
+}
+const KIND_SV: Record<Item['kind'], string> = {
+  multipleChoice: 'Flerval (ett svar)',
+  multiSelect: 'Flerval (flera svar)',
+  trueFalse: 'Sant eller falskt',
+  fillBlank: 'Fyll i luckan',
+  matching: 'Para ihop',
+  ordering: 'Sätt i ordning',
+  numeric: 'Svar med siffror',
+  freeText: 'Fritt svar',
+  flashcard: 'Kort att vända',
+}
+
 const dupes = (xs: string[]) => [...new Set(xs.filter((x, i) => xs.indexOf(x) !== i))]
 
 // ---------- schema (artifact level; the zod parse runs in the pipeline) ----------
@@ -95,13 +123,20 @@ export const schema: ArtifactCheck = (a, ctx) => {
   const out: ValidationIssue[] = []
   const items = allItems(a)
   for (const id of dupes(items.map((i) => i.id)))
-    out.push(err('schema.duplicate_item_id', `Uppgifts-id ${q(id)} används mer än en gång.`, id))
+    out.push(
+      err('schema.duplicate_item_id', 'Två uppgifter har samma interna nummer; ta bort eller skapa om en av dem.', id),
+    )
   a.sections.forEach((s, i) => {
     if (!s.items.length && !s.body?.trim() && !s.media.length)
       out.push(err('schema.empty_section', `Avsnitt ${i + 1}${s.title ? ` (${q(s.title)})` : ''} är tomt.`))
   })
   if (a.type !== ctx.request.type)
-    out.push(err('schema.type_mismatch', `Materialet är av typen ${a.type} men ${ctx.request.type} beställdes.`))
+    out.push(
+      err(
+        'schema.type_mismatch',
+        `Materialet blev ${TYPE_SV[a.type].toLowerCase()} men ${TYPE_SV[ctx.request.type].toLowerCase()} beställdes.`,
+      ),
+    )
   const want = ctx.request.questionCount
   if (want !== undefined && items.length !== want) {
     const msg = `Materialet har ${items.length} uppgifter men ${want} beställdes.`
@@ -111,7 +146,7 @@ export const schema: ArtifactCheck = (a, ctx) => {
   if (kinds?.length)
     for (const i of items)
       if (!kinds.includes(i.kind))
-        out.push(warn('schema.unrequested_kind', `Uppgiftstypen ${i.kind} beställdes inte.`, i.id))
+        out.push(warn('schema.unrequested_kind', `Uppgiftstypen "${KIND_SV[i.kind]}" beställdes inte.`, i.id))
   return out
 }
 
@@ -213,6 +248,14 @@ function unitIssues(item: Extract<Item, { kind: 'numeric' }>): ValidationIssue[]
   return []
 }
 
+const decimals = (n: number) => (String(n).split('.')[1] ?? '').length
+
+/** `answer` is `expected` rounded to the answer's own number of decimals (at least one, so 3 ≠ 3,4). */
+function roundsTo(expected: number, answer: number): boolean {
+  const d = decimals(answer)
+  return d > 0 && approxEqual(Number(expected.toFixed(d)), answer)
+}
+
 export const math: ItemCheck = (item) => {
   const out: ValidationIssue[] = []
   const expr = item.kind === 'numeric' || item.kind === 'multipleChoice' ? promptExpression(item.prompt) : undefined
@@ -224,7 +267,7 @@ export const math: ItemCheck = (item) => {
       const r = evaluate(item.check)
       if (!r.ok)
         out.push(
-          err('math.check_invalid', `Kontrolluttrycket ${q(item.check)} går inte att räkna ut: ${r.error}.`, item.id),
+          err('math.check_invalid', 'Svaret kunde inte räknas fram automatiskt – kontrollera det själv.', item.id),
         )
       else {
         expected = r.value
@@ -243,8 +286,25 @@ export const math: ItemCheck = (item) => {
       source = expr!
     } else
       out.push(warn('math.unverified', 'Svaret kunde inte kontrolleras automatiskt (inget kontrolluttryck).', item.id))
-    if (expected !== undefined && Number.isFinite(item.answer) && !approxEqual(item.answer, expected, item.tolerance))
-      out.push(err('math.answer_mismatch', `Svaret ${fmt(item.answer)} är fel: ${source} = ${fmt(expected)}.`, item.id))
+    if (expected !== undefined && Number.isFinite(item.answer) && !approxEqual(item.answer, expected, item.tolerance)) {
+      if (roundsTo(expected, item.answer)) {
+        if (!item.tolerance)
+          out.push(
+            warn(
+              'math.rounded_without_tolerance',
+              `Svaret ${fmt(item.answer)} är avrundat (${source} = ${fmt(expected)}); ange en tolerans så att fler decimaler också godtas.`,
+              item.id,
+            ),
+          )
+      } else
+        out.push(
+          err(
+            'math.answer_mismatch',
+            `Svaret ${fmt(item.answer)} stämmer inte: ${source} = ${fmt(expected)}.`,
+            item.id,
+          ),
+        )
+    }
     out.push(...unitIssues(item))
   }
   if (item.kind === 'multipleChoice' && fromPrompt?.ok) {
@@ -321,16 +381,13 @@ export const leakage: ItemCheck = (item) => {
 
 // ---------- language ----------
 
-const ENGLISH_SUBJECT = /^(?:GRGRENG|ENG|ENL|KREI|RETR)/i
-const FOREIGN_SUBJECT = /^(?:GRGRMO|GRGRMSP|MOD|FIN|JID|MEA|ROM|SAM|KLA|LAT|SPA)/i
-
 /** Languages items may be in, or undefined when any language is fine (foreign-language subjects). */
 function allowedLangs(ctx: CheckContext): Set<string> | undefined {
-  const code = ctx.request.subjectCode ?? ctx.material?.subjectGuess ?? ''
-  if (FOREIGN_SUBJECT.test(code)) return undefined
+  const target = targetLanguage(ctx.request.subjectCode ?? ctx.material?.subjectGuess)
+  if (target === 'foreign') return undefined
   const langs = new Set(['sv'])
   const about = `${ctx.request.topic ?? ''} ${ctx.request.instructions ?? ''}`
-  if (ENGLISH_SUBJECT.test(code) || /engelsk|english/i.test(about)) langs.add('en')
+  if (target === 'en' || /engelsk|english/i.test(about)) langs.add('en')
   if (ctx.material) langs.add(ctx.material.language.slice(0, 2).toLowerCase())
   return langs
 }
@@ -371,6 +428,16 @@ export const age: ItemCheck = (item, ctx) => {
       text.length > 2 * limit ? err('age.prompt_too_long', msg, item.id) : warn('age.prompt_too_long', msg, item.id),
     )
   }
+  if (ctx.band === 'early' && item.kind === 'freeText')
+    out.push(
+      warn(
+        'age.free_text_early',
+        'Fritt skrivande är ofta svårt för de yngsta; överväg en annan uppgiftstyp.',
+        item.id,
+      ),
+    )
+  if (ctx.band === 'early' && item.kind === 'numeric' && !Number.isInteger(item.answer))
+    out.push(warn('age.decimals_early', 'Svaret har decimaler, vilket sällan passar de yngsta eleverna.', item.id))
   if (ctx.band === 'early') {
     const longest = Math.max(0, ...sentences(item.prompt).map((s) => tokens(s).length))
     if (longest > 12)
@@ -387,29 +454,29 @@ export const age: ItemCheck = (item, ctx) => {
 
 // ---------- safety ----------
 
-function safetyIssues(texts: string[], itemId?: string): ValidationIssue[] {
-  const hits = texts.flatMap(scanSafety)
+function safetyIssues(texts: string[], ctx: CheckContext, itemId?: string): ValidationIssue[] {
+  const hits = texts.flatMap((t) => scanSafety(t, { band: ctx.band, subjectCode: ctx.request.subjectCode }))
   const out: ValidationIssue[] = []
   const labels = (sev: string, pred = (_l: string) => true) =>
     [...new Set(hits.filter((h) => h.severity === sev && pred(h.label)).map((h) => h.label))].join(', ')
-  const aviation = labels('error', (l) => l.startsWith('flyg + '))
-  const blocked = labels('error', (l) => !l.startsWith('flyg + '))
+  const aviation = labels('error', (l) => l === 'flyg + strid')
+  const blocked = labels('error', (l) => l !== 'flyg + strid')
   const borderline = labels('warning')
   if (blocked) out.push(err('safety.blocked', `Innehållet har olämpliga ord om våld eller vapen (${blocked}).`, itemId))
   if (aviation)
+    out.push(err('safety.aviation_combat', 'Flygplan ska handla om teknik och flygning, inte strid.', itemId))
+  if (borderline)
     out.push(
-      err(
-        'safety.aviation_combat',
-        `Flygplan ska handla om teknik och flygning, inte strid (${aviation.replaceAll('flyg + ', '')}).`,
+      warn(
+        'safety.borderline',
+        `Granska ordval som kan uppfattas som våld; sakligt och åldersanpassat är okej (${borderline}).`,
         itemId,
       ),
     )
-  if (borderline)
-    out.push(warn('safety.borderline', `Granska ordval som kan uppfattas som våld (${borderline}).`, itemId))
   return out
 }
 
-export const safety: ItemCheck = (item) => safetyIssues(itemTexts(item).filter(Boolean), item.id)
+export const safety: ItemCheck = (item, ctx) => safetyIssues(itemTexts(item).filter(Boolean), ctx, item.id)
 
 // ---------- grounding ----------
 
@@ -469,12 +536,16 @@ export const grounding: ItemCheck = (item, ctx) => {
   const all = [...new Set([...aTerms, ...keyTerms(item.prompt)])]
   const missing = all.filter((t) => !supported(t, stems, list))
   const aMissing = aTerms.filter((t) => missing.includes(t))
-  const unsupported =
-    (aTerms.length > 0 && aMissing.length / aTerms.length > 0.5) ||
-    (all.length >= 2 && missing.length / all.length > 0.6)
-  if (unsupported) {
+  // Strict: the answer must come from the material. The prompt may be coloured by a theme, so its terms only warn.
+  const answerUnsupported = aTerms.length > 0 && aMissing.length / aTerms.length > 0.5
+  const promptUnsupported = all.length >= 2 && missing.length / all.length > 0.6
+  if (answerUnsupported || promptUnsupported) {
     const msg = `Frågan och svaret stöds inte tydligt av de citerade avsnitten (saknas: ${missing.slice(0, 5).join(', ')}).`
-    out.push(strict ? err('grounding.unsupported', msg, item.id) : warn('grounding.unsupported', msg, item.id))
+    out.push(
+      strict && answerUnsupported
+        ? err('grounding.unsupported', msg, item.id)
+        : warn('grounding.unsupported', msg, item.id),
+    )
   }
   return out
 }
@@ -490,7 +561,7 @@ export const ARTIFACT_CHECKS: Record<string, ArtifactCheck> = {
       name,
       (a: Artifact, ctx: CheckContext) => [
         ...(name === 'safety'
-          ? safetyIssues([a.title, ...a.sections.flatMap((s) => [s.title ?? '', s.body ?? ''])].filter(Boolean))
+          ? safetyIssues([a.title, ...a.sections.flatMap((s) => [s.title ?? '', s.body ?? ''])].filter(Boolean), ctx)
           : []),
         ...(name === 'grounding' ? materialMissing(allItems(a), ctx) : []),
         ...allItems(a).flatMap((i) => check(i, ctx)),

@@ -1,4 +1,4 @@
-import { index, integer, jsonb, pgTable, primaryKey, text, timestamp, uuid } from 'drizzle-orm/pg-core'
+import { index, integer, jsonb, pgTable, primaryKey, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core'
 import type {
   ApprovalState,
   Artifact,
@@ -35,8 +35,16 @@ export const artifacts = pgTable(
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [index('artifacts_learner_idx').on(t.learnerId, t.createdAt)],
+  // One artifact per generate job: a retried job finds and reuses it.
+  (t) => [index('artifacts_learner_idx').on(t.learnerId, t.createdAt), uniqueIndex('artifacts_job_idx').on(t.jobId)],
 )
+
+export interface MaterialTruncation {
+  pagesUsed: number[]
+  segmentsUsed: number
+  segmentsTotal: number
+  pageRange?: [number, number]
+}
 
 /** Requested (not yet generated) illustration for an item; filled by the image domain. */
 export interface IllustrationRequest {
@@ -61,6 +69,8 @@ export const artifactVersions = pgTable(
     model: text('model'),
     providerKind: text('provider_kind'),
     promptVersion: text('prompt_version'),
+    /** Set when not all study material fit the prompt: which pages/segments were used. */
+    truncated: jsonb('truncated').$type<MaterialTruncation>(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [primaryKey({ columns: [t.artifactId, t.version] })],
