@@ -55,14 +55,17 @@ export function forLearner(a: Artifact): LearnerArtifact {
 }
 
 /**
- * Hook for the image domain: illustrations items asked for that have no media yet.
- * Fill by adding a MediaRef to the item (as a new version).
+ * Hook for the image domain: illustrations items (or their choices) asked for that have no media yet.
+ * Fill by adding a MediaRef to the item or choice (as a new version).
  */
 export function requestedIllustrations(
   stored: Pick<StoredArtifact, 'artifact' | 'illustrations'>,
 ): IllustrationRequest[] {
-  const withMedia = new Set(
-    stored.artifact.sections.flatMap((s) => s.items.filter((i) => i.media.length).map((i) => i.id)),
-  )
-  return stored.illustrations.filter((i) => !withMedia.has(i.itemId))
+  const items = new Map(stored.artifact.sections.flatMap((s) => s.items.map((i) => [i.id, i] as const)))
+  return stored.illustrations.filter((r) => {
+    const it = items.get(r.itemId)
+    if (!it) return true
+    if (r.choice === undefined) return !it.media.length
+    return 'choices' in it && !!it.choices[r.choice] && !it.choices[r.choice]!.media
+  })
 }

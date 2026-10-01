@@ -87,6 +87,11 @@ export const TRANSFORMS = [
   ['more', 'Mer av samma (nytt material)'],
 ] as const
 
+/** Shown where pictures are chosen ("Mer bildstöd", "Bilder") when no image source is available. */
+export const NO_IMAGE_SOURCE = 'Bilder kräver bildgenerering eller bildsökning – se Systemstatus.'
+export const noImageSource = (f?: { imageGeneration: boolean; externalAssets: boolean }) =>
+  !!f && !f.imageGeneration && !f.externalAssets
+
 export const DIFFICULTY: Record<number, string> = {
   1: 'Mycket lätt',
   2: 'Lätt',

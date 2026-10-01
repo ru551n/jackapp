@@ -462,10 +462,10 @@ export async function generateArtifact(
         }
       }
       for (const g of out.items) {
-        const { item, illustration } = toItem(g, `i${nextId++}`, itemCtx)
+        const { item, illustrations: wanted } = toItem(g, `i${nextId++}`, itemCtx)
         section.items.push(item)
         prompts.push(item.prompt.slice(0, 120))
-        if (illustration) illustrations.push(illustration)
+        illustrations.push(...wanted)
       }
       left -= count
       done += count
@@ -521,7 +521,7 @@ export async function generateArtifact(
     }
     const failing = new Set(errors.flatMap((e) => (e.itemId ? [e.itemId] : [])))
     const bad = allItems(artifact).filter((i) => failing.has(i.id))
-    const replacement = new Map<string, { item: Item; illustration?: IllustrationRequest }>()
+    const replacement = new Map<string, { item: Item; illustrations: IllustrationRequest[] }>()
     // One call per kind: replacements are matched by kind and order within the kind, never across kinds.
     for (const kind of [...new Set(bad.map((i) => i.kind))]) {
       const group = bad.filter((i) => i.kind === kind)
@@ -544,11 +544,8 @@ export async function generateArtifact(
         items: s.items.map((i) => replacement.get(i.id)?.item ?? i),
       })),
     }
-    for (const [id, x] of replacement) {
-      const at = illustrations.findIndex((i) => i.itemId === id)
-      if (at >= 0) illustrations.splice(at, 1)
-      if (x.illustration) illustrations.push(x.illustration)
-    }
+    const kept = illustrations.filter((i) => !replacement.has(i.itemId))
+    illustrations.splice(0, illustrations.length, ...kept, ...[...replacement.values()].flatMap((x) => x.illustrations))
     report = await check(deps, artifact, vctx)
   }
   return {
@@ -567,7 +564,7 @@ export async function regenerateItem(
   p: Prepared,
   artifact: Artifact,
   itemId: string,
-): Promise<{ artifact: Artifact; ok: boolean; illustration?: IllustrationRequest; model?: string }> {
+): Promise<{ artifact: Artifact; ok: boolean; illustrations: IllustrationRequest[]; model?: string }> {
   const r = p.request
   const strict = r.sourceMode === 'strict' && !!p.material
   const cur = strict
@@ -599,13 +596,13 @@ export async function regenerateItem(
     maxTokens: 400 + ITEM_TOKENS,
     signal: deps.signal,
   })
-  const { item, illustration } = toItem(res.output.items[0]!, itemId, itemContext(p, cur.refs))
+  const { item, illustrations } = toItem(res.output.items[0]!, itemId, itemContext(p, cur.refs))
   const next: Artifact = {
     ...artifact,
     sections: artifact.sections.map((s) => ({ ...s, items: s.items.map((i) => (i.id === itemId ? item : i)) })),
   }
   const report = await check(deps, next, { request: r, material: p.material })
-  return { artifact: { ...next, validation: report }, ok: report.ok, illustration, model: res.model }
+  return { artifact: { ...next, validation: report }, ok: report.ok, illustrations, model: res.model }
 }
 
 /** Re-validate an edited artifact. */

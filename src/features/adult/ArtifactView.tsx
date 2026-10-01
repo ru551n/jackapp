@@ -1,13 +1,21 @@
 import { useCallback, useState } from 'react'
 import { Link, useParams } from 'react-router'
-import type { Artifact, AssetLicense, Item, JobStatus, MediaRef, SourceRef } from '../../../shared/contracts'
+import type {
+  Artifact,
+  AssetLicense,
+  Item,
+  JobStatus,
+  MediaRef,
+  SourceRef,
+  SystemStatus,
+} from '../../../shared/contracts'
 import { ApiRequestError } from '../../api/client'
 import { Button } from '../../ui/Button'
 import { adultApi, errorText, paths, useResource, type ArtifactResponse, type VersionEntry } from './api'
 import { ExtLink, ItemView } from './ItemView'
 import { JobProgress } from './JobProgress'
 import { useLearner } from './context'
-import { APPROVAL, ARTIFACT_TYPE, formatDate, SOURCE_MODE, TRANSFORMS } from './labels'
+import { APPROVAL, ARTIFACT_TYPE, formatDate, NO_IMAGE_SOURCE, noImageSource, SOURCE_MODE, TRANSFORMS } from './labels'
 import s from './adult.module.css'
 
 const ORIGIN: Record<string, string> = {
@@ -164,6 +172,7 @@ export function ArtifactView() {
   const { learner } = useLearner()
   const { artifactId = '' } = useParams()
   const res = useResource<ArtifactResponse>(paths.artifact(artifactId))
+  const status = useResource<SystemStatus>(paths.status)
   const [msg, setMsg] = useState('')
   const [job, setJob] = useState<Job>()
   const [done, setDone] = useState<JobStatus & { more?: boolean }>()
@@ -291,6 +300,7 @@ export function ArtifactView() {
             </Button>
           ))}
         </div>
+        {noImageSource(status.data?.features) && <p className={s.muted}>Mer bildstöd: {NO_IMAGE_SOURCE}</p>}
         {themeOpen && (
           <div className={s.row}>
             <label htmlFor="new-theme">Nytt tema</label>

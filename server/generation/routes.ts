@@ -205,7 +205,7 @@ export const generationRoutes: RouteModule = (app, ctx) => {
       const briefId = (s.row.request as ResolvedRequest).researchBriefId
       return {
         artifact: s.artifact,
-        requestedIllustrations: requestedIllustrations(s),
+        requestedIllustrations: requestedIllustrations(s).filter((i) => i.choice === undefined),
         researchBriefIds: briefId ? [briefId] : [],
         assetIds: mediaAssetIds(s.artifact),
         /** Set when only part of the study material reached the model. */
