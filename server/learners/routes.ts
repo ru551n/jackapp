@@ -4,7 +4,7 @@ import { ageBand, LearnerProfileInput, type LearnerProfile } from '../../shared/
 import type { RouteModule } from '../app/context'
 import { learners } from '../db/schema'
 import { HttpError, requireAdult, requireLearner } from '../gate/guards'
-import { importLegacy } from './legacy'
+import { applySettingChanges, importLegacy, LegacyAppState, legacySettingChanges } from './legacy'
 import { cleanList, presentationFor, unsafeThemes } from './profile'
 
 type Row = typeof learners.$inferSelect
@@ -94,11 +94,23 @@ export const learnerRoutes: RouteModule = (app, { db }) => {
     return reply.status(204).send()
   })
 
-  /** Import the old web app's localStorage['jackapp:v1'] JSON. Idempotent per learner + payload. */
+  /**
+   * Import the old web app's localStorage['jackapp:v1'] JSON. Idempotent per learner + payload.
+   * Old settings (free play, sound, speech, motion) are only reported in `settings.changes`
+   * unless the adult opts in with `?applySettings=true`.
+   */
   app.post('/learners/:id/legacy-import', async (req, reply) => {
     requireAdult(req)
     const cur = await requireLearner(db, Params.parse(req.params).id)
+    const { applySettings } = z.object({ applySettings: z.enum(['true', 'false']).optional() }).parse(req.query)
     const r = await importLegacy(db, cur.id, req.body)
-    return reply.status(r.created ? 201 : 200).send(r)
+    const changes = legacySettingChanges(cur.profile, LegacyAppState.parse(req.body).settings)
+    const applied = applySettings === 'true' && changes.length > 0
+    if (applied)
+      await db
+        .update(learners)
+        .set({ profile: applySettingChanges(cur.profile, changes), updatedAt: new Date() })
+        .where(eq(learners.id, cur.id))
+    return reply.status(r.created ? 201 : 200).send({ ...r, settings: { applied, changes } })
   })
 }

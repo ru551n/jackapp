@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto'
 import { and, eq } from 'drizzle-orm'
 import { z } from 'zod'
+import type { LearnerProfileInput } from '../../shared/contracts'
 import type { Db } from '../db/client'
 import { legacyProgress, legacySkillProgress } from '../db/schema'
 
@@ -96,4 +97,37 @@ export async function importLegacy(db: Db, learnerId: string, body: unknown): Pr
     }
     return { importId: row.id, created: true, skills: skills.length, skipped }
   })
+}
+
+/** One profile field the old app's `settings` would change. */
+export interface SettingChange {
+  field: 'freePlayEnabled' | 'support.sound' | 'support.readAloud' | 'support.reducedMotion'
+  from: boolean
+  to: boolean
+}
+
+/**
+ * Old `settings` → profile changes: freePlayEnabled as-is, sound → support.sound, speech →
+ * support.readAloud, motion 'reduced'/'full' → support.reducedMotion ('system' keeps the profile).
+ * Only fields that differ are returned; wrong types are ignored.
+ */
+export function legacySettingChanges(profile: LearnerProfileInput, settings: unknown): SettingChange[] {
+  const s = (settings ?? {}) as Record<string, unknown>
+  const motion = s.motion === 'reduced' ? true : s.motion === 'full' ? false : undefined
+  const wanted: [SettingChange['field'], boolean, unknown][] = [
+    ['freePlayEnabled', profile.freePlayEnabled, s.freePlayEnabled],
+    ['support.sound', profile.support.sound, s.sound],
+    ['support.readAloud', profile.support.readAloud, s.speech],
+    ['support.reducedMotion', profile.support.reducedMotion, motion],
+  ]
+  return wanted.flatMap(([field, from, to]) => (typeof to === 'boolean' && to !== from ? [{ field, from, to }] : []))
+}
+
+export function applySettingChanges(profile: LearnerProfileInput, changes: SettingChange[]): LearnerProfileInput {
+  const next = { ...profile, support: { ...profile.support } }
+  for (const c of changes) {
+    if (c.field === 'freePlayEnabled') next.freePlayEnabled = c.to
+    else next.support[c.field.slice('support.'.length) as 'sound' | 'readAloud' | 'reducedMotion'] = c.to
+  }
+  return next
 }
