@@ -15,10 +15,12 @@
     "typecheck": "tsc -b",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "check": "npm run typecheck && npm run lint && npm run format:check && npm run test"
+    "check": "npm run typecheck && npm run lint && npm run format:check && npm run test",
+    "gate:reset-pin": "tsx server/gate/cli.ts"
   },
   "dependencies": {
     "@diffusionstudio/piper-wasm": "^1.0.0",
+    "@fastify/cookie": "^11.1.2",
     "@fontsource/atkinson-hyperlegible": "^5.3.0",
     "drizzle-orm": "^0.45.3",
     "fastify": "^5.12.5",
