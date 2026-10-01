@@ -20,7 +20,7 @@ import type { Db } from '../db/client'
 import { skillEvidence, type IllustrationRequest } from '../db/schema'
 import { promptProfile } from '../learners/profile'
 import { validateArtifact, type ValidationContext } from '../validation'
-import { describeItem, fallbackSkill, genItemsSchema, toItem, type ItemContext } from './items'
+import { describeItem, fallbackSkill, genItemsSchema, toItem, type GenItem, type ItemContext } from './items'
 import {
   buildSystemPrompt,
   itemsTask,
@@ -438,6 +438,29 @@ export async function generateArtifact(
         400 + ITEM_TOKENS * count,
       )
       title ??= out.title ?? undefined
+      // Models tend to skip free text despite the quota: top it up in place of surplus items of other kinds.
+      const missing = (slot.quota?.freeText ?? 0) - out.items.filter((g) => g.kind === 'freeText').length
+      if (missing > 0) {
+        const extra = await call(
+          genItemsSchema(['freeText'], missing),
+          'artifact_items',
+          itemsTask({
+            count: missing,
+            kinds: ['freeText'],
+            sectionTitle: slot.title,
+            context,
+            avoid: [...prompts.slice(-30), ...out.items.map((g) => g.prompt.slice(0, 120))],
+            ramp: slot.ramp,
+          }),
+          400 + ITEM_TOKENS * missing,
+        )
+        const surplus = (g: GenItem) =>
+          g.kind !== 'freeText' && out.items.filter((x) => x.kind === g.kind).length > (slot.quota?.[g.kind] ?? 0)
+        for (const g of extra.items) {
+          const j = out.items.findLastIndex(surplus)
+          out.items[j >= 0 ? j : out.items.length - 1] = g
+        }
+      }
       for (const g of out.items) {
         const { item, illustration } = toItem(g, `i${nextId++}`, itemCtx)
         section.items.push(item)
