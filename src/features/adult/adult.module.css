@@ -135,6 +135,14 @@ details > summary {
 .list a {
   color: var(--accent);
 }
+/* Breadcrumb link: a full 44 px touch target without moving the text. */
+.crumb a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 0.5rem;
+  margin-left: -0.5rem;
+}
 .tabs {
   display: flex;
   flex-wrap: wrap;
