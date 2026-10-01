@@ -59,7 +59,8 @@ export const learnerRoutes: RouteModule = (app, { db }) => {
   /** Full profile for adults, the learner view otherwise. */
   app.get('/learners/:id', async (req) => {
     const l = await requireLearner(db, Params.parse(req.params).id)
-    return req.gate?.adult ? full(l) : learnerView(l)
+    // Adults get a superset of the learner view, so learner screens work on an unlocked device too.
+    return req.gate?.adult ? { ...learnerView(l), ...full(l) } : learnerView(l)
   })
 
   app.post('/learners', async (req, reply) => {

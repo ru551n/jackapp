@@ -5,3 +5,4 @@ test-results
 package-lock.json
 dist-server
 server/db/migrations
+*.tmp.mjs

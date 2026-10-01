@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useState } from 'react'
+import { api } from '../../api/client'
 import { Link, useParams } from 'react-router'
 import { ApiRequestError } from '../../api/client'
 import type { Settings } from '../../core/types'
@@ -39,20 +40,25 @@ export function LearnerArea() {
 
   useEffect(() => {
     let live = true
-    learnerApi.profile(learnerId).then(
-      (p) => {
-        try {
-          localStorage.setItem(cacheKey(learnerId), JSON.stringify(p))
-        } catch {
-          // Storage blocked: fine, just no offline fallback.
-        }
-        if (live) setLoad({ id: learnerId, value: p })
-      },
-      (e: unknown) => {
-        const gone = e instanceof ApiRequestError && (e.status === 404 || e.status === 400)
-        if (live) setLoad({ id: learnerId, value: gone ? 'missing' : (cached(learnerId) ?? 'offline') })
-      },
-    )
+    // Handing the device to a learner locks the adult gate (adult screens need the PIN again).
+    api
+      .post('/gate/lock')
+      .catch(() => undefined)
+      .then(() => learnerApi.profile(learnerId))
+      .then(
+        (p) => {
+          try {
+            localStorage.setItem(cacheKey(learnerId), JSON.stringify(p))
+          } catch {
+            // Storage blocked: fine, just no offline fallback.
+          }
+          if (live) setLoad({ id: learnerId, value: p })
+        },
+        (e: unknown) => {
+          const gone = e instanceof ApiRequestError && (e.status === 404 || e.status === 400)
+          if (live) setLoad({ id: learnerId, value: gone ? 'missing' : (cached(learnerId) ?? 'offline') })
+        },
+      )
     return () => {
       live = false
     }

@@ -38,3 +38,4 @@ dist-server
 .env.*
 !.env.example
 .dev-data/
+*.tmp.mjs

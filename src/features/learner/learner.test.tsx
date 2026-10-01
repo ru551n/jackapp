@@ -82,6 +82,16 @@ describe('band selection', () => {
     expect(bandOf({ school: EARLY, ageBand: 'middle' })).toBe('middle')
   })
 
+  it('entering a learner area locks the adult gate (the device is handed to a learner)', async () => {
+    const calls = mockApi({ [`GET /learners/${ID}`]: [200, learner(EARLY)], 'POST /gate/lock': [200, {}] })
+    renderAt()
+    await screen.findByRole('heading', { name: 'Mitt äventyr' })
+    const lock = calls.findIndex((c) => c.key === 'POST /gate/lock')
+    const profile = calls.findIndex((c) => c.key === `GET /learners/${ID}`)
+    expect(lock).toBeGreaterThanOrEqual(0)
+    expect(lock).toBeLessThan(profile)
+  })
+
   it('early learners get the JackApp home, with an exit to the picker', async () => {
     mockApi({ [`GET /learners/${ID}`]: [200, learner(EARLY)] })
     renderAt()
@@ -210,7 +220,7 @@ describe('guided request (early)', () => {
   it('posts picture choices only, then waits for an adult', async () => {
     const calls = await start([404, { error: { code: 'not_found', message: 'x' } }])
     expect(await screen.findByText('En vuxen tittar på uppdraget först.')).toBeInTheDocument()
-    const post = calls.find((c) => c.key.startsWith('POST'))!
+    const post = calls.find((c) => c.key.startsWith('POST') && c.key.endsWith('/generate'))!
     expect(post.body).toEqual({ type: 'exercises', subjectCode: 'GRGRMAT01', theme: 'Tåg' })
     expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
   })
@@ -252,7 +262,7 @@ describe('free requests (middle, upper)', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Djur' }))
     await userEvent.click(screen.getByRole('button', { name: 'Skapa' }))
     expect(await screen.findByText('Vi gör ditt uppdrag …')).toBeInTheDocument()
-    expect(calls.find((c) => c.key.startsWith('POST'))!.body).toEqual({
+    expect(calls.find((c) => c.key.startsWith('POST') && c.key.endsWith('/generate'))!.body).toEqual({
       instructions: 'Jag vill lära mig bråk med flygplan',
       theme: 'Djur',
     })
@@ -278,7 +288,9 @@ describe('free requests (middle, upper)', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'Förhör mig på fotosyntesen' }))
     await userEvent.click(screen.getAllByRole('button', { name: 'Skapa' })[0])
     await waitFor(() => expect(calls.some((c) => c.key.startsWith('POST'))).toBe(true))
-    expect(calls.find((c) => c.key.startsWith('POST'))!.body).toEqual({ instructions: 'Förhör mig på fotosyntesen' })
+    expect(calls.find((c) => c.key.startsWith('POST') && c.key.endsWith('/generate'))!.body).toEqual({
+      instructions: 'Förhör mig på fotosyntesen',
+    })
   })
 
   it('upper: a practice test with count, difficulty, kinds and feedback mode', async () => {
@@ -296,7 +308,7 @@ describe('free requests (middle, upper)', () => {
     await userEvent.click(screen.getByRole('radio', { name: /I slutet/ }))
     await userEvent.click(screen.getAllByRole('button', { name: 'Skapa' })[1])
     await waitFor(() => expect(calls.some((c) => c.key.startsWith('POST'))).toBe(true))
-    expect(calls.find((c) => c.key.startsWith('POST'))!.body).toEqual({
+    expect(calls.find((c) => c.key.startsWith('POST') && c.key.endsWith('/generate'))!.body).toEqual({
       type: 'practiceTest',
       questionCount: 20,
       difficulty: 4,

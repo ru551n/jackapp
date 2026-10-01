@@ -124,6 +124,9 @@ describe('learner profiles', () => {
     expect(view.presentation).toMatchObject({ ageBand: 'early', maxChoices: 4, school: { year: 1 } })
     const adult = (await app.inject({ url: `/api/v1/learners/${l.id}`, headers: asAdult })).json()
     expect(adult).toHaveProperty('difficulties')
+    // A superset: learner screens on an adult-unlocked device still get the presentation fields.
+    expect(adult.presentation).toMatchObject({ ageBand: 'early' })
+    expect(adult.ageBand).toBe('early')
     expect((await app.inject('/api/v1/learners/not-a-uuid')).statusCode).toBe(400)
   })
 })
