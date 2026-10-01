@@ -34,3 +34,7 @@ export function wrongIds(choices: Choice[], answer: string, keepWrong = 1): stri
   const wrong = choices.map((c) => c.id).filter((id) => id !== answer)
   return wrong.slice(0, Math.max(0, wrong.length - keepWrong))
 }
+
+/** Shared choice-count ladder: 2 options at level 1 or with extra support, 3 at levels 2–3, 4 above. */
+export const choiceCount = (level: number, support: 'normal' | 'extra'): number =>
+  support === 'extra' || level <= 1 ? 2 : level <= 3 ? 3 : 4

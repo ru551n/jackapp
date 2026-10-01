@@ -77,12 +77,12 @@ export type EquationTerm = number | '+' | '−' | '=' | '?'
 /** Declarative visuals. Content describes WHAT to show; the UI decides HOW. */
 export type Scene =
   | { kind: 'row'; items: SceneItem[]; label?: string }
-  | { kind: 'sign'; text: string; style: SignStyle }
+  | { kind: 'sign'; text: string; style: SignStyle; lang?: SpeechLang }
   /** scale (0.2–1) draws the vehicle relative to the largest in the task, for size comparisons. */
   | { kind: 'vehicle'; vehicle: string; view?: 'art' | 'silhouette'; scale?: number }
   | { kind: 'number'; value: number }
   | { kind: 'equation'; terms: EquationTerm[] }
-  | { kind: 'text'; text: string; size?: 'md' | 'lg' | 'xl' }
+  | { kind: 'text'; text: string; size?: 'md' | 'lg' | 'xl'; lang?: SpeechLang }
   | { kind: 'group'; direction: 'row' | 'column'; scenes: Scene[] }
 
 export interface Choice {
@@ -91,6 +91,8 @@ export interface Choice {
   visual?: Scene
   /** Accessible name when the label alone is not descriptive (e.g. a picture-only choice). */
   ariaLabel?: string
+  /** Language of the label, for screen readers (default Swedish). */
+  lang?: SpeechLang
 }
 
 export type Task =
@@ -104,6 +106,10 @@ export interface Hint {
   scene?: Scene
   /** Choice ids to remove, making the task easier. Never includes the answer. */
   eliminate?: string[]
+  /** Swedish-only spoken version when `text` contains words in another language. */
+  speech?: string
+  /** Target-language audio for the hint (e.g. the English word). */
+  listen?: { text: string; lang: SpeechLang }
 }
 
 export interface Question {
@@ -112,9 +118,11 @@ export interface Question {
   skill: SkillId
   level: Level
   theme: Theme
-  /** Short Swedish prompt, shown and (optionally) spoken. */
+  /** Short prompt, shown and (optionally) spoken. Swedish unless `promptLang` says otherwise. */
   prompt: string
-  /** Spoken text when it should differ from the prompt (e.g. reading out "3 + 1"). Always Swedish. */
+  /** Language of the prompt (default 'sv'). An English prompt is read with an English voice. */
+  promptLang?: SpeechLang
+  /** Swedish spoken text: replaces a Swedish prompt's audio, or explains an English prompt ("På svenska"). */
   speech?: string
   /** Target-language audio (e.g. the English word "train"), offered on its own speaker button. */
   listen?: { text: string; lang: SpeechLang }

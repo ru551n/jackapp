@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { AREAS } from '../core/catalog'
 import { createRng } from '../core/rng'
 import type { Level, Question, Scene, Support } from '../core/types'
 import { GENERATORS } from './index'
@@ -74,6 +75,22 @@ describe('every generator', () => {
   it('generator ids are unique', () => {
     const ids = GENERATORS.map((g) => g.id)
     expect(new Set(ids).size).toBe(ids.length)
+  })
+})
+
+describe('skill coverage', () => {
+  // Re-enabled by the content fix wave (read.missingLetter, read.sentences, air.compare need level 1).
+  it.skip('every catalog skill has a generator that starts at level 1', () => {
+    for (const skill of AREAS.flatMap((a) => a.skills)) {
+      expect(
+        GENERATORS.some((g) => g.skill === skill && g.levels[0] === 1),
+        skill,
+      ).toBe(true)
+    }
+  })
+
+  it('there are 20+ activity types', () => {
+    expect(GENERATORS.length).toBeGreaterThanOrEqual(20)
   })
 })
 

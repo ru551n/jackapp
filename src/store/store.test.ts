@@ -8,6 +8,8 @@ describe('persistence', () => {
     const s = defaultState()
     s.missions.flygplatsen = 3
     s.settings.freePlayEnabled = true
+    s.parentPin = '2468'
+    s.freePlay.line = { vehicle: 'tram', stations: [{ id: 'a', name: 'Bron', x: 10, y: 20 }] }
     saveState(s)
     expect(loadState()).toEqual(s)
   })
@@ -17,6 +19,38 @@ describe('persistence', () => {
     expect(loadState()).toEqual(defaultState())
     localStorage.setItem(STORAGE_KEY, JSON.stringify({ version: 99 }))
     expect(loadState()).toEqual(defaultState())
+  })
+
+  it('survives wrongly shaped fields without crashing', () => {
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({
+        version: 1,
+        progress: null,
+        sessions: 'x',
+        recentQuestionIds: 5,
+        missions: { stationen: -3, tunnelbanan: 'many', flygplatsen: 2.7 },
+        parentPin: 1234,
+        freePlay: { line: 'oops' },
+      }),
+    )
+    const s = loadState()
+    expect(s.progress).toEqual({})
+    expect(s.sessions).toEqual([])
+    expect(s.recentQuestionIds).toEqual([])
+    expect(s.missions).toEqual({ ...defaultState().missions, flygplatsen: 2 })
+    expect(s.parentPin).toBeUndefined()
+    expect(s.freePlay.line).toBeNull()
+  })
+
+  it('survives storage that throws on read', () => {
+    expect(
+      loadState({
+        getItem: () => {
+          throw new Error('SecurityError')
+        },
+      }),
+    ).toEqual(defaultState())
   })
 
   it('fills in fields added after the data was saved', () => {

@@ -31,7 +31,8 @@ function makeQuestion(plan: SkillId[], seed: number, index: number): Question {
 
 function startRun(area: AreaId): Run {
   const s = getState()
-  const seed = s.sessionCounter + 1
+  // Abandoned sessions still recorded answers, so mixing in that count gives a fresh seed.
+  const seed = hashSeed(s.sessionCounter + 1, s.recentQuestionIds.length)
   const plan = planSession(area, s, AVAILABLE_SKILLS)
   return {
     seed,
@@ -60,7 +61,8 @@ function Session({ area }: { area: AreaInfo }) {
   const onDone = (misses: number, hintsShown: number) => {
     const q = run.question!
     stopSpeaking()
-    actions.recordAnswer(q.skill, q.id, misses, hintsShown)
+    const options = q.task.kind === 'choice' ? q.task.choices.length : q.task.items.length
+    actions.recordAnswer(q.skill, q.id, misses, hintsShown, options)
     const firstTry = run.firstTry + (misses === 0 ? 1 : 0)
     const index = run.index + 1
     if (index < run.plan.length) {

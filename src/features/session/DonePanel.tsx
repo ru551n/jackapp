@@ -18,7 +18,7 @@ export function DonePanel({ area, unlocked, onAgain }: { area: AreaId; unlocked:
   return (
     <section className={styles.done} aria-labelledby="done-title">
       <h2 id="done-title" ref={headingRef} tabIndex={-1} className={styles.title}>
-        Klart! Uppdraget är slutfört.
+        Bra jobbat! Uppdraget är klart.
       </h2>
 
       {unlocked.map((v) => (

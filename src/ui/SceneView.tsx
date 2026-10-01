@@ -11,7 +11,14 @@ export function SceneView({ scene, compact = false }: { scene: Scene; compact?: 
     case 'row':
       return <Row items={scene.items} label={scene.label} compact={compact} />
     case 'sign':
-      return <div className={`${styles.sign} ${styles[`sign_${scene.style}`]}`}>{scene.text}</div>
+      return (
+        <div
+          className={`${styles.sign} ${styles[`sign_${scene.style}`]}`}
+          lang={scene.lang === 'en' ? 'en' : undefined}
+        >
+          {scene.text}
+        </div>
+      )
     case 'vehicle': {
       const v = vehicleById(scene.vehicle)
       if (!v) return null
@@ -41,7 +48,14 @@ export function SceneView({ scene, compact = false }: { scene: Scene; compact?: 
         </div>
       )
     case 'text':
-      return <div className={`${styles.text} ${styles[`text_${scene.size ?? 'lg'}`]}`}>{scene.text}</div>
+      return (
+        <div
+          className={`${styles.text} ${styles[`text_${scene.size ?? 'lg'}`]}`}
+          lang={scene.lang === 'en' ? 'en' : undefined}
+        >
+          {scene.text}
+        </div>
+      )
     case 'group':
       return (
         <div className={scene.direction === 'row' ? styles.groupRow : styles.groupColumn}>

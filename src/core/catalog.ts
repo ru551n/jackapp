@@ -42,7 +42,7 @@ export const AREAS: AreaInfo[] = [
   {
     id: 'engelska',
     name: 'Engelska',
-    tagline: 'Train, tram, plane!',
+    tagline: 'Ord på engelska: train, plane…',
     subject: 'Engelska',
     skills: ['en.words', 'en.colors', 'en.numbers', 'en.adjectives', 'en.listen', 'en.sentences'],
   },
@@ -67,14 +67,18 @@ export const SKILL_NAMES: Record<SkillId, string> = {
   'air.read': 'Läsa på flygplatsen',
   'air.numbers': 'Siffror på flygplatsen',
   'air.compare': 'Jämföra flygplan',
-  'en.words': 'Engelska ord (transport och vardag)',
+  'en.words': 'Engelska ord (transport)',
   'en.colors': 'Färger på engelska',
   'en.numbers': 'Siffror 1–10 på engelska',
   'en.adjectives': 'Beskrivande ord (big, small, fast, slow)',
-  'en.listen': 'Hörförståelse på engelska',
+  'en.listen': 'Lyssna på engelska ord',
   'en.sentences': 'Korta meningar på engelska',
 }
 
 export const areaById = (id: string): AreaInfo | undefined => AREAS.find((a) => a.id === id)
 
-export const areaOfSkill = (skill: SkillId): AreaInfo => AREAS.find((a) => a.skills.includes(skill))!
+export function areaOfSkill(skill: SkillId): AreaInfo {
+  const area = AREAS.find((a) => a.skills.includes(skill))
+  if (!area) throw new Error(`Skill ${skill} belongs to no area`)
+  return area
+}

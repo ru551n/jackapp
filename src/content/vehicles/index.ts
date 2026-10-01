@@ -6,7 +6,8 @@ export const VEHICLES: Vehicle[] = [...RAIL_VEHICLES, ...AIRCRAFT]
 
 export const vehicleById = (id: string): Vehicle | undefined => VEHICLES.find((v) => v.id === id)
 
-const missionsFor = (area: AreaId | 'any', missions: AppState['missions']) =>
+/** Completed missions that count toward an unlock rule ('any' = all areas). */
+export const missionsFor = (area: AreaId | 'any', missions: AppState['missions']) =>
   area === 'any' ? Object.values(missions).reduce((a, b) => a + b, 0) : missions[area]
 
 export const isUnlocked = (v: Vehicle, missions: AppState['missions']) =>
@@ -28,3 +29,7 @@ export function nextUnlock(
 /** Vehicles that became unlocked between two mission snapshots. */
 export const newlyUnlocked = (before: AppState['missions'], after: AppState['missions']) =>
   VEHICLES.filter((v) => !isUnlocked(v, before) && isUnlocked(v, after))
+
+/** Missions still needed to unlock `v` (0 when unlocked). */
+export const missionsLeft = (v: Vehicle, missions: AppState['missions']) =>
+  Math.max(0, v.unlock.missions - missionsFor(v.unlock.area, missions))

@@ -7,16 +7,16 @@ Code: `src/engine/adaptation.ts` and `src/engine/session.ts`.
 
 Each answer is classified by how many tries it took:
 
-| Outcome  | Meaning                                                |
-| -------- | ------------------------------------------------------ |
-| `first`  | correct on the first try                               |
-| `retry`  | correct after one miss                                 |
-| `helped` | needed two or more tries, so stronger hints were shown |
+| Outcome  | Meaning                                                                                         |
+| -------- | ----------------------------------------------------------------------------------------------- |
+| `first`  | correct on the first try                                                                        |
+| `retry`  | correct after one miss                                                                          |
+| `helped` | needed (nearly) every attempt: two or more misses, or one miss when there were only two options |
 
 The last 6 outcomes are kept per skill. Then:
 
 - **Level up (+1)** after 4 `first` answers in a row in that skill.
-- **Level down (−1)** when 2 of the last 3 answers were `helped`.
+- **Level down (−1)** when 2 of the last 3 answers were `helped`, or 3 of the last 4 were not first-try.
 - After a level change the recent window is cleared, so changes are never back-to-back.
 - **Extra support** for the next question when the last answer was `helped`, or when 2 of the last 3 needed retries. Generators then show more visual support (grouping, fewer choices).
 - A parent can set a level manually and lock it. A locked skill does not change automatically.
@@ -31,7 +31,7 @@ Questions are generated from a seed (`sessionCounter`, question index). Recently
 
 `trendOf()` turns the recent window into a status:
 
-- _ny_: no answers yet
+- _ny / för lite data än_: fewer than 3 answers
 - _går lätt_: at least 75% first-try answers
 - _svårt just nu_: at least a third of recent answers were `helped`
 - _på gång_: everything else

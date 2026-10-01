@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { Choice, Hint, Question } from '../../core/types'
 import { playSoftChime } from '../../lib/sound'
-import { getState } from '../../store/store'
+import { useAppState } from '../../store/store'
 import { Button } from '../../ui/Button'
 import { Icon } from '../../ui/Icon'
 import { SceneView } from '../../ui/SceneView'
@@ -10,6 +10,7 @@ import styles from './Exercise.module.css'
 
 /** After this many misses the correct answer is gently shown. */
 export const REVEAL_AFTER = 3
+const REVEAL_TEXT = 'Titta, den här är rätt. Tryck på den.'
 
 interface Props {
   question: Question
@@ -24,6 +25,8 @@ export function Exercise({ question, onDone, nextLabel }: Props) {
   const [placed, setPlaced] = useState<string[]>([]) // order tasks
   const [solved, setSolved] = useState(false)
   const nextRef = useRef<HTMLButtonElement>(null)
+  const promptRef = useRef<HTMLHeadingElement>(null)
+  const sound = useAppState((s) => s.settings.sound)
 
   const hintsShown = Math.min(misses, question.hints.length)
   const hint: Hint | undefined = misses > 0 ? question.hints[hintsShown - 1] : undefined
@@ -31,13 +34,15 @@ export function Exercise({ question, onDone, nextLabel }: Props) {
   const reveal = misses >= REVEAL_AFTER && !solved
   const scene = [...question.hints.slice(0, hintsShown)].reverse().find((h) => h.scene)?.scene ?? question.scene
 
+  // Each new question starts with focus on its prompt; success moves focus to "Nästa" (no scrolling).
+  useEffect(() => promptRef.current?.focus({ preventScroll: true }), [])
   useEffect(() => {
-    if (solved) nextRef.current?.focus()
+    if (solved) nextRef.current?.focus({ preventScroll: true })
   }, [solved])
 
   const succeed = () => {
     setSolved(true)
-    if (getState().settings.sound) playSoftChime()
+    if (sound) playSoftChime()
   }
   const miss = (id: string) => {
     setMisses((m) => m + 1)
@@ -61,16 +66,31 @@ export function Exercise({ question, onDone, nextLabel }: Props) {
   }
 
   const expectedNext = question.task.kind === 'choice' ? question.task.answer : question.task.answer[placed.length]
+  const total = question.task.kind === 'order' ? question.task.answer.length : 0
+  const english = question.promptLang === 'en'
+  const nameOf = (c: Choice) => c.ariaLabel ?? c.label ?? c.id
+
+  let status = ''
+  if (solved) status = question.success ?? 'Bra!'
+  else if (hint) status = `Prova igen. ${reveal ? REVEAL_TEXT : hint.text}`
+  else if (placed.length > 0) status = `Rätt! Steg ${placed.length} av ${total}.`
 
   return (
     <section className={styles.exercise} aria-labelledby="prompt">
       <div className={styles.promptRow}>
-        <h2 id="prompt" className={styles.prompt}>
+        <h2 id="prompt" ref={promptRef} tabIndex={-1} className={styles.prompt} lang={english ? 'en' : undefined}>
           {question.prompt}
         </h2>
         <div className={styles.speakers}>
-          <SpeakButton text={question.speech ?? question.prompt} />
-          {question.listen && (
+          {english ? (
+            <>
+              <SpeakButton text={question.prompt} lang="en" />
+              {question.speech && <SpeakButton text={question.speech} label="På svenska" />}
+            </>
+          ) : (
+            <SpeakButton text={question.speech ?? question.prompt} />
+          )}
+          {question.listen && !(english && question.listen.text === question.prompt) && (
             <SpeakButton
               text={question.listen.text}
               lang={question.listen.lang}
@@ -93,7 +113,17 @@ export function Exercise({ question, onDone, nextLabel }: Props) {
               question.task.kind === 'order' ? question.task.items.find((c) => c.id === placed[i]) : undefined
             return (
               <li key={i} className={styles.slot}>
-                {item ? <ChoiceContent choice={item} /> : <span className={styles.slotNumber}>{i + 1}</span>}
+                {item ? (
+                  <>
+                    <ChoiceContent choice={item} />
+                    <span className="visually-hidden">{nameOf(item)}</span>
+                  </>
+                ) : (
+                  <span className={styles.slotNumber}>
+                    {i + 1}
+                    <span className="visually-hidden">, tom plats</span>
+                  </span>
+                )}
               </li>
             )
           })}
@@ -135,11 +165,15 @@ export function Exercise({ question, onDone, nextLabel }: Props) {
         })}
       </div>
 
-      <div className={styles.feedback} role="status" aria-live="polite">
+      {/* Screen readers get one short message; the visible panel below holds buttons. */}
+      <p className="visually-hidden" role="status">
+        {status}
+      </p>
+      <div className={styles.feedback}>
         {solved ? (
           <div className={styles.success}>
             <Icon name="check" size={36} />
-            <p>{question.success ?? 'Bra!'}</p>
+            <p aria-hidden="true">{question.success ?? 'Bra!'}</p>
             <Button ref={nextRef} icon="arrow" onClick={() => onDone(misses, hintsShown)}>
               {nextLabel}
             </Button>
@@ -147,8 +181,11 @@ export function Exercise({ question, onDone, nextLabel }: Props) {
         ) : hint ? (
           <div className={styles.hint}>
             <p className={styles.tryAgain}>Prova igen</p>
-            <p>{reveal ? 'Titta, den här är rätt. Tryck på den.' : hint.text}</p>
-            {!reveal && <SpeakButton text={`Prova igen. ${hint.text}`} />}
+            <p>{reveal ? REVEAL_TEXT : hint.text}</p>
+            {!reveal && <SpeakButton text={`Prova igen. ${hint.speech ?? hint.text}`} />}
+            {!reveal && hint.listen && (
+              <SpeakButton text={hint.listen.text} lang={hint.listen.lang} label="Hör på engelska" />
+            )}
           </div>
         ) : null}
       </div>
@@ -160,7 +197,11 @@ function ChoiceContent({ choice }: { choice: Choice }) {
   return (
     <>
       {choice.visual && <SceneView scene={choice.visual} compact />}
-      {choice.label && <span className={styles.label}>{choice.label}</span>}
+      {choice.label && (
+        <span className={styles.label} lang={choice.lang === 'en' ? 'en' : undefined}>
+          {choice.label}
+        </span>
+      )}
     </>
   )
 }

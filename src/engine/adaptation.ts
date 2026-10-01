@@ -6,6 +6,8 @@ export const RECENT_WINDOW = 6
 export const LEVEL_UP_STREAK = 4 // this many first-try answers in a row → level +1
 export const LEVEL_DOWN_WINDOW = 3 // among the last 3 answers ...
 export const LEVEL_DOWN_HELPED = 2 // ... this many needed strong help → level −1
+export const LEVEL_DOWN_STRUGGLE = 3 // or this many of the last 4 were not first-try → level −1
+export const TREND_MIN_ATTEMPTS = 3 // below this the parent view says "för lite data än"
 
 export const newSkillProgress = (level: Level = MIN_LEVEL): SkillProgress => ({
   level,
@@ -15,8 +17,12 @@ export const newSkillProgress = (level: Level = MIN_LEVEL): SkillProgress => ({
   recent: [],
 })
 
-export const outcomeFromMisses = (misses: number): Outcome =>
-  misses === 0 ? 'first' : misses === 1 ? 'retry' : 'helped'
+/**
+ * With few options a child can only miss a few times, so "helped" means: needed (nearly) every
+ * attempt — 2 misses, or 1 miss when there were only 2 options.
+ */
+export const outcomeFromMisses = (misses: number, options = 3): Outcome =>
+  misses === 0 ? 'first' : misses >= Math.min(2, options - 1) ? 'helped' : 'retry'
 
 const clampLevel = (n: number): Level => Math.min(MAX_LEVEL, Math.max(MIN_LEVEL, n)) as Level
 
@@ -37,7 +43,9 @@ export function applyOutcome(p: SkillProgress, outcome: Outcome, hintsShown: num
     return { ...next, level: clampLevel(p.level + 1), recent: [] }
   }
   const helped = recent.slice(-LEVEL_DOWN_WINDOW).filter((o) => o === 'helped').length
-  if (helped >= LEVEL_DOWN_HELPED && p.level > MIN_LEVEL) {
+  const last4 = recent.slice(-4)
+  const struggling = last4.length === 4 && last4.filter((o) => o !== 'first').length >= LEVEL_DOWN_STRUGGLE
+  if ((helped >= LEVEL_DOWN_HELPED || struggling) && p.level > MIN_LEVEL) {
     return { ...next, level: clampLevel(p.level - 1), recent: [] }
   }
   return next
@@ -55,7 +63,7 @@ export type Trend = 'new' | 'easy' | 'ok' | 'hard'
 
 /** Simplified status for the parent dashboard. */
 export function trendOf(p: SkillProgress | undefined): Trend {
-  if (!p || p.attempts === 0) return 'new'
+  if (!p || p.attempts < TREND_MIN_ATTEMPTS) return 'new'
   const r = p.recent
   if (r.length === 0) return 'ok' // level just changed
   const first = r.filter((o) => o === 'first').length

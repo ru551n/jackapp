@@ -53,6 +53,5 @@
 
 .current::after {
   border-color: var(--accent) !important;
-  width: 1.8rem !important;
-  height: 1.8rem !important;
+  box-shadow: 0 0 0 4px var(--accent-soft); /* marks the current stop without changing layout */
 }

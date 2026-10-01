@@ -50,7 +50,7 @@ describe('parent area', () => {
   it('rejects a wrong PIN, accepts the right one, and re-locks', async () => {
     setup('1234')
     await typePin('Skriv din kod', '9999', 'Öppna')
-    expect(screen.getByText('Fel kod. Försök igen.')).toBeInTheDocument()
+    expect(screen.getByText('Det blev inte rätt. Försök igen.')).toBeInTheDocument()
     expect(screen.queryByText('Sammanfattning')).not.toBeInTheDocument()
     await unlock()
     expect(screen.getByText('Sammanfattning')).toBeInTheDocument()

@@ -24,7 +24,7 @@ describe('Exercise', () => {
     const onDone = vi.fn()
     render(<Exercise question={question} onDone={onDone} nextLabel="Nästa" />)
     await userEvent.click(screen.getByRole('button', { name: '3' }))
-    expect(screen.getByText('Ja! Tre vagnar.')).toBeInTheDocument()
+    expect(screen.getByRole('status')).toHaveTextContent('Ja! Tre vagnar.')
     await userEvent.click(screen.getByRole('button', { name: 'Nästa' }))
     expect(onDone).toHaveBeenCalledWith(0, 0)
   })

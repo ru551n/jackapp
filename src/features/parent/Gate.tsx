@@ -57,7 +57,7 @@ export function Gate({ onUnlock }: { onUnlock: () => void }) {
           />
           {wrong && (
             <p className={s.msg} role="status">
-              Fel kod. Försök igen.
+              Det blev inte rätt. Försök igen.
             </p>
           )}
           <div>

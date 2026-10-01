@@ -16,6 +16,7 @@
 }
 
 .title {
+  outline: none;
   font-size: 1.4rem;
   text-align: center;
   letter-spacing: 0.02em;
@@ -64,4 +65,9 @@
   .title {
     font-size: 1.15rem;
   }
+}
+
+/* The accent ring is invisible on the dark sign colour. */
+.bar :focus-visible {
+  outline-color: var(--sign-ink);
 }

@@ -13,20 +13,43 @@ export const defaultState = (): AppState => ({
   freePlay: { line: null },
 })
 
-/** Load from localStorage, falling back to defaults on missing/corrupt data. */
+const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v)
+const count = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) && v >= 0 ? Math.floor(v) : 0)
+
+/**
+ * Load from localStorage. Every field is shape-checked and falls back to its default, so damaged
+ * data can never lock the child out of the app.
+ */
 export function loadState(storage: Pick<Storage, 'getItem'> | undefined = globalThis.localStorage): AppState {
   const base = defaultState()
   try {
     const raw = storage?.getItem(STORAGE_KEY)
     if (!raw) return base
-    const parsed = JSON.parse(raw) as Partial<AppState>
-    if (parsed?.version !== 1) return base
+    const p: unknown = JSON.parse(raw)
+    if (!isObj(p) || p.version !== 1) return base
+    const progress = isObj(p.progress) ? p.progress : {}
+    const missions = isObj(p.missions) ? p.missions : {}
     return {
       ...base,
-      ...parsed,
-      missions: { ...base.missions, ...parsed.missions },
-      settings: { ...base.settings, ...parsed.settings },
-      freePlay: { ...base.freePlay, ...parsed.freePlay },
+      progress: Object.fromEntries(
+        Object.entries(progress).filter(([, v]) => isObj(v) && Array.isArray(v.recent) && typeof v.level === 'number'),
+      ) as AppState['progress'],
+      missions: Object.fromEntries(
+        Object.keys(base.missions).map((k) => [k, count(missions[k])]),
+      ) as AppState['missions'],
+      sessionCounter: count(p.sessionCounter),
+      recentQuestionIds: Array.isArray(p.recentQuestionIds)
+        ? p.recentQuestionIds.filter((x) => typeof x === 'string')
+        : [],
+      sessions: Array.isArray(p.sessions) ? (p.sessions.filter(isObj) as unknown as AppState['sessions']) : [],
+      settings: { ...base.settings, ...(isObj(p.settings) ? (p.settings as Partial<AppState['settings']>) : {}) },
+      parentPin: typeof p.parentPin === 'string' && /^\d{4}$/.test(p.parentPin) ? p.parentPin : undefined,
+      freePlay: {
+        line:
+          isObj(p.freePlay) && isObj(p.freePlay.line) && Array.isArray(p.freePlay.line.stations)
+            ? (p.freePlay.line as unknown as AppState['freePlay']['line'])
+            : null,
+      },
     }
   } catch {
     return base

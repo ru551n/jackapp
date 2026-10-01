@@ -25,6 +25,7 @@
 }
 
 .scene {
+  min-height: 9rem;
   background: var(--paper);
   border-radius: var(--radius);
   padding: var(--space-3) var(--space-2);
@@ -86,9 +87,10 @@
   font-weight: 700;
 }
 
-/* Tried or eliminated: quietly faded, never red. Layout stays stable. */
+/* Tried or eliminated: quietly faded with a dashed edge, never red. Layout stays stable. */
 .dimmed {
-  opacity: 0.35;
+  opacity: 0.55;
+  border-style: dashed;
   cursor: default;
   box-shadow: none;
 }
@@ -98,7 +100,7 @@
 }
 
 .placed {
-  opacity: 0.35;
+  opacity: 0.55;
   border-style: dashed;
   cursor: default;
 }
@@ -141,7 +143,11 @@
 }
 
 .feedback {
-  min-height: 6rem;
+  min-height: 7.5rem; /* reserve space so choices never jump when feedback appears */
+}
+
+.prompt:focus {
+  outline: none;
 }
 
 .success,

@@ -9,7 +9,13 @@ const feed = (p: SkillProgress, outcomes: Outcome[]) => outcomes.reduce((acc, o)
 
 describe('adaptation', () => {
   it('classifies misses', () => {
-    expect([0, 1, 2, 5].map(outcomeFromMisses)).toEqual(['first', 'retry', 'helped', 'helped'])
+    expect([0, 1, 2, 5].map((m) => outcomeFromMisses(m))).toEqual(['first', 'retry', 'helped', 'helped'])
+    // With only 2 options a single miss already means the child needed the remaining option.
+    expect(outcomeFromMisses(1, 2)).toBe('helped')
+  })
+
+  it('levels down when 3 of the last 4 answers needed retries (reachable with 2 options)', () => {
+    expect(feed(newSkillProgress(3), ['retry', 'first', 'retry', 'retry']).level).toBe(2)
   })
 
   it('levels up one step after four first-try answers in a row', () => {
@@ -54,6 +60,7 @@ describe('adaptation', () => {
 
   it('summarises trend for parents', () => {
     expect(trendOf(undefined)).toBe('new')
+    expect(trendOf(feed(newSkillProgress(), ['first', 'first']))).toBe('new') // too little data
     expect(trendOf(feed(newSkillProgress(), ['first', 'first', 'first']))).toBe('easy')
     expect(trendOf(feed(newSkillProgress(), ['helped', 'retry', 'first']))).toBe('hard')
   })

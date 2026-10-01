@@ -27,14 +27,15 @@ export function useAppState<T>(select: (s: AppState) => T): T {
 }
 
 export const actions = {
-  recordAnswer(skill: SkillId, questionId: string, misses: number, hintsShown: number) {
+  /** `options`: how many answer options the question had (affects what counts as "needed help"). */
+  recordAnswer(skill: SkillId, questionId: string, misses: number, hintsShown: number, options = 3) {
     set((s) => ({
       ...s,
       progress: {
         ...s.progress,
         [skill]: applyOutcome(
           s.progress[skill] ?? newSkillProgress(),
-          outcomeFromMisses(misses),
+          outcomeFromMisses(misses, options),
           hintsShown,
           Date.now(),
         ),
