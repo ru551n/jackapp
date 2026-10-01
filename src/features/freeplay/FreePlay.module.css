@@ -39,9 +39,9 @@
   cursor: pointer;
   outline: none;
 }
-.station:focus-visible circle:nth-child(2) {
+.station:focus-visible .hit {
   stroke: var(--accent);
-  stroke-width: 1;
+  stroke-width: 1.2;
 }
 .dot {
   fill: var(--paper);
@@ -117,6 +117,14 @@
   min-height: 3.5rem;
   font-size: 1.2rem;
   padding: 0 0.75rem;
-  border: 2px solid var(--line);
+  border: 2px solid var(--ink-soft);
   border-radius: var(--radius-sm);
+}
+.hint {
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 1.1rem;
+}
+.panel h2:focus {
+  outline: none;
 }
