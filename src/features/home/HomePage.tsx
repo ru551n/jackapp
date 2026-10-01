@@ -124,6 +124,12 @@ export function HomePage({ lead, children, max }: { lead?: ReactNode; children?:
             Byt elev
           </Link>
         )}
+        {/* The adult area asks for the PIN (the gate is locked when a learner area opens). */}
+        {!leaving && (
+          <Link to="/vuxen" className={styles.parent}>
+            För vuxna
+          </Link>
+        )}
       </footer>
     </Shell>
   )

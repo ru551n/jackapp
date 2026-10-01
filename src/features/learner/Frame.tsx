@@ -31,6 +31,7 @@ export function Frame({ title, home = true, children }: { title: string; home?: 
         <nav aria-label="Meny" className={styles.nav}>
           {home && <Link to={paths.home}>Hem</Link>}
           <Link to={paths.picker}>Byt elev</Link>
+          <Link to="/vuxen">För vuxna</Link>
         </nav>
       </header>
       <main className={styles.main}>

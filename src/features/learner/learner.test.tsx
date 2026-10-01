@@ -98,7 +98,7 @@ describe('band selection', () => {
     expect(await screen.findByRole('heading', { name: 'Mitt äventyr' })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: /Tunnelbanan/ })).toHaveAttribute('href', `/l/${ID}/omrade/tunnelbanan`)
     expect(screen.getByRole('link', { name: 'Byt elev' })).toHaveAttribute('href', '/')
-    expect(screen.queryByRole('link', { name: 'För vuxna' })).not.toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'För vuxna' })).toHaveAttribute('href', '/vuxen')
     expect(document.documentElement.dataset.band).toBe('early')
   })
 
@@ -113,6 +113,7 @@ describe('band selection', () => {
     expect(await screen.findByText('Alla ämnen i årskurs 5')).toBeInTheDocument()
     expect(screen.getByText('Matematik')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Byt elev' })).toHaveAttribute('href', '/')
+    expect(screen.getByRole('link', { name: 'För vuxna' })).toHaveAttribute('href', '/vuxen')
     expect(screen.queryByText('Mitt äventyr')).not.toBeInTheDocument()
   })
 
