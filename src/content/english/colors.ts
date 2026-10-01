@@ -1,6 +1,7 @@
 import type { Generator } from '../../core/types'
+import { capitalize } from '../../core/swedish'
 import { wrongIds } from '../helpers'
-import { COLORS, VEHICLES, ask, colourPic, wordSign } from './vocab'
+import { COLORS, VEHICLES, ask, colourPic, distinct, gloss, showSign, svCol, svColA, wordSign } from './vocab'
 
 /** Colours on vehicles: "Tryck på red." → "Tap the blue train." */
 export const tapColor: Generator = {
@@ -9,7 +10,7 @@ export const tapColor: Generator = {
   levels: [1, 5],
   generate({ rng, level, support }) {
     const [c, c2, c3] = rng.shuffle(COLORS)
-    const [n, n2, n3] = rng.shuffle(VEHICLES)
+    const [n, n2, n3] = distinct(rng, VEHICLES, 3, undefined, level)
     const four: [typeof c, typeof n][] = [
       [c, n],
       [c2, n],
@@ -34,16 +35,16 @@ export const tapColor: Generator = {
       level,
       theme: tn.theme,
       ...ask(level, support, { sv: `Tryck på ${phrase}.`, en: `Tap the ${phrase}.`, say: phrase }),
-      scene: level <= 2 || support === 'extra' ? wordSign(tc.en) : undefined,
+      scene: showSign(level, support) ? wordSign(phrase) : undefined,
       task: { kind: 'choice', choices, answer },
       hints: [
-        { text: `${tc.en} betyder ${tc.sv}.`, scene: wordSign(tc.en) },
+        simple ? gloss(tc.en, tc.sv, wordSign(tc.en)) : gloss(phrase, svCol(tc, tn), wordSign(phrase)),
         {
-          text: simple ? `Leta efter ${tc.sv} färg.` : `Hitta ${tn.neuter ? tc.svT : tc.sv} ${tn.sv}.`,
+          text: simple ? `Leta efter något ${tc.svT}.` : `Hitta ${svColA(tc, tn)}.`,
           eliminate: wrongIds(choices, answer),
         },
       ],
-      success: `Ja! ${tc.en} = ${tc.sv}.`,
+      success: `Ja! ${capitalize(phrase)}.`,
     }
   },
 }

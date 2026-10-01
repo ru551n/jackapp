@@ -1,5 +1,7 @@
+import { numberWord } from '../../core/swedish'
 import type {
   VehicleCategory,
+  Hint,
   Choice,
   Question,
   Rng,
@@ -17,19 +19,40 @@ export interface Noun {
   sv: string
   /** Definite Swedish form and whether it is neuter (colour adjectives: röd / rött). */
   svDef: string
+  /** Swedish indefinite plural: tåg, bussar, tunnelbanor. */
+  svPl: string
   neuter: boolean
   sprite: SpriteId
   theme: Theme
 }
 
 export const NOUNS: Noun[] = [
-  { en: 'train', plural: 'trains', sv: 'tåg', svDef: 'tåget', neuter: true, sprite: 'locomotive', theme: 'train' },
-  { en: 'tram', plural: 'trams', sv: 'spårvagn', svDef: 'spårvagnen', neuter: false, sprite: 'tram', theme: 'tram' },
+  {
+    en: 'train',
+    plural: 'trains',
+    sv: 'tåg',
+    svDef: 'tåget',
+    svPl: 'tåg',
+    neuter: true,
+    sprite: 'locomotive',
+    theme: 'train',
+  },
+  {
+    en: 'tram',
+    plural: 'trams',
+    sv: 'spårvagn',
+    svDef: 'spårvagnen',
+    svPl: 'spårvagnar',
+    neuter: false,
+    sprite: 'tram',
+    theme: 'tram',
+  },
   {
     en: 'metro',
     plural: 'metros',
     sv: 'tunnelbana',
     svDef: 'tunnelbanan',
+    svPl: 'tunnelbanor',
     neuter: false,
     sprite: 'metroCar',
     theme: 'metro',
@@ -39,13 +62,32 @@ export const NOUNS: Noun[] = [
     plural: 'planes',
     sv: 'flygplan',
     svDef: 'flygplanet',
+    svPl: 'flygplan',
     neuter: true,
     sprite: 'airliner',
     theme: 'airport',
   },
-  { en: 'jet', plural: 'jets', sv: 'jetplan', svDef: 'jetplanet', neuter: true, sprite: 'jet', theme: 'airport' },
-  { en: 'bus', plural: 'buses', sv: 'buss', svDef: 'bussen', neuter: false, sprite: 'bus', theme: 'train' },
-  { en: 'car', plural: 'cars', sv: 'bil', svDef: 'bilen', neuter: false, sprite: 'car', theme: 'train' },
+  {
+    en: 'jet',
+    plural: 'jets',
+    sv: 'jetplan',
+    svDef: 'jetplanet',
+    svPl: 'jetplan',
+    neuter: true,
+    sprite: 'jet',
+    theme: 'airport',
+  },
+  {
+    en: 'bus',
+    plural: 'buses',
+    sv: 'buss',
+    svDef: 'bussen',
+    svPl: 'bussar',
+    neuter: false,
+    sprite: 'bus',
+    theme: 'train',
+  },
+  { en: 'car', plural: 'cars', sv: 'bil', svDef: 'bilen', svPl: 'bilar', neuter: false, sprite: 'car', theme: 'train' },
 ]
 /** Nouns that are vehicles (colour, counting, sentences). */
 export const VEHICLES = NOUNS
@@ -57,6 +99,7 @@ export const PICTURE_NOUNS = [
     plural: 'stations',
     sv: 'station',
     svDef: 'stationen',
+    svPl: 'stationer',
     neuter: false,
     sprite: 'station',
     theme: 'train',
@@ -66,6 +109,7 @@ export const PICTURE_NOUNS = [
     plural: 'passengers',
     sv: 'passagerare',
     svDef: 'passageraren',
+    svPl: 'passagerare',
     neuter: false,
     sprite: 'passenger',
     theme: 'airport',
@@ -75,6 +119,7 @@ export const PICTURE_NOUNS = [
     plural: 'suitcases',
     sv: 'resväska',
     svDef: 'resväskan',
+    svPl: 'resväskor',
     neuter: false,
     sprite: 'suitcase',
     theme: 'airport',
@@ -133,38 +178,70 @@ export const COLORS: { tint: Tint; en: string; sv: string; svT: string }[] = [
 
 export const NUMBER_WORDS = ['', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten']
 
-/** Swedish instruction prompt at L1–2 (and with extra support), English afterwards. */
-export const swedishLevel = (level: number, support: Support) => level <= 2 || support === 'extra'
+/** Swedish prompt at L1–2 (and with extra support); `until` raises the cut-off level. */
+export const swedishLevel = (level: number, support: Support, until = 2) => level <= until || support === 'extra'
+/** The word sign stays visible one level longer than the Swedish prompt (L1–3). */
+export const showSign = (level: number, support: Support) => level <= 3 || support === 'extra'
 
-/** Prompt fields: Swedish speech only; the English text goes on the "Hör på engelska" button. */
+/** Prompt fields. Swedish prompt: English word on the listen button. English prompt: "På svenska" via speech. */
 export function ask(
   level: number,
   support: Support,
   p: { sv: string; en: string; say?: string; speech?: string },
-): Pick<Question, 'prompt' | 'speech' | 'listen'> {
-  const sw = swedishLevel(level, support)
-  return {
-    prompt: sw ? p.sv : p.en,
-    speech: p.speech ?? 'Tryck på rätt bild.',
-    listen: sw && !p.say ? undefined : { text: sw ? p.say! : p.en, lang: 'en' },
-  }
+  until = 2,
+): Pick<Question, 'prompt' | 'promptLang' | 'speech' | 'listen'> {
+  const speech = p.speech ?? 'Tryck på rätt bild.'
+  if (!swedishLevel(level, support, until)) return { prompt: p.en, promptLang: 'en', speech }
+  return { prompt: p.sv, speech, listen: p.say ? { text: p.say, lang: 'en' } : undefined }
 }
 
 export const row = (...items: SceneItem[]) => ({ kind: 'row' as const, items })
-export const wordSign = (text: string) => ({ kind: 'sign' as const, text, style: 'word' as const })
+export const wordSign = (text: string) => ({ kind: 'sign' as const, text, style: 'word' as const, lang: 'en' as const })
 export const picChoice = (id: string, aria: string, ...items: SceneItem[]): Choice => ({
   id,
   visual: row(...items),
   ariaLabel: aria,
 })
+/** Size choice: an airliner at `scale`, with a passenger beside it as a size reference. */
+export const sizeChoice = (scale: number, aria: string): Choice => ({
+  id: String(scale),
+  ariaLabel: aria,
+  visual: {
+    kind: 'group',
+    direction: 'row',
+    scenes: [{ kind: 'vehicle', vehicle: 'a320', scale }, row({ sprite: 'passenger' })],
+  },
+})
 
-/** `n` items with different look-alike groups avoided: plane and jet never share a choice set. */
-export function distinct<T extends { en: string }>(rng: Rng, pool: readonly T[], n: number, first?: T): T[] {
-  const air = (t: T) => t.en === 'plane' || t.en === 'jet'
+/** Swedish noun phrases with correct gender and number. */
+export const svOne = (n: Noun) => `${n.neuter ? 'ett' : 'en'} ${n.sv}`
+export const svCol = (c: Color, n: Noun) => `${n.neuter ? c.svT : c.sv} ${n.sv}`
+export const svColA = (c: Color, n: Noun) => `${n.neuter ? 'ett' : 'en'} ${svCol(c, n)}`
+export const svCount = (k: number, n: Noun) => (k === 1 ? svOne(n) : `${numberWord(k)} ${n.svPl}`)
+export const enCount = (k: number, n: Noun) => `${NUMBER_WORDS[k]} ${k === 1 ? n.en : n.plural}`
+
+/** Translation hint: the English text is shown, the Swedish voice says only Swedish, English has its own button. */
+export function gloss(en: string, sv: string, scene?: Hint['scene']): Hint {
+  const same = en.toLowerCase() === sv.toLowerCase()
+  return {
+    text: same ? `${en}: samma ord på svenska.` : `${en} = ${sv}.`,
+    speech: same ? 'Samma ord på svenska.' : `Det betyder ${sv}.`,
+    listen: { text: en, lang: 'en' },
+    scene,
+  }
+}
+
+type Look = (t: { en: string }) => boolean
+const AIR: Look = (t) => t.en === 'plane' || t.en === 'jet'
+const RAIL: Look = (t) => ['train', 'tram', 'metro'].includes(t.en)
+
+/** `n` items without look-alikes: plane+jet never together; train/tram/metro not together at L1–3. */
+export function distinct<T extends { en: string }>(rng: Rng, pool: readonly T[], n: number, first?: T, level = 1): T[] {
+  const guards = level <= 3 ? [AIR, RAIL] : [AIR]
   const out: T[] = first ? [first] : []
   for (const t of rng.shuffle(pool)) {
     if (out.length >= n) break
-    if (out.includes(t) || (air(t) && out.some(air))) continue
+    if (out.includes(t) || guards.some((g) => g(t) && out.some(g))) continue
     out.push(t)
   }
   return out
@@ -176,7 +253,7 @@ export const choiceCount = (level: number, support: Support) =>
 
 export type Color = (typeof COLORS)[number]
 export const colourPic = (c: Color, n: Noun): Choice =>
-  picChoice(`${c.tint}:${n.en}`, `${c.sv} ${n.sv}`, { sprite: n.sprite, tint: c.tint })
+  picChoice(`${c.tint}:${n.en}`, svCol(c, n), { sprite: n.sprite, tint: c.tint })
 
 /** One English word per vehicle category, shown lightly on collection cards ("Tåg — train"). */
 export const CATEGORY_WORD: Record<VehicleCategory, string> = {
