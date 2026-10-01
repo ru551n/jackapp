@@ -5,10 +5,13 @@ import { API_PREFIX } from '../../shared/contracts'
 export class ApiRequestError extends Error {
   readonly status: number
   readonly code: string
-  constructor(status: number, code: string, message: string) {
+  /** The full error body (e.g. a `validation` report on 422), for adult views. */
+  readonly body: unknown
+  constructor(status: number, code: string, message: string, body?: unknown) {
     super(message)
     this.status = status
     this.code = code
+    this.body = body
   }
 }
 
@@ -24,7 +27,7 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
   const data = await res.json().catch(() => undefined)
   if (!res.ok) {
     const err = (data as { error?: { code?: string; message?: string } } | undefined)?.error
-    throw new ApiRequestError(res.status, err?.code ?? 'error', err?.message ?? 'Något gick fel. Försök igen.')
+    throw new ApiRequestError(res.status, err?.code ?? 'error', err?.message ?? 'Något gick fel. Försök igen.', data)
   }
   return data as T
 }
