@@ -70,11 +70,12 @@ services:
       migrate: { condition: service_completed_successfully }
     # The worker drains running jobs for up to 30 s on SIGTERM; Docker's default 10 s would kill it mid-job.
     stop_grace_period: 45s
+    # The health file appears only after the first successful DB heartbeat: startup (~30 s) + ~15 s.
     healthcheck:
       test: ['CMD', 'node', 'dist-server/worker-health.js']
       interval: 30s
       timeout: 5s
-      start_period: 20s
+      start_period: 45s
       retries: 3
     # LAN AI on the Docker host itself? Uncomment and use http://host.docker.internal:<port>/v1.
     # extra_hosts: ['host.docker.internal:host-gateway']
