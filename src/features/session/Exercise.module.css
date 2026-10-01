@@ -12,6 +12,12 @@
   flex-wrap: wrap;
 }
 
+.speakers {
+  display: flex;
+  gap: var(--space-1);
+  flex-wrap: wrap;
+}
+
 .prompt {
   font-size: 1.6rem;
   line-height: 1.3;

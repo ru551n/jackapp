@@ -68,7 +68,16 @@ export function Exercise({ question, onDone, nextLabel }: Props) {
         <h2 id="prompt" className={styles.prompt}>
           {question.prompt}
         </h2>
-        <SpeakButton text={question.speech ?? question.prompt} />
+        <div className={styles.speakers}>
+          <SpeakButton text={question.speech ?? question.prompt} />
+          {question.listen && (
+            <SpeakButton
+              text={question.listen.text}
+              lang={question.listen.lang}
+              label={question.listen.lang === 'en' ? 'Hör på engelska' : 'Hör ordet'}
+            />
+          )}
+        </div>
       </div>
 
       {scene && (

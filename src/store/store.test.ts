@@ -37,6 +37,15 @@ describe('actions', () => {
     expect(JSON.parse(localStorage.getItem(STORAGE_KEY)!).progress['math.add'].attempts).toBe(2)
   })
 
+  it('tracks English separately from Swedish reading', () => {
+    actions._replace(defaultState())
+    for (let i = 0; i < 4; i++) actions.recordAnswer('en.words', `en.words:${i}`, 0, 0)
+    expect(getState().progress['en.words']?.level).toBe(2)
+    expect(getState().progress['read.words']).toBeUndefined()
+    actions.completeSession({ at: 1, area: 'engelska', skills: ['en.words'], firstTry: 4, total: 4 })
+    expect(getState().missions).toMatchObject({ engelska: 1, stationen: 0 })
+  })
+
   it('completing a session counts a mission and advances the seed', () => {
     actions._replace(defaultState())
     actions.completeSession({ at: 1, area: 'tunnelbanan', skills: ['math.count'], firstTry: 4, total: 4 })

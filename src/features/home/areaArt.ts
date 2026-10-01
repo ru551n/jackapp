@@ -5,4 +5,5 @@ export const AREA_SPRITE: Record<AreaId, SpriteId> = {
   tunnelbanan: 'metroCar',
   sparvagnen: 'tram',
   flygplatsen: 'airliner',
+  engelska: 'bus',
 }

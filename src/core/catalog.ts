@@ -39,6 +39,13 @@ export const AREAS: AreaInfo[] = [
     subject: 'Flyg: läsning, siffror och igenkänning',
     skills: ['air.recognize', 'air.read', 'air.numbers', 'air.compare'],
   },
+  {
+    id: 'engelska',
+    name: 'Engelska',
+    tagline: 'Train, tram, plane!',
+    subject: 'Engelska',
+    skills: ['en.words', 'en.colors', 'en.numbers', 'en.adjectives', 'en.listen', 'en.sentences'],
+  },
 ]
 
 /** Parent-facing skill names. */
@@ -60,6 +67,12 @@ export const SKILL_NAMES: Record<SkillId, string> = {
   'air.read': 'Läsa på flygplatsen',
   'air.numbers': 'Siffror på flygplatsen',
   'air.compare': 'Jämföra flygplan',
+  'en.words': 'Engelska ord (transport och vardag)',
+  'en.colors': 'Färger på engelska',
+  'en.numbers': 'Siffror 1–10 på engelska',
+  'en.adjectives': 'Beskrivande ord (big, small, fast, slow)',
+  'en.listen': 'Hörförståelse på engelska',
+  'en.sentences': 'Korta meningar på engelska',
 }
 
 export const areaById = (id: string): AreaInfo | undefined => AREAS.find((a) => a.id === id)

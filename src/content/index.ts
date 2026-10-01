@@ -1,5 +1,6 @@
 import type { Generator, SkillId } from '../core/types'
 import { AVIATION_GENERATORS } from './aviation'
+import { ENGLISH_GENERATORS } from './english'
 import { LOGIC_GENERATORS } from './logic'
 import { MATH_GENERATORS } from './math'
 import { READING_GENERATORS } from './reading'
@@ -13,6 +14,7 @@ export const GENERATORS: Generator[] = [
   ...MATH_GENERATORS,
   ...LOGIC_GENERATORS,
   ...AVIATION_GENERATORS,
+  ...ENGLISH_GENERATORS,
 ]
 
 export const AVAILABLE_SKILLS: SkillId[] = [...new Set(GENERATORS.map((g) => g.skill))]

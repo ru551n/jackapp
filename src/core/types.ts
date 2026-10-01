@@ -1,6 +1,6 @@
 // Core contracts shared by the engine, content and UI. Change only via the orchestrator.
 
-export type AreaId = 'stationen' | 'tunnelbanan' | 'sparvagnen' | 'flygplatsen'
+export type AreaId = 'stationen' | 'tunnelbanan' | 'sparvagnen' | 'flygplatsen' | 'engelska'
 
 export type SkillId =
   // Stationen — reading
@@ -24,6 +24,13 @@ export type SkillId =
   | 'air.read'
   | 'air.numbers'
   | 'air.compare'
+  // Engelska — beginner English through transport (UI stays Swedish)
+  | 'en.words'
+  | 'en.colors'
+  | 'en.numbers'
+  | 'en.adjectives'
+  | 'en.listen'
+  | 'en.sentences'
 
 export type Level = 1 | 2 | 3 | 4 | 5
 export const MIN_LEVEL: Level = 1
@@ -32,13 +39,27 @@ export const MAX_LEVEL: Level = 5
 /** 'extra' = the child has struggled recently; generators should show stronger visual support up front. */
 export type Support = 'normal' | 'extra'
 
+/** Languages the app can speak: Swedish UI, English as a learned subject. */
+export type SpeechLang = 'sv' | 'en'
+
 export type Theme = 'train' | 'metro' | 'tram' | 'airport' | 'fighter'
 
 /** Calm palette tints usable on sprites (patterns, categories). */
 export type Tint = 'red' | 'blue' | 'green' | 'yellow' | 'grey'
 
 export type SpriteId =
-  'locomotive' | 'carriage' | 'metroCar' | 'tram' | 'passenger' | 'suitcase' | 'airliner' | 'jet' | 'signal' | 'station'
+  | 'locomotive'
+  | 'carriage'
+  | 'metroCar'
+  | 'tram'
+  | 'passenger'
+  | 'suitcase'
+  | 'airliner'
+  | 'jet'
+  | 'signal'
+  | 'station'
+  | 'bus'
+  | 'car'
 
 export interface SceneItem {
   sprite: SpriteId
@@ -93,8 +114,10 @@ export interface Question {
   theme: Theme
   /** Short Swedish prompt, shown and (optionally) spoken. */
   prompt: string
-  /** Spoken text when it should differ from the prompt (e.g. reading out "3 + 1"). */
+  /** Spoken text when it should differ from the prompt (e.g. reading out "3 + 1"). Always Swedish. */
   speech?: string
+  /** Target-language audio (e.g. the English word "train"), offered on its own speaker button. */
+  listen?: { text: string; lang: SpeechLang }
   scene?: Scene
   task: Task
   /** Progressive hints: hints[0] after the first miss, hints[1] after the second, ... */

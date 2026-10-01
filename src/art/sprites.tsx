@@ -163,6 +163,35 @@ const SPRITES: Record<SpriteId, SpriteDef> = {
       </>
     ),
   },
+  bus: {
+    viewBox: '0 0 100 70',
+    width: 1.3,
+    defaultFill: 'var(--tint-red)',
+    draw: (fill) => (
+      <>
+        <rect x="6" y="6" width="88" height="52" rx="8" fill={fill} />
+        {[12, 32, 52, 72].map((x) => (
+          <g key={x}>
+            <rect x={x} y="12" width="14" height="12" rx="2" fill="var(--window)" />
+            <rect x={x} y="32" width="14" height="12" rx="2" fill="var(--window)" />
+          </g>
+        ))}
+        {wheels([24, 76], 60)}
+      </>
+    ),
+  },
+  car: {
+    viewBox: '0 0 100 50',
+    width: 1.3,
+    defaultFill: 'var(--tint-blue)',
+    draw: (fill) => (
+      <>
+        <path d="M8 34 v-8 q0 -6 8 -7 l14 -2 l12 -10 h26 l14 12 q10 1 10 9 v6 z" fill={fill} />
+        <path d="M36 17 l9 -7 h10 v7 z M59 10 h8 l9 7 h-17 z" fill="var(--window)" />
+        {wheels([26, 76], 38)}
+      </>
+    ),
+  },
   station: {
     viewBox: '0 0 100 60',
     width: 1.4,

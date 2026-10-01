@@ -5,7 +5,7 @@ export const STORAGE_KEY = 'jackapp:v1'
 export const defaultState = (): AppState => ({
   version: 1,
   progress: {},
-  missions: { stationen: 0, tunnelbanan: 0, sparvagnen: 0, flygplatsen: 0 },
+  missions: { stationen: 0, tunnelbanan: 0, sparvagnen: 0, flygplatsen: 0, engelska: 0 },
   sessionCounter: 0,
   recentQuestionIds: [],
   sessions: [],
