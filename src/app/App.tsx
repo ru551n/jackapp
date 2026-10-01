@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import { createHashRouter, RouterProvider } from 'react-router'
 import { CollectionPage } from '../features/collection/CollectionPage'
+import { VehicleDetailPage } from '../features/collection/VehicleDetailPage'
 import { FreePlayPage } from '../features/freeplay/FreePlayPage'
 import { HomePage } from '../features/home/HomePage'
 import { ParentPage } from '../features/parent/ParentPage'
@@ -14,7 +15,7 @@ const routes = [
   { path: '/omrade/:area', element: <AreaPage /> },
   { path: '/omrade/:area/uppdrag', element: <SessionPage /> },
   { path: '/samling', element: <CollectionPage /> },
-  { path: '/samling/:id', element: <CollectionPage /> },
+  { path: '/samling/:id', element: <VehicleDetailPage /> },
   { path: '/vuxen', element: <ParentPage /> },
   { path: '/bygg', element: <FreePlayPage /> },
   { path: '*', element: <HomePage /> },
