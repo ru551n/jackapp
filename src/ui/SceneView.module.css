@@ -89,13 +89,13 @@
 }
 
 .vehicleArt {
-  width: min(100%, 16rem);
+  width: calc(min(100%, 16rem) * var(--vehicle-scale, 1));
   height: auto;
-  max-height: 10rem;
+  max-height: calc(10rem * var(--vehicle-scale, 1));
 }
 
 .compact .vehicleArt {
-  max-height: 6.5rem;
+  max-height: calc(6.5rem * var(--vehicle-scale, 1));
 }
 
 .number {

@@ -57,7 +57,8 @@ export type EquationTerm = number | '+' | '−' | '=' | '?'
 export type Scene =
   | { kind: 'row'; items: SceneItem[]; label?: string }
   | { kind: 'sign'; text: string; style: SignStyle }
-  | { kind: 'vehicle'; vehicle: string; view?: 'art' | 'silhouette' }
+  /** scale (0.2–1) draws the vehicle relative to the largest in the task, for size comparisons. */
+  | { kind: 'vehicle'; vehicle: string; view?: 'art' | 'silhouette'; scale?: number }
   | { kind: 'number'; value: number }
   | { kind: 'equation'; terms: EquationTerm[] }
   | { kind: 'text'; text: string; size?: 'md' | 'lg' | 'xl' }

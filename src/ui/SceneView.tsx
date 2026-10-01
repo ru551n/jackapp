@@ -16,7 +16,10 @@ export function SceneView({ scene, compact = false }: { scene: Scene; compact?: 
       const v = vehicleById(scene.vehicle)
       if (!v) return null
       return (
-        <div className={`${styles.vehicle} ${compact ? styles.compact : ''}`}>
+        <div
+          className={`${styles.vehicle} ${compact ? styles.compact : ''}`}
+          style={scene.scale ? { ['--vehicle-scale' as string]: scene.scale } : undefined}
+        >
           <VehicleArt
             vehicle={v}
             mode={scene.view === 'silhouette' ? 'silhouette' : 'color'}
