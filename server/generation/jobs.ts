@@ -194,7 +194,7 @@ async function aiGuard<T>(tools: JobTools, fn: () => Promise<T>): Promise<T> {
   try {
     return await fn()
   } catch (e) {
-    if (e instanceof AiError) tools.fail(e.code, e.message, e.retryable)
+    if (e instanceof AiError) tools.fail(e.code, e.message, e.retryable, e.retryAfterMs)
     throw e
   }
 }
@@ -249,6 +249,7 @@ export function generationJobHandlers(deps: GenerationDeps): JobHandler[] {
         ...meta('generate', g.model, g.truncated),
         illustrations: g.illustrations,
         jobId: job.id,
+        assertActive: tools.assertActive,
       })
       if (g.truncated) tools.log.info({ truncated: g.truncated }, 'study material truncated for the prompt')
       if (!g.ok) tools.fail('validation_failed', validationFailedMessage(a, true), false)
@@ -297,6 +298,7 @@ export function generationJobHandlers(deps: GenerationDeps): JobHandler[] {
         ...meta('transform:more', g.model, g.truncated),
         illustrations: g.illustrations,
         jobId,
+        assertActive: tools.assertActive,
       })
       if (!g.ok) tools.fail('validation_failed', validationFailedMessage(a, true), false)
       await enqueueIllustrations(
@@ -318,7 +320,11 @@ export function generationJobHandlers(deps: GenerationDeps): JobHandler[] {
       a,
       { ...meta(`transform:${t.kind}`, g.model, g.truncated), illustrations: g.illustrations },
       request,
-      { expectVersion: prev.version, approval: (cur) => nextApproval(cur, g.ok, policy) },
+      {
+        expectVersion: prev.version,
+        approval: (cur) => nextApproval(cur, g.ok, policy),
+        assertActive: tools.assertActive,
+      },
     )
     if (!saved) conflictFail(tools)
     if (!g.ok) tools.fail('validation_failed', validationFailedMessage(a, true), false)
@@ -352,6 +358,7 @@ export function generationJobHandlers(deps: GenerationDeps): JobHandler[] {
       const saved = await addVersion(tools.db, a, { ...meta('regenerateItem', r.model), illustrations }, undefined, {
         expectVersion: prev.version,
         approval: (cur) => nextApproval(cur, r.ok, policy),
+        assertActive: tools.assertActive,
       })
       if (!saved) conflictFail(tools)
       if (!r.ok) tools.fail('validation_failed', validationFailedMessage(a, true), false)

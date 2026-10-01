@@ -7,7 +7,7 @@ import {
   LearnerProfileInput,
   type ProcessedStudyMaterial,
 } from '../../shared/contracts'
-import { createAi } from '../ai'
+import { AiError, createAi } from '../ai'
 import { FetchError, type Fetcher } from '../research/fetch'
 import type { ChatRequest } from '../ai/types'
 import { syncBundledCurriculum } from '../curriculum/service'
@@ -1031,6 +1031,42 @@ describe('practice tests, repair and recovery', () => {
     expect(calls.length).toBe(before)
     const list = await t.app.inject({ url: `/api/v1/learners/${t.learnerId}/artifacts`, headers: asAdult })
     expect(list.json()).toHaveLength(1)
+  })
+
+  it('a no longer active job stores nothing; AI retry-after reaches the job failure', async () => {
+    const t = await setup()
+    const { ai } = scriptedAi(t.db)
+    await post(t, `/learners/${t.learnerId}/generate`, { type: 'flashcards', questionCount: 2 })
+    const job = (await claim(t.db, 'test', ['artifact.generate']))!
+    const tools: JobTools = {
+      db: t.db,
+      log: silentLog as never,
+      signal: new AbortController().signal,
+      progress: async () => {},
+      fail: (code, msg, retryable, retryAfterMs) => {
+        throw new JobFailure(code, msg, retryable, retryAfterMs)
+      },
+      assertActive: async () => {
+        throw new Error('cancelled')
+      },
+    }
+    const gen = (a: typeof ai) => generationJobHandlers({ ai: a }).find((x) => x.type === 'artifact.generate')!
+    await expect(gen(ai).run(job, tools)).rejects.toThrow('cancelled')
+    const list = await t.app.inject({ url: `/api/v1/learners/${t.learnerId}/artifacts`, headers: asAdult })
+    expect(list.json()).toHaveLength(0)
+
+    const limited = {
+      text: {
+        generate: async () => {
+          throw new AiError('ai_rate_limited', { retryAfterMs: 42_000 })
+        },
+      } as never,
+    }
+    const e = await gen(limited)
+      .run(job, tools)
+      .catch((x: unknown) => x)
+    expect(e).toBeInstanceOf(JobFailure)
+    expect(e).toMatchObject({ retryAfterMs: 42_000, jobError: { code: 'ai_rate_limited', retryable: true } })
   })
 })
 

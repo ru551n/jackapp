@@ -4,6 +4,7 @@ import { buildApp } from '../app/build'
 import { createTestDb, type DbHandle } from '../db/client'
 import { TEST_ENV } from '../test/helpers'
 import { AiError, createAi } from './index'
+import { retryAfterOf } from '../jobs/runtime'
 import { silentLog, startMockServer } from './test-server'
 
 let handle: DbHandle
@@ -59,6 +60,10 @@ describe('limits', () => {
     expect(e).toBeInstanceOf(AiError)
     expect(e).toMatchObject({ code: 'ai_rate_limited', retryable: true })
     expect((e as Error).message).toMatch(/timmen/)
+    // Retry no earlier than the next hour bucket; the job runtime honours it.
+    const wait = retryAfterOf(e)
+    expect(wait).toBeGreaterThan(0)
+    expect(wait).toBeLessThanOrEqual(3_600_000)
   })
 
   it('caps concurrent provider calls per process', async () => {

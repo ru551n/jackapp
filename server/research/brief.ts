@@ -49,6 +49,8 @@ export interface ResearchOptions {
   /** Extra fetch options (tests: resolver/address policy). */
   fetchOptions?: Omit<SafeFetchOptions, 'accept'>
   signal?: AbortSignal
+  /** A job's `tools.assertActive`, checked inside the brief's write transaction. */
+  assertActive?: (tx: Db) => Promise<void>
 }
 
 export class ResearchError extends Error {
@@ -150,6 +152,7 @@ export async function researchBrief(
   const brief: ResearchBrief = { summary: output.summary, keyPoints }
 
   const briefId = await db.transaction(async (tx) => {
+    await opts.assertActive?.(tx as unknown as Db)
     const [row] = await tx
       .insert(researchBriefs)
       .values({ topic: input.topic, language, school: input.school, brief, model })

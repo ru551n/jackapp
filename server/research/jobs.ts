@@ -32,7 +32,7 @@ function parsePayload<T>(schema: z.ZodType<T>, payload: unknown, tools: JobTools
 }
 
 const rethrow = (e: unknown, tools: JobTools): never => {
-  if (e instanceof AiError) tools.fail(e.code, e.message, e.retryable)
+  if (e instanceof AiError) tools.fail(e.code, e.message, e.retryable, e.retryAfterMs)
   if (e instanceof ResearchError) tools.fail('no_sources', 'Webbsökningen hittade inga användbara källor.', true)
   throw e
 }
@@ -42,9 +42,12 @@ export function researchJobHandlers(deps: HandlerDeps, env: NodeJS.ProcessEnv = 
     defineJobHandler('research.run', async (job, tools) => {
       const input = parsePayload(ResearchRunPayload, job.payload, tools)
       await tools.progress(0.1, 'Söker på webben')
-      const r = await researchBrief(tools.db, deps.ai, input, { ...deps.net, env, signal: tools.signal }).catch((e) =>
-        rethrow(e, tools),
-      )
+      const r = await researchBrief(tools.db, deps.ai, input, {
+        ...deps.net,
+        env,
+        signal: tools.signal,
+        assertActive: tools.assertActive,
+      }).catch((e) => rethrow(e, tools))
       if (!r) return tools.fail('feature_disabled', 'Webbsökning är avstängd eller inte konfigurerad.', false)
       return r.briefId
     }),

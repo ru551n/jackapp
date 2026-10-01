@@ -33,10 +33,15 @@ export async function countRequest(db: Db, limit: number): Promise<void> {
     .insert(aiRequestBuckets)
     .values({ hour: sql`date_trunc('hour', now())`, count: 1 })
     .onConflictDoUpdate({ target: aiRequestBuckets.hour, set: { count: sql`${aiRequestBuckets.count} + 1` } })
-    .returning({ count: aiRequestBuckets.count })
+    .returning({
+      count: aiRequestBuckets.count,
+      // Until the next hour bucket, on the DB clock.
+      untilNextMs: sql<number>`ceil(extract(epoch from date_trunc('hour', now()) + interval '1 hour' - now()) * 1000)::int`,
+    })
   if (row!.count > limit)
     throw new AiError('ai_rate_limited', {
       message: 'Gränsen för AI-anrop den här timmen är nådd. Försök igen senare.',
       detail: 'hourly limit (LIMIT_AI_REQUESTS_PER_HOUR)',
+      retryAfterMs: Math.max(1000, Number(row!.untilNextMs)),
     })
 }

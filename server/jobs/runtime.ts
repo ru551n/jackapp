@@ -73,7 +73,7 @@ export interface JobTools {
   signal: AbortSignal
   /** Coarse progress 0..1 plus a short Swedish step text. Throttled. */
   progress(p: number, step?: string): Promise<void>
-  fail(code: string, adultMessage: string, retryable: boolean): never
+  fail(code: string, adultMessage: string, retryable: boolean, retryAfterMs?: number): never
   /**
    * Call right before a job's final writes, inside their transaction: throws if the job was
    * aborted, cancelled, deleted or taken over. Locks the job row, so a concurrent cancel waits.
@@ -237,8 +237,8 @@ export function createWorker(opts: WorkerOptions): Worker {
       log: jlog,
       signal: ctrl.signal,
       progress: progressWriter(db, job.id, workerId),
-      fail: (code, msg, retryable) => {
-        throw new JobFailure(code, msg, retryable)
+      fail: (code, msg, retryable, retryAfterMs) => {
+        throw new JobFailure(code, msg, retryable, retryAfterMs)
       },
       assertActive: async (tx = db) => {
         ctrl.signal.throwIfAborted()

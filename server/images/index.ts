@@ -114,7 +114,7 @@ export function imageJobHandler(deps: ImageJobDeps): JobHandler {
     try {
       result = await deps.ai!.image!.generate({ prompt: buildImagePrompt(p), size: IMAGE_SIZE, n: 1, signal })
     } catch (e) {
-      if (e instanceof AiError) return fail(e.code, e.message, e.retryable)
+      if (e instanceof AiError) return fail(e.code, e.message, e.retryable, e.retryAfterMs)
       throw e
     }
     const img = result.images[0]

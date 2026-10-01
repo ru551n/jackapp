@@ -12,6 +12,8 @@ import { artifacts, artifactVersions, type IllustrationRequest, type MaterialTru
 // Artifact persistence. Versions are immutable; the artifact row points at the current one.
 
 export type ArtifactRow = typeof artifacts.$inferSelect
+/** A job's `tools.assertActive`: throws inside the write transaction if the job is no longer active. */
+type AssertActive = (tx: Db) => Promise<void>
 
 export interface VersionMeta {
   origin: string
@@ -38,10 +40,11 @@ export async function createArtifact(
   db: Db,
   content: Artifact,
   request: GenerationRequest,
-  meta: VersionMeta & { jobId?: string },
+  meta: VersionMeta & { jobId?: string; assertActive?: AssertActive },
 ): Promise<Artifact> {
   const a = ArtifactSchema.parse({ ...content, version: 1 })
   await db.transaction(async (tx) => {
+    await meta.assertActive?.(tx as unknown as Db)
     await tx.insert(artifacts).values({
       id: a.id,
       learnerId: a.learnerId,
@@ -93,9 +96,15 @@ export async function addVersion(
   meta: VersionMeta,
   /** New resolved request (transforms), so later transforms build on it. */
   request?: GenerationRequest,
-  opts: { expectVersion?: number; keepApproval?: boolean; approval?: (current: ApprovalState) => ApprovalState } = {},
+  opts: {
+    expectVersion?: number
+    keepApproval?: boolean
+    approval?: (current: ApprovalState) => ApprovalState
+    assertActive?: AssertActive
+  } = {},
 ): Promise<Artifact | undefined> {
   return db.transaction(async (tx) => {
+    await opts.assertActive?.(tx as unknown as Db)
     const [cur] = await tx
       .select({ v: artifacts.currentVersion, approval: artifacts.approval })
       .from(artifacts)
