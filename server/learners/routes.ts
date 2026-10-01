@@ -1,6 +1,12 @@
 import { eq } from 'drizzle-orm'
 import { z } from 'zod'
-import { ageBand, LearnerProfileInput, type LearnerProfile } from '../../shared/contracts'
+import {
+  ageBand,
+  defaultGeneration,
+  LearnerProfileInput,
+  SchoolPosition,
+  type LearnerProfile,
+} from '../../shared/contracts'
 import type { RouteModule } from '../app/context'
 import { learners } from '../db/schema'
 import { HttpError, requireAdult, requireLearner } from '../gate/guards'
@@ -44,6 +50,16 @@ function validProfile(input: unknown): LearnerProfileInput {
 
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v)
 
+/** New learners get the age-band generation defaults (F–3: adult approval) under what the caller sent. */
+function withAgeDefaults(body: unknown): unknown {
+  const school = isObj(body) ? SchoolPosition.safeParse(body.school) : undefined
+  if (!isObj(body) || !school?.success) return body
+  return {
+    ...body,
+    generation: { ...defaultGeneration(school.data), ...(isObj(body.generation) ? body.generation : {}) },
+  }
+}
+
 export const learnerRoutes: RouteModule = (app, { db }) => {
   /** Picker list: open to everyone on the device. */
   app.get('/learners', async () => {
@@ -67,7 +83,7 @@ export const learnerRoutes: RouteModule = (app, { db }) => {
     requireAdult(req)
     const [l] = await db
       .insert(learners)
-      .values({ profile: validProfile(req.body) })
+      .values({ profile: validProfile(withAgeDefaults(req.body)) })
       .returning()
     return reply.status(201).send(full(l!))
   })

@@ -38,6 +38,16 @@ describe('learner profiles', () => {
     const p = created.json()
     expect(p.interests).toEqual(['tåg', 'flygplan'])
     expect(p.support).toMatchObject({ textAmount: 'reduced', maxChoices: 3, readAloud: true })
+    // Early years default to adult approval; older learners and explicit choices are kept.
+    expect(p.generation.approval).toBe('parent')
+    const post = async (payload: object) =>
+      (await app.inject({ method: 'POST', url: '/api/v1/learners', headers: asAdult, payload })).json()
+    expect((await post({ ...profileBody, school: { stage: 'grundskola', year: 6 } })).generation.approval).toBe(
+      'immediate',
+    )
+    expect((await post({ ...profileBody, generation: { approval: 'immediate' } })).generation.approval).toBe(
+      'immediate',
+    )
 
     const invalid = [
       { ...profileBody, school: { stage: 'grundskola', year: 0 } },
