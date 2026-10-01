@@ -353,7 +353,7 @@ export function generationJobHandlers(deps: GenerationDeps): JobHandler[] {
       const a = { ...r.artifact, approval: nextApproval(prev.approval, r.ok, profile.generation.approval) }
       if (!r.ok && prev.approval !== 'draft') tools.fail('validation_failed', validationFailedMessage(a, false), false)
       const illustrations = [...stored.illustrations.filter((i) => i.itemId !== itemId)]
-      if (r.illustration) illustrations.push(r.illustration)
+      illustrations.push(...r.illustrations)
       const policy = profile.generation.approval
       const saved = await addVersion(tools.db, a, { ...meta('regenerateItem', r.model), illustrations }, undefined, {
         expectVersion: prev.version,

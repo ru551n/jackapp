@@ -50,6 +50,10 @@ export interface MaterialTruncation {
 export interface IllustrationRequest {
   itemId: string
   description: string
+  /** Short search term for licensed images (fallback when image generation is off). */
+  query?: string
+  /** Set for a picture on one answer choice (index into item.choices). */
+  choice?: number
 }
 
 export const artifactVersions = pgTable(

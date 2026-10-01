@@ -305,4 +305,25 @@ describe('material approval and editing', () => {
       expect(calls.filter((c) => c.method === 'GET' && c.path === `/artifacts/${AID}`)).toHaveLength(2),
     )
   })
+
+  it('says calmly when "Mer bildstöd" has no image source', async () => {
+    const off = { ...status, features: { webResearch: false, externalAssets: false, imageGeneration: false } }
+    mockApi({
+      ...base(),
+      'GET /system/status': off,
+      [`GET /artifacts/${AID}`]: { artifact, requestedIllustrations: [] },
+    })
+    setup(`/vuxen/elev/${ID}/material/${AID}`)
+    expect(
+      await screen.findByText(/Bilder kräver bildgenerering eller bildsökning – se Systemstatus/),
+    ).toBeInTheDocument()
+  })
+
+  it('shows no image notice when licensed image search is available', async () => {
+    const { calls } = mockApi({ ...base(), [`GET /artifacts/${AID}`]: { artifact, requestedIllustrations: [] } })
+    setup(`/vuxen/elev/${ID}/material/${AID}`)
+    await screen.findByRole('button', { name: 'Mer bildstöd' })
+    await waitFor(() => expect(calls.some((c) => c.path === '/system/status')).toBe(true))
+    expect(screen.queryByText(/Bilder kräver bildgenerering/)).not.toBeInTheDocument()
+  })
 })
