@@ -1,0 +1,67 @@
+.shell {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+}
+
+.bar {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-2);
+  background: var(--sign);
+  color: var(--sign-ink);
+  min-height: 5rem;
+}
+
+.title {
+  font-size: 1.4rem;
+  text-align: center;
+  letter-spacing: 0.02em;
+}
+
+.side {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.right {
+  justify-content: flex-end;
+}
+
+.home {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 3.6rem;
+  padding: 0 1rem;
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.12);
+  color: var(--sign-ink);
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.main {
+  flex: 1;
+  width: 100%;
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: var(--space-3) var(--space-2) var(--space-4);
+}
+
+@media (max-width: 600px) {
+  .home span {
+    /* visually hidden but still the link's accessible name */
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+  .title {
+    font-size: 1.15rem;
+  }
+}

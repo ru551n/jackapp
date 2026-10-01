@@ -1,0 +1,152 @@
+.row {
+  margin: 0;
+  --unit: 4.2rem;
+}
+
+.items {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 0.35rem;
+  row-gap: 0.8rem;
+}
+
+.item {
+  display: inline-flex;
+  position: relative;
+}
+
+.sprite {
+  height: var(--unit);
+  width: calc(var(--unit) * var(--sprite-w, 1));
+}
+
+.compact {
+  --unit: 2.6rem;
+}
+
+.groupGap {
+  width: 1.6rem;
+}
+
+.faded {
+  opacity: 0.35;
+}
+
+.leaving {
+  opacity: 0.3;
+}
+
+.leaving::after {
+  content: '';
+  position: absolute;
+  inset: 40% 10% auto;
+  border-top: 3px dashed var(--ink-soft);
+}
+
+.arriving {
+  outline: 3px dashed var(--accent);
+  outline-offset: 3px;
+  border-radius: 8px;
+}
+
+.sign {
+  display: inline-block;
+  padding: 0.6rem 1.4rem;
+  border-radius: var(--radius-sm);
+  font-weight: 700;
+  font-size: 1.6rem;
+  letter-spacing: 0.04em;
+  text-align: center;
+}
+
+.sign_platform,
+.sign_departure,
+.sign_station {
+  background: var(--sign);
+  color: var(--sign-ink);
+}
+
+.sign_station {
+  text-transform: uppercase;
+}
+
+.sign_gate {
+  background: var(--gate);
+  color: var(--ink);
+}
+
+.sign_word {
+  background: var(--paper);
+  color: var(--ink);
+  border: 3px solid var(--line);
+}
+
+.vehicle {
+  display: flex;
+  justify-content: center;
+}
+
+.vehicleArt {
+  width: min(100%, 16rem);
+  height: auto;
+  max-height: 10rem;
+}
+
+.compact .vehicleArt {
+  max-height: 6.5rem;
+}
+
+.number {
+  font-size: 3.2rem;
+  font-weight: 700;
+  text-align: center;
+}
+
+.equation {
+  display: flex;
+  gap: 0.8rem;
+  justify-content: center;
+  font-size: 2.6rem;
+  font-weight: 700;
+}
+
+.unknown {
+  min-width: 1.6em;
+  text-align: center;
+  border-bottom: 4px solid var(--accent);
+  color: var(--accent);
+}
+
+.text {
+  text-align: center;
+  font-weight: 700;
+}
+
+.text_md {
+  font-size: 1.3rem;
+}
+
+.text_lg {
+  font-size: 2rem;
+}
+
+.text_xl {
+  font-size: 3rem;
+  letter-spacing: 0.15em;
+}
+
+.groupRow,
+.groupColumn {
+  display: flex;
+  gap: var(--space-3);
+  justify-content: center;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.groupColumn {
+  flex-direction: column;
+  gap: var(--space-2);
+}

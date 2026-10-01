@@ -1,0 +1,107 @@
+@import '@fontsource/atkinson-hyperlegible/400.css';
+@import '@fontsource/atkinson-hyperlegible/700.css';
+
+/* Design tokens: calm, transport-signage inspired. Light theme only (child-facing, predictable). */
+:root {
+  --bg: #f3f0e8;
+  --paper: #ffffff;
+  --paper-strong: #fbfaf6;
+  --ink: #1d2733;
+  --ink-soft: #4a5563;
+  --line: #d6d0c2;
+  --accent: #1f5aa6; /* transit blue */
+  --accent-ink: #ffffff;
+  --accent-soft: #e3ecf8;
+  --ok: #2e7a4d; /* signal green */
+  --ok-soft: #e2f1e7;
+  --hint: #9a6514; /* amber, never red */
+  --hint-soft: #fbf0d9;
+  --window: #d9e7f4;
+  --skin: #e2b48f;
+  --sign: #17324f; /* platform sign background */
+  --sign-ink: #ffffff;
+  --gate: #f2c230;
+
+  --tint-red: #c24a3e;
+  --tint-blue: #2f6db5;
+  --tint-green: #3d8c5c;
+  --tint-yellow: #e0ad35;
+  --tint-grey: #66707c;
+
+  --radius: 18px;
+  --radius-sm: 12px;
+  --space-1: 0.5rem;
+  --space-2: 1rem;
+  --space-3: 1.5rem;
+  --space-4: 2.5rem;
+  --tap: 4.5rem; /* minimum touch target */
+  --shadow: 0 2px 0 rgba(29, 39, 51, 0.08), 0 6px 18px rgba(29, 39, 51, 0.06);
+  --ease: 220ms ease-out;
+
+  color-scheme: light;
+  font-family: 'Atkinson Hyperlegible', system-ui, sans-serif;
+  font-size: 20px;
+  line-height: 1.4;
+  color: var(--ink);
+  background: var(--bg);
+  -webkit-text-size-adjust: 100%;
+}
+
+@media (max-width: 600px) {
+  :root {
+    font-size: 17px;
+    --tap: 4rem;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100dvh;
+  background: var(--bg);
+}
+
+h1,
+h2,
+h3,
+p {
+  margin: 0;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+}
+
+:focus-visible {
+  outline: 4px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* Motion: respect the OS setting unless a parent chose explicitly. */
+@media (prefers-reduced-motion: reduce) {
+  :root:not([data-motion='full']) *,
+  :root:not([data-motion='full']) *::before,
+  :root:not([data-motion='full']) *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+:root[data-motion='reduced'] *,
+:root[data-motion='reduced'] *::before,
+:root[data-motion='reduced'] *::after {
+  animation: none !important;
+  transition: none !important;
+}
