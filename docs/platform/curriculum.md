@@ -1,6 +1,6 @@
 # Curriculum (Skolverket)
 
-Official curriculum comes only from Skolverket. AI never writes curriculum rows or invents refs: generation gets candidates from `suggestRefs` and every ref it returns is checked with `isValidRef`.
+Official curriculum comes only from Skolverket. AI never writes curriculum rows or invents refs: generation gets candidates from `suggestRefs` and every ref it returns is checked with `isValidRef`. At request resolution, `isValidRefFor(db, ref, position)` additionally checks that the ref fits the learner: same stage, the subject applies to the year (and gymnasium reform), and the span covers the year.
 
 ## Source
 
@@ -31,6 +31,7 @@ Endpoints used:
   - **GY25** (subjects with levels, `GRADE_SUBJECT_SYLLABUS`, for students starting from 1 July 2025): 201 subjects. Span = level code, e.g. `MATE1A00X`. Betygskriterier are subject-wide (no span).
   - **GY11** (courses, `SUBJECT_SYLLABUS`): 83 subjects, still valid (end date 2030-06-30) for students who started earlier. Span = course code, e.g. `MATMAT01a`.
   - `subjectsFor` picks the reform from the programme year and today's date (`gyReformFor`): in autumn 2026, years 1–2 follow GY25 and year 3 follows GY11.
+  - `gyReformFor` edge cases: the school year is taken to start on **1 July** (UTC), so a year-1 student on 30 June 2025 is GY11 and on 1 July 2025 GY25. It assumes a normal three-year path: students who repeat a year, take a fourth year, study at a reduced pace or switch programmes may follow GY11 although the formula says GY25 (or the reverse); the adult can then pick the subject explicitly. From 1 July 2027 every year 1–3 student maps to GY25; GY11 rows stay stored (end date 2030-06-30) so old refs remain valid.
 
 ## Data model
 
@@ -39,6 +40,7 @@ Snapshot schema: `server/curriculum/snapshot.ts`. Tables (`server/db/schema/curr
 - The syfte is stored verbatim as plain text (no AI summary).
 - **Item ids**: the API has no ids for content items, so ids are `<subject>:<span>:<cc|kr|goal>:<sha256(subject, span, kind, section, area, gradeStep, text)[0:12]>`. They stay stable across snapshots while the text is unchanged.
 - `CurriculumRef.version` is the snapshot version; `span` is the year span or the gymnasium course/level code; `itemId` the item id.
+- **Item kinds**: `central_content` (centralt innehåll), `goal` (the syfte's "förmåga att" list) and `knowledge_requirement`. The last name is historical: for Lgr22 these are the **betygskriterier / kriterier för bedömning av kunskaper** (Lgr22 replaced "kunskapskrav" with criteria in 2022), and for GY25 the subject-wide betygskriterier. Treat them as assessment criteria, not as content to teach.
 
 ## Updating
 
@@ -55,8 +57,25 @@ Read-only, no adult gate:
 - `GET /api/v1/curriculum/subjects/:code?year=` (grundskola content limited to the span covering `year`)
 - `GET /api/v1/curriculum/search?q=&stage=&year=&subject=&limit=`: BM25 over central content and goals with light Swedish normalization (lowercase, å/ä/ö kept, stopwords, suffix stripping).
 
+### Search (`suggestRefs`)
+
+- "åk 4", "årskurs 4" and "klass 4" are removed from the query and the number replaces the grundskola year.
+- Stems match exactly, or by prefix in either direction when both are at least 5 letters (`fotosyntesen` ~ `fotosyntes`, `vikingatiden` ~ `vikingar`). Short stems (`tid`) match exactly only.
+- A small curated synonym map (`SYNONYMS` in `service.ts`) adds the curriculum's own words: multiplikation/division/addition/subtraktion/gånger/plus/minus → räknesätt, klocka → tid, glosor → ordförråd, bråk → bråkform, vikingatiden → vikingar/800–1500 and a few more. Add entries when real queries miss; keep each one to a core concept.
+- Tokenized documents are cached in memory per (version, subjects, year) and cleared when a snapshot changes, so repeated searches cost milliseconds instead of re-tokenizing thousands of items.
+
 ## Limitations
 
 - HTML is parsed with a small tag scanner; structure beyond h3/h4/emphasized paragraphs/list items (e.g. tables) is flattened to text.
 - Vocational gymnasium subjects, anpassad grundskola/gymnasieskola, sameskola-specific syllabi beyond samiska and komvux are not imported.
-- Search is lexical: synonyms or paraphrases without shared stems are not matched.
+- Search is lexical: paraphrases without a shared stem or a curated synonym are not matched.
+
+## 2028 reform: ten-year grundskola
+
+Decided direction (Skolverket/government, check the final ordinance before acting): from **autumn 2028** grundskola becomes ten years, förskoleklass ends as a separate school form and becomes the first year of grundskola, and new syllabi apply. No contract change is made now; the plan:
+
+1. **Positions.** `SchoolPosition` keeps `stage` + `year`. When the reform is in force, a new year numbering for grundskola (1–10, or 0–9 if the ordinance keeps "förskoleklass" as year 0 inside grundskola) is added alongside the old one, chosen by school start date like `gyReformFor` does for GY11/GY25 (a `grReformFor(year, asOf)`). Existing learners keep their stage/year; a one-off migration moves förskoleklass learners into grundskola year 1 at the next school-year start.
+2. **Curriculum data.** New syllabi arrive from the same API as a new snapshot version. Subjects get a reform marker (as `reform` does for GY11/GY25) so `subjectsFor` returns old syllabi to learners still on the old plan during the transition. `LGR22-FK` stays stored for old refs but is no longer offered once förskoleklass is gone.
+3. **Spans.** New spans (e.g. `1-4`, `5-7`, `8-10` or whatever the syllabi use) come straight from the source; `yearsOfSpan`/`spanCovers` already parse any `a-b` span. Year-bound mapping of criteria (today 1/3/6/9) must be revisited against the new syllabi.
+4. **Refs.** Old snapshot versions stay stored, so artifacts and progress that cite Lgr22 refs remain valid; `isValidRefFor` naturally stops offering them to learners on the new plan.
+5. **Timing.** Fetch the first published new-syllabus snapshot as soon as Skolverket releases it (expected well before autumn 2028), test it in a staging database, then ship the position and `subjectsFor` changes before the school year starts.

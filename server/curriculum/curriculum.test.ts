@@ -10,6 +10,9 @@ import {
   activeVersion,
   gyReformFor,
   isValidRef,
+  isValidRefFor,
+  parseQuery,
+  queryTokens,
   refsFor,
   spanCovers,
   subject,
@@ -17,6 +20,7 @@ import {
   suggestRefs,
   syncBundledCurriculum,
   syncCurriculumSnapshot,
+  termMatches,
   tokenize,
 } from './service'
 
@@ -84,6 +88,19 @@ describe('normalization', () => {
   it('stems Swedish lightly', () => {
     expect(tokenize('Växterna och DJUREN i skogen')).toEqual(['växt', 'djur', 'skog'])
     expect(tokenize('ekvationer')).toEqual(tokenize('ekvation'))
+  })
+
+  it('parses school years out of queries and expands synonyms', () => {
+    expect(parseQuery('multiplikation åk 4')).toEqual({ text: 'multiplikation  ', year: 4 })
+    expect(parseQuery('Årskurs 7 fotosyntes').year).toBe(7)
+    expect(parseQuery('klass 3: klockan').year).toBe(3)
+    expect(parseQuery('tal upp till 100').year).toBeUndefined()
+    expect(queryTokens(parseQuery('multiplikation åk 4').text)).toContain('räknesätt')
+    expect(queryTokens('klockan')).toContain('tid')
+    expect(queryTokens('glosor')).toContain('ordförråd')
+    expect(termMatches('fotosyntes', 'fotosynte')).toBe(true)
+    expect(termMatches('vikingatid', 'viking')).toBe(true)
+    expect(termMatches('tid', 'tidslinj')).toBe(false) // short stems match exactly only
   })
 
   it('maps gymnasium programme years to the reform in force', () => {
@@ -204,6 +221,21 @@ describe('queries and routes on the bundled snapshot', () => {
     expect(await suggestRefs(t.db, { position: pos, text: 'och i att' })).toEqual([])
   })
 
+  it.each([
+    // [query, learner year, expected subject, expected span, text pattern]
+    ['multiplikation åk 4', 2, 'GRGRMAT01', '4-6', /räknesätt/],
+    ['multiplikationstabellen', 3, 'GRGRMAT01', '1-3', /räknesätt/],
+    ['fotosyntesen', 8, 'GRGRBIO01', '7-9', /Fotosyntes/],
+    ['fotosyntes', 8, 'GRGRBIO01', '7-9', /Fotosyntes/],
+    ['vikingatiden', 5, 'GRGRHIS01', '4-6', /vikingar/],
+    ['klockan', 2, 'GRGRMAT01', '1-3', /tid/],
+    ['division och subtraktion', 5, 'GRGRMAT01', '4-6', /räknesätt/],
+  ] as const)('suggestRefs finds "%s" (åk %i)', async (text, year, code, span, re) => {
+    const [top] = await suggestRefs(t.db, { position: { stage: 'grundskola', year }, text, limit: 3 })
+    expect(top?.ref).toMatchObject({ subjectCode: code, span })
+    expect(top!.text).toMatch(re)
+  })
+
   it('isValidRef accepts stored refs and rejects invented ones', async () => {
     const [good] = await refsFor(t.db, 'GRGRSVE01', 1)
     expect(await isValidRef(t.db, good)).toBe(true)
@@ -222,6 +254,18 @@ describe('queries and routes on the bundled snapshot', () => {
       }),
     ).toBe(true)
     expect(await isValidRef(t.db, { source: 'ai' })).toBe(false)
+  })
+
+  it('isValidRefFor also checks the learner position', async () => {
+    const [ref] = await refsFor(t.db, 'GRGRMAT01', 2)
+    expect(await isValidRefFor(t.db, ref, { stage: 'grundskola', year: 2 })).toBe(true)
+    expect(await isValidRefFor(t.db, ref, { stage: 'grundskola', year: 5 })).toBe(false) // span 1-3
+    expect(await isValidRefFor(t.db, ref, { stage: 'gymnasieskola', year: 1 })).toBe(false)
+    const [msp] = await refsFor(t.db, 'GRGRMSP01', 6)
+    expect(await isValidRefFor(t.db, msp, { stage: 'grundskola', year: 6 })).toBe(true)
+    expect(
+      await isValidRefFor(t.db, { ...msp, span: undefined, itemId: undefined }, { stage: 'grundskola', year: 2 }),
+    ).toBe(false) // modersmål/språkval not in åk 2
   })
 
   it('serves the HTTP API without the adult gate', async () => {

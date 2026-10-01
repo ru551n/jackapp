@@ -43,6 +43,7 @@ export async function syncCurriculumSnapshot(db: Db, input: CurriculumSnapshot) 
     }
     await tx.update(curriculumVersions).set({ active: false }).where(ne(curriculumVersions.version, snap.version))
     await tx.update(curriculumVersions).set({ active: true }).where(eq(curriculumVersions.version, snap.version))
+    if (changed) docCache.clear()
     return { version: snap.version, changed }
   })
 }
@@ -188,6 +189,29 @@ export async function isValidRef(db: Db, ref: unknown): Promise<boolean> {
   return !!i
 }
 
+/**
+ * `isValidRef` plus a position check for request resolution: the ref's stage must be the learner's,
+ * its subject must apply to the learner's year (and gymnasium reform), and its span must cover the year.
+ */
+export async function isValidRefFor(
+  db: Db,
+  ref: unknown,
+  position: SchoolPosition,
+  opts: { asOf?: Date } = {},
+): Promise<boolean> {
+  if (!(await isValidRef(db, ref))) return false
+  const r = CurriculumRef.parse(ref)
+  const p = SchoolPosition.parse(position)
+  if (r.stage !== p.stage) return false
+  if (p.stage !== 'gymnasieskola' && !spanCovers(r.span, p.year)) return false
+  const [s] = await db
+    .select({ years: curriculumSubjects.applicableYears, reform: curriculumSubjects.reform })
+    .from(curriculumSubjects)
+    .where(and(eq(curriculumSubjects.version, r.version), eq(curriculumSubjects.code, r.subjectCode)))
+  if (!s || !s.years.includes(p.year)) return false
+  return p.stage !== 'gymnasieskola' || s.reform === gyReformFor(p.year, opts.asOf)
+}
+
 // ---------- suggestRefs: deterministic BM25 over central content ----------
 
 const STOPWORDS = new Set(
@@ -220,6 +244,63 @@ export function tokenize(text: string): string[] {
     .map(stem)
 }
 
+/**
+ * Everyday words → the curriculum's own wording (Lgr22). Keys are word prefixes; values are added
+ * to the query. Keep it small and boring: only core concepts adults and children actually type.
+ */
+const SYNONYMS: [prefix: string, adds: string][] = [
+  ['multiplik', 'räknesätt multiplikation'],
+  ['divi', 'räknesätt division'],
+  ['addit', 'räknesätt addition'],
+  ['subtrak', 'räknesätt subtraktion'],
+  ['gånger', 'räknesätt'],
+  ['plus', 'räknesätt'],
+  ['minus', 'räknesätt'],
+  ['räkna', 'räknesätt'],
+  ['klocka', 'tid mätning'],
+  ['klockan', 'tid mätning'],
+  ['klockor', 'tid mätning'],
+  ['glosor', 'ordförråd ord'],
+  ['glosa', 'ordförråd ord'],
+  ['bråk', 'bråkform rationella tal'],
+  ['decimal', 'decimalform rationella tal'],
+  ['pengar', 'ekonomi'],
+  ['kropp', 'människokroppen'],
+  ['vikinga', 'vikingar 800–1500'],
+  ['medeltid', 'medeltidens 800–1500'],
+  ['former', 'geometriska objekt'],
+  ['figurer', 'geometriska objekt'],
+  ['skrivstil', 'handskrift'],
+  ['läsförståelse', 'lässtrategier'],
+]
+
+const YEAR_PHRASE = /(?<![\p{L}\d])(?:åk|årskurs|klass)\.?\s*(\d{1,2})(?!\d)/iu
+
+/** Pull "åk 4" / "årskurs 4" / "klass 4" out of a query: the number is a school year, not a search term. */
+export function parseQuery(text: string): { text: string; year?: number } {
+  const m = YEAR_PHRASE.exec(text)
+  if (!m) return { text }
+  return { text: text.replace(YEAR_PHRASE, ' '), year: Number(m[1]) }
+}
+
+/** Query tokens: stemmed words plus curated synonyms. */
+export function queryTokens(text: string): string[] {
+  const words =
+    text
+      .toLowerCase()
+      .normalize('NFC')
+      .match(/[\p{L}\p{N}]+/gu) ?? []
+  const extra = words.flatMap((w) => SYNONYMS.filter(([p]) => w.startsWith(p)).map(([, adds]) => adds))
+  return [...new Set(tokenize([text, ...extra].join(' ')))]
+}
+
+/** Exact stem match, or a shared prefix for longer stems (fotosyntes ~ fotosynte, vikingatid ~ viking). */
+const MIN_PREFIX = 5
+export function termMatches(q: string, d: string): boolean {
+  if (q === d) return true
+  return Math.min(q.length, d.length) >= MIN_PREFIX && (d.startsWith(q) || q.startsWith(d))
+}
+
 export interface SuggestedRef {
   ref: CurriculumRef
   score: number
@@ -229,51 +310,82 @@ export interface SuggestedRef {
   text: string
 }
 
-/**
- * Ranked candidate refs for a text, limited to subjects/spans applicable to the position.
- * Deterministic (BM25, ties by id); generation passes these to the AI as the only allowed refs.
- * ponytail: scores in memory per call (~10k items max); add a tsvector index if it gets slow.
- */
-export async function suggestRefs(
-  db: Db,
-  q: { position: SchoolPosition; subjectCode?: SubjectCode; text: string; limit?: number; asOf?: Date },
-): Promise<SuggestedRef[]> {
-  const query = [...new Set(tokenize(q.text))]
-  if (query.length === 0) return []
-  const subjects = (await subjectsFor(db, q.position, { asOf: q.asOf })).filter(
-    (s) => !q.subjectCode || s.code === q.subjectCode,
-  )
-  if (subjects.length === 0) return []
-  const byCode = new Map(subjects.map((s) => [s.code, s]))
-  const version = subjects[0]!.version
-  const items = (
-    await db
+interface DocSet {
+  items: ItemRow[]
+  docs: string[][]
+  vocab: string[]
+}
+/** Tokenized central content per (version, subjects, year). Cleared when a snapshot changes. */
+const docCache = new Map<string, Promise<DocSet>>()
+const DOC_CACHE_MAX = 64
+
+function loadDocs(db: Db, version: string, codes: string[], year: number): Promise<DocSet> {
+  const key = `${version}|${year}|${[...codes].sort().join(',')}`
+  let hit = docCache.get(key)
+  if (!hit) {
+    if (docCache.size >= DOC_CACHE_MAX) docCache.clear() // ponytail: wholesale clear, LRU if keys churn
+    hit = db
       .select()
       .from(curriculumItems)
       .where(
         and(
           eq(curriculumItems.version, version),
-          inArray(curriculumItems.subjectCode, [...byCode.keys()]),
+          inArray(curriculumItems.subjectCode, codes),
           inArray(curriculumItems.kind, ['central_content', 'goal']),
         ),
       )
-  ).filter((i) => spanCovers(i.span, q.position.year))
+      .then((rows) => {
+        const items = rows.filter((i) => spanCovers(i.span, year))
+        const docs = items.map((i) => tokenize(`${i.area ?? ''} ${i.text}`))
+        return { items, docs, vocab: [...new Set(docs.flat())] }
+      })
+    hit.catch(() => docCache.delete(key))
+    docCache.set(key, hit)
+  }
+  return hit
+}
 
-  const docs = items.map((i) => tokenize(`${i.area ?? ''} ${i.text}`))
+/**
+ * Ranked candidate refs for a text, limited to subjects/spans applicable to the position.
+ * Deterministic (BM25 with prefix matching and synonyms, ties by id); generation passes these to
+ * the AI as the only allowed refs. "åk 4" in the text overrides the grundskola year.
+ * ponytail: scores in memory (~10k items max, docs cached); add a tsvector index if it gets slow.
+ */
+export async function suggestRefs(
+  db: Db,
+  q: { position: SchoolPosition; subjectCode?: SubjectCode; text: string; limit?: number; asOf?: Date },
+): Promise<SuggestedRef[]> {
+  const parsed = parseQuery(q.text)
+  const position =
+    q.position.stage === 'grundskola' && parsed.year && parsed.year >= 1 && parsed.year <= 9
+      ? { ...q.position, year: parsed.year }
+      : q.position
+  const query = queryTokens(parsed.text)
+  if (query.length === 0) return []
+  const subjects = (await subjectsFor(db, position, { asOf: q.asOf })).filter(
+    (s) => !q.subjectCode || s.code === q.subjectCode,
+  )
+  if (subjects.length === 0) return []
+  const byCode = new Map(subjects.map((s) => [s.code, s]))
+  const version = subjects[0]!.version
+  const { items, docs, vocab } = await loadDocs(db, version, [...byCode.keys()], position.year)
+
+  // Each query term matches a set of document terms (exact or prefix); df counts docs with any of them.
+  const matchSets = query.map((t) => new Set(vocab.filter((v) => termMatches(t, v))))
   const avgLen = docs.reduce((n, d) => n + d.length, 0) / Math.max(docs.length, 1)
-  const df = new Map<string, number>()
-  for (const d of docs) for (const t of new Set(d)) df.set(t, (df.get(t) ?? 0) + 1)
   const k1 = 1.2
   const b = 0.75
+  const tfs = docs.map((d) => matchSets.map((m) => (m.size ? d.filter((x) => m.has(x)).length : 0)))
+  const df = matchSets.map((_, k) => tfs.filter((row) => row[k]! > 0).length)
   const scored = items.map((item, n) => {
     const d = docs[n]!
     let score = 0
-    for (const t of query) {
-      const tf = d.filter((x) => x === t).length
-      if (!tf) continue
-      const idf = Math.log(1 + (items.length - df.get(t)! + 0.5) / (df.get(t)! + 0.5))
+    query.forEach((_, k) => {
+      const tf = tfs[n]![k]!
+      if (!tf) return
+      const idf = Math.log(1 + (items.length - df[k]! + 0.5) / (df[k]! + 0.5))
       score += (idf * tf * (k1 + 1)) / (tf + k1 * (1 - b + (b * d.length) / avgLen))
-    }
+    })
     return { item, score }
   })
   return scored
