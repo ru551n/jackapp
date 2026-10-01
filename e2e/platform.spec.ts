@@ -38,6 +38,29 @@ test('first run: PIN, first learner, adult overview', async ({ page }) => {
   await expect(page.getByText('Årskurs 1 · Förskoleklass–åk 3')).toBeVisible()
 })
 
+test('early learner: Byt elev → Ja → För vuxna → PIN reaches the overview', async ({ page }) => {
+  const toOverview = async () => {
+    await typePin(page, 'Öppna')
+    await expect(page.getByRole('heading', { name: 'Översikt för vuxna' })).toBeVisible()
+  }
+  await enterLearner(page, 'Jack')
+  await page.getByRole('link', { name: 'Byt elev' }).click()
+  await page.getByRole('link', { name: 'Ja', exact: true }).click()
+  await expect(page.getByRole('heading', { name: 'Vem ska lära sig?' })).toBeVisible()
+  await page.getByRole('link', { name: 'För vuxna' }).click()
+  await toOverview()
+
+  // Typing #/vuxen from the learner area, and the back button from there, also reach the PIN screen.
+  await enterLearner(page, 'Jack')
+  await expect(page.getByRole('heading', { name: 'Mitt äventyr' })).toBeVisible()
+  await page.goto('./#/vuxen')
+  await toOverview()
+  await page.goBack()
+  await expect(page.getByRole('heading', { name: 'Mitt äventyr' })).toBeVisible()
+  await page.goForward()
+  await toOverview()
+})
+
 const SETTLED = /^(Rätt! Bra jobbat\.|Här är svaret\. Vi tittar på det tillsammans\.|Bra att du tränar!)$/
 
 /**
