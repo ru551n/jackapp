@@ -7,7 +7,7 @@ import {
   type GenerationRequest,
 } from '../../shared/contracts'
 import type { Db } from '../db/client'
-import { artifacts, artifactVersions, type IllustrationRequest } from '../db/schema'
+import { artifacts, artifactVersions, type IllustrationRequest, type MaterialTruncation } from '../db/schema'
 
 // Artifact persistence. Versions are immutable; the artifact row points at the current one.
 
@@ -19,12 +19,14 @@ export interface VersionMeta {
   model?: string
   providerKind?: string
   promptVersion?: string
+  truncated?: MaterialTruncation
 }
 
 export interface StoredArtifact {
   row: ArtifactRow
   artifact: Artifact
   illustrations: IllustrationRequest[]
+  truncated?: MaterialTruncation
 }
 
 export function approvalFor(policy: GenerationPolicy['approval'], ok: boolean): ApprovalState {
@@ -71,11 +73,19 @@ const versionValues = (a: Artifact, meta: VersionMeta) => ({
   model: meta.model,
   providerKind: meta.providerKind,
   promptVersion: meta.promptVersion,
+  truncated: meta.truncated,
 })
+
+/** The artifact made by a generate job, if an earlier attempt of the job already stored it. */
+export async function artifactForJob(db: Db, jobId: string): Promise<string | undefined> {
+  const [r] = await db.select({ id: artifacts.id }).from(artifacts).where(eq(artifacts.jobId, jobId))
+  return r?.id
+}
 
 /**
  * Store `content` as the next version and make it current. With `expectVersion`, returns undefined
- * (stores nothing) when another version landed meanwhile; `keepApproval` leaves the row's approval.
+ * (stores nothing) when another version landed meanwhile; `keepApproval` leaves the row's approval;
+ * `approval` computes it from the row's current approval inside the transaction (no stale reads).
  */
 export async function addVersion(
   db: Db,
@@ -83,7 +93,7 @@ export async function addVersion(
   meta: VersionMeta,
   /** New resolved request (transforms), so later transforms build on it. */
   request?: GenerationRequest,
-  opts: { expectVersion?: number; keepApproval?: boolean } = {},
+  opts: { expectVersion?: number; keepApproval?: boolean; approval?: (current: ApprovalState) => ApprovalState } = {},
 ): Promise<Artifact | undefined> {
   return db.transaction(async (tx) => {
     const [cur] = await tx
@@ -93,7 +103,7 @@ export async function addVersion(
       .for('update')
     if (!cur) throw new Error('artifact missing')
     if (opts.expectVersion !== undefined && cur.v !== opts.expectVersion) return undefined
-    const approval = opts.keepApproval ? cur.approval : content.approval
+    const approval = opts.keepApproval ? cur.approval : opts.approval ? opts.approval(cur.approval) : content.approval
     const a = ArtifactSchema.parse({ ...content, approval, version: cur.v + 1 })
     await tx.insert(artifactVersions).values(versionValues(a, meta))
     await tx
@@ -126,14 +136,18 @@ export async function loadArtifact(db: Db, id: string): Promise<StoredArtifact |
     row: r.row,
     artifact: { ...r.v.content, approval: r.row.approval, version: r.row.currentVersion, title: r.row.title },
     illustrations: r.v.illustrations,
+    truncated: r.v.truncated ?? undefined,
   }
 }
 
-export async function setApproval(db: Db, id: string, approval: ApprovalState) {
-  await db
+/** Set the approval only while `version` is still current. False = another version landed (conflict). */
+export async function setApproval(db: Db, id: string, approval: ApprovalState, version: number): Promise<boolean> {
+  const rows = await db
     .update(artifacts)
     .set({ approval, updatedAt: sql`now()` })
-    .where(eq(artifacts.id, id))
+    .where(and(eq(artifacts.id, id), eq(artifacts.currentVersion, version)))
+    .returning({ id: artifacts.id })
+  return rows.length > 0
 }
 
 export async function listVersions(db: Db, id: string) {

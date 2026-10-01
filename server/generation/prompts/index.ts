@@ -7,10 +7,12 @@ import type {
   SourceMode,
   SupportPreferences,
 } from '../../../shared/contracts'
+import { isFactualSubject, targetLanguage } from '../../validation/subjects'
+import { stem, tokens } from '../../validation/text'
 
 // Versioned prompt building blocks (docs/platform/generation.md#prompt-architecture).
 // Bump PROMPT_VERSION whenever wording changes; it is stored on every artifact version.
-export const PROMPT_VERSION = 'generation/v3'
+export const PROMPT_VERSION = 'generation/v4'
 
 export interface OfferedRef {
   /** Local id the model may cite, e.g. "C1". */
@@ -44,6 +46,8 @@ export interface PromptInput {
   skills?: string[]
   /** Web research brief (useWebResearch); sources are cited as W1..Wn. */
   research?: ResearchContext
+  /** Skill tags the learner already has evidence for (reuse instead of inventing near-duplicates). */
+  knownSkills?: string[]
 }
 
 export interface ResearchContext {
@@ -132,14 +136,74 @@ export function curriculumBlock(refs: OfferedRef[]): string {
   ].join('\n')
 }
 
-const MATERIAL_CHARS = 14_000
+export const MATERIAL_CHARS = 14_000
 
+const segLine = (s: ProcessedStudyMaterial['segments'][number]) => `[${s.id}] (sida ${s.page}, ${s.kind}) ${s.text}`
+
+export interface MaterialSelection {
+  material: ProcessedStudyMaterial
+  /** Set when not every segment fit the prompt budget. */
+  truncated?: { pagesUsed: number[]; segmentsUsed: number; segmentsTotal: number; pageRange?: [number, number] }
+}
+
+/** "sida 4-7", "s. 4–7", "sidorna 4 till 7" in the request text. */
+export function pageRange(text: string | undefined): [number, number] | undefined {
+  const m = /(?:sid(?:a|an|orna)?|s\.)\s*(\d{1,4})\s*(?:-|–|till)\s*(\d{1,4})/i.exec(text ?? '')
+  if (!m) return undefined
+  const [a, b] = [Number(m[1]), Number(m[2])]
+  return a <= b ? [a, b] : [b, a]
+}
+
+/**
+ * Segments that fit the prompt budget: a requested page range first, then the most relevant to
+ * `query` (BM25 over stemmed tokens), shown in document order. Small materials pass unchanged.
+ */
+export function selectMaterial(m: ProcessedStudyMaterial, query: string, budget = MATERIAL_CHARS): MaterialSelection {
+  const total = m.segments.reduce((n, s) => n + segLine(s).length + 1, 0)
+  const range = pageRange(query)
+  if (total <= budget && !range) return { material: m }
+  const inRange = (s: { page: number }) => !range || (s.page >= range[0] && s.page <= range[1])
+  const pool = m.segments.some(inRange) ? m.segments.filter(inRange) : m.segments
+  const docs = pool.map((s) => tokens(s.text).map(stem))
+  const q = [...new Set(tokens(query).map(stem))]
+  const avg = docs.reduce((n, d) => n + d.length, 0) / Math.max(1, docs.length)
+  const df = new Map(q.map((t) => [t, docs.filter((d) => d.includes(t)).length]))
+  const score = (d: string[]) =>
+    q.reduce((sum, t) => {
+      const tf = d.filter((x) => x === t).length
+      if (!tf) return sum
+      const idf = Math.log(1 + (docs.length - df.get(t)! + 0.5) / (df.get(t)! + 0.5))
+      return sum + (idf * tf * 2.2) / (tf + 1.2 * (0.25 + (0.75 * d.length) / (avg || 1)))
+    }, 0)
+  // Stable: equal scores keep document order, so an empty query means "from the start".
+  const ranked = pool.map((s, i) => ({ s, i, sc: score(docs[i]!) })).sort((a, b) => b.sc - a.sc || a.i - b.i)
+  let left = budget
+  const keep = new Set<string>()
+  for (const { s } of ranked) {
+    const len = segLine(s).length + 1
+    if (len > left) continue
+    left -= len
+    keep.add(s.id)
+  }
+  const segments = m.segments.filter((s) => keep.has(s.id))
+  if (segments.length === m.segments.length) return { material: m }
+  return {
+    material: { ...m, segments },
+    truncated: {
+      pagesUsed: [...new Set(segments.map((s) => s.page))].sort((a, b) => a - b),
+      segmentsUsed: segments.length,
+      segmentsTotal: m.segments.length,
+      ...(range ? { pageRange: range } : {}),
+    },
+  }
+}
+
+/** Material block; callers pass the output of `selectMaterial` (the budget here is only a guard). */
 export function materialBlock(m: ProcessedStudyMaterial): string {
-  // ponytail: plain truncation of long material; rank segments by relevance if sets get large.
   let budget = MATERIAL_CHARS
   const segs: string[] = []
   for (const s of m.segments) {
-    const line = `[${s.id}] (sida ${s.page}, ${s.kind}) ${s.text}`
+    const line = segLine(s)
     if (line.length > budget) break
     budget -= line.length
     segs.push(line)
@@ -162,6 +226,7 @@ export function sourceBlock(mode: SourceMode, m: ProcessedStudyMaterial | undefi
       'Källläge STRIKT: varje uppgift och varje fakta får BARA komma från studiematerialet nedan.',
       'Varje uppgift MÅSTE ange sourceSegmentIds med minst ett segment-id som uppgiften bygger på.',
       'Hitta aldrig på fakta som inte står i materialet. Läroplanen används inte som källa.',
+      'Ett tema eller elevens intressen får bara färga ordvalet (t.ex. namn och miljö i frågan), aldrig tillföra fakta. Rätt svar ska stå i materialet.',
     ],
     sourceAndCurriculum: [
       'Källläge MATERIAL + LÄROPLAN: studiematerialet är huvudkällan. Ange sourceSegmentIds när en uppgift bygger på materialet.',
@@ -175,21 +240,24 @@ export function sourceBlock(mode: SourceMode, m: ProcessedStudyMaterial | undefi
   return [...rules, '', materialBlock(m)].join('\n')
 }
 
-const LANGUAGE_SUBJECT = /ENG|MOD|SPA|TYS|FRA|ENGE|ENGN/i
-
 export function languageBlock(subjectCode: string | undefined, m: ProcessedStudyMaterial | undefined): string {
   const lines = ['Språk: svenska är standard för instruktioner och uppgifter.']
-  if ((subjectCode && LANGUAGE_SUBJECT.test(subjectCode)) || (m && m.language !== 'sv'))
+  if (targetLanguage(subjectCode) || (m && m.language !== 'sv'))
     lines.push(
       'Detta är ett språkämne: skriv uppgiftsinnehållet på målspråket där det är pedagogiskt rätt (t.ex. glosor, läsförståelse), och sätt fältet lang (t.ex. "en"). Korta instruktioner får vara på svenska.',
     )
   return lines.join('\n')
 }
 
-export function safetyBlock(): string {
+/** Safety rules by age and subject: history and biology need facts about war and death, told calmly. */
+export function safetyBlock(band: AgeBand, subjectCode?: string): string {
+  const factual = band === 'upper' || (band === 'middle' && isFactualSubject(subjectCode))
   return [
     'Säkerhet:',
-    '- Inget våld, inga vapen, ingen strid eller krigsfokus. Militära fordon och stridsflygplan behandlas bara som teknik, ingenjörskonst och flyg (t.ex. aerodynamik, motorer, historia om konstruktion).',
+    factual
+      ? '- Historiska konflikter, krig och död (t.ex. i historia, religion, samhällskunskap och biologi) behandlas sakligt och åldersanpassat, utan detaljerat våld. Inga instruktioner om vapen och inget förhärligande av våld.'
+      : '- Inget våld, inga vapen, ingen strid eller krigsfokus. Behöver ämnet nämna en konflikt, gör det kort, sakligt och utan våldsdetaljer.',
+    '- Intressen och teman med militära fordon och stridsflygplan behandlas bara som teknik, ingenjörskonst och flyg (t.ex. aerodynamik, motorer, historia om konstruktion), aldrig som strid.',
     '- Allt innehåll ska vara åldersanpassat, vänligt och fritt från skrämmande inslag.',
     '- Inga personuppgifter: inga riktiga namn på eleven, familj, skola eller adresser. Använd påhittade förnamn vid behov.',
   ].join('\n')
@@ -209,7 +277,10 @@ export function settingsBlock(p: PromptInput): string {
     p.topic ? `Område: ${p.topic}.` : '',
     p.skills?.length
       ? `skills: varje uppgift ska ha en av dessa färdighetstaggar, eller en finare undertagg av den (t.ex. "${p.skills[0]}.delmoment"): ${p.skills.join(', ')}.`
-      : 'skills: korta färdighetstaggar i formatet "ämne.område.delmoment", t.ex. "math.multiplication.tables-6-9".',
+      : 'skills: korta färdighetstaggar i formatet "ämne.område.delmoment" (gemener, a-z, 0-9 och bindestreck), t.ex. "math.multiplication.tables-6-9".',
+    p.knownSkills?.length
+      ? `Eleven har redan dessa färdighetstaggar; återanvänd dem när de passar i stället för att hitta på nya: ${p.knownSkills.slice(0, 40).join(', ')}.`
+      : '',
     p.includeImages ? 'Föreslå illustrationer (fältet illustration) där bilder hjälper.' : '',
   ]
     .filter(Boolean)
@@ -229,7 +300,7 @@ export function buildSystemPrompt(p: PromptInput): string {
     p.sourceMode === 'strict' && p.material ? '' : curriculumBlock(p.curriculum),
     sourceBlock(p.sourceMode, p.material),
     p.research && p.sourceMode !== 'strict' ? researchBlock(p.research) : '',
-    safetyBlock(),
+    safetyBlock(p.band, p.subjectCode),
   ]
     .filter(Boolean)
     .join('\n\n')
@@ -242,7 +313,8 @@ const KIND_SV: Record<ItemKind, string> = {
   fillBlank: 'lucktext (text med ___ per lucka, blanks = godtagna svar per lucka)',
   matching: 'para ihop (pairs)',
   ordering: 'ordna (correctOrder i rätt ordning)',
-  numeric: 'numeriskt svar (answer, ev. unit och check som räknebart uttryck, t.ex. "7*8")',
+  numeric:
+    'numeriskt svar (answer, ev. unit och check som räknebart uttryck, t.ex. "7*8"; är svaret avrundat, sätt tolerance till en halv enhet i sista decimalen, t.ex. 0.05 för en decimal)',
   freeText: 'fritt svar (rubric = viktiga punkter, sampleAnswer)',
   flashcard: 'flashkort (prompt = framsida, back = baksida)',
 }
@@ -253,10 +325,23 @@ export function itemsTask(opts: {
   sectionTitle?: string
   context?: string
   avoid?: string[]
+  /** Practice tests: difficulty ramp for this part, e.g. [2, 3]. */
+  ramp?: [number, number]
+  /** Practice tests: how many items of each kind this part should have. */
+  quota?: Partial<Record<ItemKind, number>>
 }): string {
+  const quota = Object.entries(opts.quota ?? {}).filter(([, n]) => n)
   return [
     `Skapa exakt ${opts.count} uppgifter${opts.sectionTitle ? ` för avsnittet "${opts.sectionTitle}"` : ''}.`,
     `Tillåtna uppgiftstyper: ${opts.kinds.map((k) => KIND_SV[k]).join('; ')}. Variera typerna när flera är tillåtna.`,
+    quota.length > 1
+      ? `Fördelning: ${quota.map(([k, n]) => `${n} st ${KIND_SV[k as ItemKind].split(' (')[0]}`).join(', ')}.`
+      : '',
+    opts.ramp
+      ? opts.ramp[0] === opts.ramp[1]
+        ? `Svårighetsgrad (difficulty) ${opts.ramp[0]} för alla uppgifter i denna del.`
+        : `Öka svårigheten gradvis: första uppgiften difficulty ${opts.ramp[0]}, sista ${opts.ramp[1]}.`
+      : '',
     'Ge också en kort titel (title) för hela materialet.',
     opts.context ? `Sammanhang (redan skrivet):\n${opts.context}` : '',
     opts.avoid?.length ? `Upprepa inte dessa uppgifter:\n- ${opts.avoid.join('\n- ')}` : '',
@@ -293,9 +378,18 @@ export function textsTask(opts: {
   ].join('\n')
 }
 
+/** Rewrite the texts after a safety problem in them (bodies and title). */
+export function textRepairTask(problems: string[]): string {
+  return [
+    'Texterna nedan underkändes vid kontrollen. Skriv om dem så att problemen försvinner, med samma avsnitt, ordning och ungefärliga längd.',
+    `Problem:\n- ${problems.join('\n- ')}`,
+  ].join('\n\n')
+}
+
 export function repairTask(issues: string[], items: unknown[]): string {
   return [
     `Följande ${items.length} uppgifter underkändes vid kontroll. Skapa ersättare (samma typ och samma ordning) som åtgärdar problemen.`,
+    'Uppgifterna har id (t.ex. "i3") i listan nedan; problemen hänvisar till dem.',
     `Problem:\n- ${issues.join('\n- ')}`,
     `Underkända uppgifter:\n${JSON.stringify(items)}`,
   ].join('\n\n')

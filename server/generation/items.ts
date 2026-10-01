@@ -1,9 +1,15 @@
 import { z } from 'zod'
 import type { CurriculumRef, Item, ItemKind, ProcessedStudyMaterial, SourceRef } from '../../shared/contracts'
+import { SKILL_TAG } from '../adaptive/paths'
 import type { IllustrationRequest } from '../db/schema'
 
 // Model-facing item schema: smaller than the contract (no ids, sources or media; choices are
 // plain strings). The server assigns ids, sources and refs in `toItem`.
+// Optional fields are nullable *and required* in the JSON Schema (null when absent; zod fills a
+// missing one with null), so OpenAI strict mode applies and decoding is constrained.
+
+/** Model-facing optional field: required + nullable for the provider, null when left out. */
+const opt = <T extends z.ZodType>(t: T) => t.nullable().default(null)
 
 export const ITEM_KINDS = [
   'multipleChoice',
@@ -19,19 +25,19 @@ export const ITEM_KINDS = [
 
 const Common = {
   prompt: z.string().min(1).max(2000),
-  lang: z.string().min(2).max(5).optional(),
-  hints: z.array(z.string().max(500)).max(4).optional(),
-  explanation: z.string().max(2000).optional(),
+  lang: opt(z.string().min(2).max(5)),
+  hints: opt(z.array(z.string().max(500)).max(4)),
+  explanation: opt(z.string().max(2000)),
   difficulty: z.number().int().min(1).max(5),
   skills: z.array(z.string().max(120)).min(1).max(6),
   /** Ids from the offered curriculum list ("C1", ...). */
-  curriculumIds: z.array(z.string()).max(6).optional(),
+  curriculumIds: opt(z.array(z.string()).max(6)),
   /** Segment ids from the study material. */
-  sourceSegmentIds: z.array(z.string()).max(6).optional(),
+  sourceSegmentIds: opt(z.array(z.string()).max(6)),
   /** Web research source ids ("W1", ...) the item's facts come from. */
-  webSourceIds: z.array(z.string()).max(5).optional(),
+  webSourceIds: opt(z.array(z.string()).max(5)),
   /** Short description of a helpful illustration (hook for the image domain). */
-  illustration: z.string().max(300).optional(),
+  illustration: opt(z.string().max(300)),
 }
 
 const GEN_KINDS = {
@@ -75,20 +81,21 @@ const GEN_KINDS = {
     kind: z.literal('numeric'),
     ...Common,
     answer: z.number(),
-    tolerance: z.number().nonnegative().optional(),
-    unit: z.string().max(30).optional(),
-    check: z.string().max(300).optional(),
+    tolerance: opt(z.number().nonnegative()),
+    unit: opt(z.string().max(30)),
+    check: opt(z.string().max(300)),
   }),
   freeText: z.object({
     kind: z.literal('freeText'),
     ...Common,
     rubric: z.array(z.string().max(300)).min(1).max(8),
-    sampleAnswer: z.string().max(2000).optional(),
+    sampleAnswer: opt(z.string().max(2000)),
   }),
   flashcard: z.object({ kind: z.literal('flashcard'), ...Common, back: z.string().max(1000) }),
 }
 
-export type GenItem = z.infer<(typeof GEN_KINDS)[ItemKind]>
+/** Parsed model item (nulls for absent optional fields). Tests may build it with fields left out. */
+export type GenItem = z.input<(typeof GEN_KINDS)[ItemKind]>
 
 /** Union of only the allowed kinds, so the model cannot produce others. */
 export function genItemSchema(kinds: readonly ItemKind[]): z.ZodType<GenItem> {
@@ -99,7 +106,7 @@ export function genItemSchema(kinds: readonly ItemKind[]): z.ZodType<GenItem> {
 
 export function genItemsSchema(kinds: readonly ItemKind[], count: number) {
   return z.object({
-    title: z.string().max(200).optional(),
+    title: opt(z.string().max(200)),
     items: z.array(genItemSchema(kinds)).min(count).max(count),
   })
 }
@@ -114,20 +121,52 @@ export interface ItemContext {
   web?: Map<string, SourceRef>
   /** GenerationRequest.skills: every item carries these tags or finer ones. */
   skills?: string[]
+  /** Used when none of the model's tags is a valid skill tag (e.g. "mat.multiplikation"). */
+  fallbackSkill?: string
+}
+
+const slug = (s: string) =>
+  s
+    .normalize('NFKD')
+    .replace(/\p{M}/gu, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9.]+/g, '-')
+    .replace(/-*\.-*/g, '.')
+    .replace(/\.+/g, '.')
+    .replace(/^[-.]+|[-.]+$/g, '')
+
+/** Model tag → adaptive skill tag (lowercase slug segments), or undefined when it can't be one. */
+export function normalizeSkill(tag: string): string | undefined {
+  const t = slug(tag)
+  return SKILL_TAG.test(t) ? t : undefined
+}
+
+/** Subject-derived fallback tag: "GRGRMAT01" + "Multiplikation" → "mat.multiplikation". */
+export function fallbackSkill(subjectCode: string | undefined, topic: string | undefined): string {
+  const subj = slug((subjectCode ?? '').replace(/^GRGR/i, '').replace(/\d+$/, '')) || 'allmant'
+  const area =
+    slug(topic ?? '')
+      .replace(/\./g, '-')
+      .slice(0, 40)
+      .replace(/-+$/, '') || 'allmant'
+  return normalizeSkill(`${/^[a-z]/.test(subj) ? subj : `s${subj}`}.${area}`) ?? 'allmant.allmant'
 }
 
 /**
  * Item tags under the requested skills: the model's tags that equal or refine a requested tag
  * (only the finest of a chain: roll-up would count one answer twice), else the requested tags.
  */
-export function itemSkills(model: string[], required?: string[]): string[] {
-  if (!required?.length) return model
+export function itemSkills(raw: string[], required?: string[], fallback = 'allmant.allmant'): string[] {
+  const model = [...new Set(raw.flatMap((t) => normalizeSkill(t) ?? []))]
+  if (!required?.length) return model.length ? model.slice(0, 6) : [fallback]
   const fits = [...new Set(model.filter((s) => required.some((t) => s === t || s.startsWith(`${t}.`))))]
   const finest = fits.filter((s) => !fits.some((o) => o.startsWith(`${s}.`)))
   return (finest.length ? finest : required).slice(0, 6)
 }
 
 const choice = (text: string, i: number) => ({ id: `c${i + 1}`, text })
+
+const orUndef = <T>(v: T | null | undefined): T | undefined => v ?? undefined
 
 /** Keep the answer(s) and the first distractors up to `max` options. */
 function limitChoices<T>(choices: T[], keep: (i: number) => boolean, max: number): number[] {
@@ -168,9 +207,9 @@ export function toItem(g: GenItem, id: string, ctx: ItemContext): { item: Item; 
     lang: g.lang ?? 'sv',
     media: [],
     hints: ctx.includeHints ? (g.hints ?? []) : [],
-    explanation: g.explanation,
+    explanation: orUndef(g.explanation),
     difficulty: g.difficulty,
-    skills: itemSkills(g.skills, ctx.skills),
+    skills: itemSkills(g.skills, ctx.skills, ctx.fallbackSkill),
     sources,
     curriculumRefs,
   }
@@ -184,9 +223,21 @@ export function toItem(g: GenItem, id: string, ctx: ItemContext): { item: Item; 
       break
     }
     case 'multiSelect': {
-      const keep = limitChoices(g.choices, (i) => g.correctIndexes.includes(i), Math.max(ctx.maxChoices, 2))
+      const correct = [...new Set(g.correctIndexes)]
+      // At least one wrong option must stay, or every answer is right. If that breaks maxChoices,
+      // ask for one answer instead (multiple choice with the first correct option).
+      if (correct.length + 1 > ctx.maxChoices && g.choices.length > correct.length) {
+        const first = correct[0]!
+        // Other correct options would make a single answer ambiguous: only wrong ones stay as distractors.
+        const wrong = g.choices.map((_, i) => i).filter((i) => !correct.includes(i))
+        const picked = [first, ...wrong.slice(0, ctx.maxChoices - 1)].sort((x, y) => x - y)
+        const choices = picked.map((i, n) => choice(g.choices[i]!, n))
+        item = { ...base, kind: 'multipleChoice', choices, answer: choices[picked.indexOf(first)]!.id }
+        break
+      }
+      const keep = limitChoices(g.choices, (i) => correct.includes(i), Math.max(ctx.maxChoices, correct.length + 1))
       const choices = keep.map((i, n) => choice(g.choices[i]!, n))
-      const answers = g.correctIndexes.map((ci) => choices[keep.indexOf(ci)]?.id ?? 'missing')
+      const answers = correct.map((ci) => choices[keep.indexOf(ci)]?.id ?? 'missing')
       item = { ...base, kind: g.kind, choices, answers }
       break
     }
@@ -201,7 +252,14 @@ export function toItem(g: GenItem, id: string, ctx: ItemContext): { item: Item; 
       item = { ...base, kind: g.kind, text: g.text, blanks: g.blanks.map((accepted) => ({ accepted })) }
       break
     case 'numeric':
-      item = { ...base, kind: g.kind, answer: g.answer, tolerance: g.tolerance ?? 0, unit: g.unit, check: g.check }
+      item = {
+        ...base,
+        kind: g.kind,
+        answer: g.answer,
+        tolerance: g.tolerance ?? 0,
+        unit: orUndef(g.unit),
+        check: orUndef(g.check),
+      }
       break
     case 'trueFalse':
       item = { ...base, kind: g.kind, answer: g.answer }
@@ -210,7 +268,7 @@ export function toItem(g: GenItem, id: string, ctx: ItemContext): { item: Item; 
       item = { ...base, kind: g.kind, pairs: g.pairs }
       break
     case 'freeText':
-      item = { ...base, kind: g.kind, rubric: g.rubric, sampleAnswer: g.sampleAnswer }
+      item = { ...base, kind: g.kind, rubric: g.rubric, sampleAnswer: orUndef(g.sampleAnswer) }
       break
     case 'flashcard':
       item = { ...base, kind: g.kind, back: g.back }
