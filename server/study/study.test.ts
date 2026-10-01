@@ -12,7 +12,7 @@ import type { MockScripts } from '../ai/mock'
 import { makeItems } from '../curriculum/import'
 import { syncCurriculumSnapshot } from '../curriculum/service'
 import type { Db } from '../db/client'
-import { jobs, studySets } from '../db/schema'
+import { jobs, learners, studySets } from '../db/schema'
 import { getJob, JobFailure, toJobError, type JobTools } from '../jobs'
 import { asAdult, createTestApp, seedLearner, TEST_ENV } from '../test/helpers'
 import { cleanupUploads, studyHandlers } from './process'
@@ -194,6 +194,25 @@ describe('upload', () => {
     ] as const)
       expect((await t.app.inject({ method, url, payload: { order: [1] } })).statusCode).toBe(403)
     expect((await t.app.inject(`/api/v1/learners/${learnerId}/study-sets`)).statusCode).toBe(200)
+  })
+
+  it('lets middle/upper-band learners upload when their profile allows requests; early band stays adult-only', async () => {
+    const post = async (id: string) => {
+      const f = form([['a.jpg', await image('#eee')]])
+      return t.app.inject({ method: 'POST', url: `/api/v1/learners/${id}/study-sets`, ...f })
+    }
+    const year5 = await seedLearner(db, { stage: 'grundskola', year: 5 })
+    const res = await post(year5.id)
+    expect(res.statusCode).toBe(201)
+    expect(res.json().jobId).toBeTruthy()
+
+    const p = year5.profile
+    await db
+      .update(learners)
+      .set({ profile: { ...p, generation: { ...p.generation, learnerRequestsAllowed: false } } })
+      .where(eq(learners.id, year5.id))
+    expect((await post(year5.id)).statusCode).toBe(403)
+    expect((await post(learnerId)).statusCode).toBe(403) // year 1: early band
   })
 
   it('checks real types by magic bytes and rejects HEIC with a clear message', async () => {
