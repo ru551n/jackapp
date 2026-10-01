@@ -7,7 +7,7 @@ import { VEHICLES } from './vehicles'
 
 // Invariants every generator must satisfy. New content is covered automatically.
 const SUPPORTS: Support[] = ['normal', 'extra']
-const SEEDS = Array.from({ length: 25 }, (_, i) => i * 7919 + 1)
+const SEEDS = Array.from({ length: 100 }, (_, i) => i * 7919 + 1)
 
 function vehicleIds(scene: Scene | undefined): string[] {
   if (!scene) return []
@@ -15,6 +15,9 @@ function vehicleIds(scene: Scene | undefined): string[] {
   if (scene.kind === 'group') return scene.scenes.flatMap(vehicleIds)
   return []
 }
+
+// Known bug: offers both 'G' and 'g' as choices (see the it.fails test below). Remove when fixed.
+const CASE_CLASH = new Set(['read.missingLetter.word'])
 
 function check(q: Question, genId: string) {
   const ctx = `${genId} → ${q.id}`
@@ -31,7 +34,15 @@ function check(q: Question, genId: string) {
 
   const answers = q.task.kind === 'choice' ? [q.task.answer] : q.task.answer
   for (const a of answers) expect(ids, `${ctx}: answer ${a} missing`).toContain(a)
-  if (q.task.kind === 'order') expect(new Set(q.task.answer).size, ctx).toBe(q.task.answer.length)
+  if (q.task.kind === 'order') {
+    expect(new Set(q.task.answer).size, ctx).toBe(q.task.answer.length)
+    expect([...q.task.answer].sort(), `${ctx}: order answer must be a permutation of the items`).toEqual(
+      [...ids].sort(),
+    )
+  }
+  const fold = (t: string) => (CASE_CLASH.has(genId) ? t.trim() : t.trim().toLowerCase())
+  const labels = options.filter((c) => c.label).map((c) => fold(c.label!))
+  expect(new Set(labels).size, `${ctx}: duplicate visible labels`).toBe(labels.length)
 
   expect(q.hints.length, `${ctx}: needs at least one hint`).toBeGreaterThan(0)
   const eliminated = q.hints.flatMap((h) => h.eliminate ?? [])
@@ -75,6 +86,20 @@ describe('every generator', () => {
   it('generator ids are unique', () => {
     const ids = GENERATORS.map((g) => g.id)
     expect(new Set(ids).size).toBe(ids.length)
+  })
+})
+
+describe('known content bugs', () => {
+  // src/content/reading/missingLetter.ts: textChoices() filters the answer case-sensitively, so a
+  // cased distractor can equal the answer ignoring case ("G" next to "g").
+  it.fails('read.missingLetter.word never offers the same letter in two cases', () => {
+    const gen = GENERATORS.find((g) => g.id === 'read.missingLetter.word')!
+    for (const seed of SEEDS)
+      for (let level = 2; level <= 5; level++) {
+        const q = gen.generate({ rng: createRng(seed), level: level as Level, support: 'normal' })
+        const labels = (q.task.kind === 'choice' ? q.task.choices : []).map((c) => c.label!.toLowerCase())
+        expect(new Set(labels).size).toBe(labels.length)
+      }
   })
 })
 

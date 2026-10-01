@@ -100,6 +100,24 @@ describe('actions', () => {
   })
 })
 
+describe('caps', () => {
+  it('keeps only the last 50 sessions', () => {
+    actions._replace(defaultState())
+    for (let i = 0; i < 55; i++)
+      actions.completeSession({ at: i, area: 'stationen', skills: [], firstTry: 0, total: 4 })
+    expect(getState().sessions).toHaveLength(50)
+    expect(getState().sessions[0].at).toBe(5)
+    expect(getState().missions.stationen).toBe(55)
+  })
+
+  it('keeps only the last 40 recent question ids', () => {
+    actions._replace(defaultState())
+    for (let i = 0; i < 45; i++) actions.recordAnswer('math.add', `math.add:${i}`, 0, 0)
+    expect(getState().recentQuestionIds).toHaveLength(40)
+    expect(getState().recentQuestionIds[0]).toBe('math.add:5')
+  })
+})
+
 describe('unlocks', () => {
   it('are a pure, predictable function of missions', () => {
     const none = defaultState().missions
