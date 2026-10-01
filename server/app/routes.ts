@@ -1,7 +1,8 @@
-import { curriculumRoutes } from '../curriculum/routes'
 import type { RouteModule } from './context'
+import { systemStatusRoutes } from '../ai/routes'
+import { curriculumRoutes } from '../curriculum/routes'
 import { jobRoutes } from '../jobs/routes'
 import { learnerRoutes } from '../learners/routes'
 
 // Route registry: each domain exports one RouteModule and adds one line here.
-export const ROUTE_MODULES: RouteModule[] = [learnerRoutes, jobRoutes, curriculumRoutes]
+export const ROUTE_MODULES: RouteModule[] = [systemStatusRoutes, learnerRoutes, jobRoutes, curriculumRoutes]
