@@ -4,6 +4,7 @@ import type { CoreEnv } from '../config/env'
 import { curriculumJobHandlers } from '../curriculum/service'
 import type { Db } from '../db/client'
 import { defineJobHandler, type JobHandler } from '../jobs/runtime'
+import { researchJobHandlers } from '../research/jobs'
 
 /** Services handlers may need beyond the per-job tools (db/log/signal/progress). */
 export interface HandlerDeps {
@@ -20,5 +21,6 @@ export function jobHandlers(deps: HandlerDeps): JobHandler[] {
     defineJobHandler('curriculum.sync', async (_job, tools) => {
       await curriculumJobHandlers['curriculum.sync'](tools.db, tools.log)
     }),
+    ...researchJobHandlers(deps),
   ]
 }
