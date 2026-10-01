@@ -1,18 +1,15 @@
 import type { ComponentType } from 'react'
 import type { Vehicle, VehicleCategory, SpriteId } from '../../core/types'
 import { Sprite } from '../sprites'
-
-export interface VehicleArtProps {
-  /** 'silhouette' renders a single dark shape (for recognition tasks). */
-  mode?: 'color' | 'silhouette'
-  className?: string
-}
+import { AIRCRAFT_ART } from './aircraft'
+import { RAIL_ART } from './rail'
+import type { VehicleArtProps } from './types'
 
 /**
  * Per-vehicle original illustrations, keyed by vehicle id. Domain owners register their art in
  * their own module (aircraft.tsx, rail.tsx) and it is merged here.
  */
-const ART: Record<string, ComponentType<VehicleArtProps>> = {}
+const ART: Record<string, ComponentType<VehicleArtProps>> = { ...RAIL_ART, ...AIRCRAFT_ART }
 
 const FALLBACK: Record<VehicleCategory, SpriteId> = {
   train: 'locomotive',
