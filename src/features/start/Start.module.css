@@ -1,0 +1,100 @@
+.grid {
+  list-style: none;
+  margin: 0 auto;
+  padding: 0;
+  max-width: 900px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
+  gap: var(--space-3);
+}
+
+.cardWrap {
+  display: grid;
+  gap: var(--space-1);
+  justify-items: stretch;
+}
+
+.card {
+  display: grid;
+  justify-items: center;
+  gap: 0.4rem;
+  min-height: 11rem;
+  padding: var(--space-3) var(--space-2);
+  border-radius: var(--radius);
+  border: 3px solid var(--line);
+  background: var(--paper);
+  box-shadow: var(--shadow);
+  color: var(--ink);
+  text-decoration: none;
+  transition: border-color var(--ease);
+}
+
+.card:hover {
+  border-color: var(--accent);
+}
+
+.icon {
+  width: 3.2rem;
+  height: 3.2rem;
+  color: var(--accent);
+}
+.early .icon {
+  color: var(--hint);
+}
+.upper .icon {
+  color: var(--sign);
+}
+
+.name {
+  font-size: 1.8rem;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+  text-align: center;
+}
+
+.year {
+  color: var(--ink-soft);
+}
+
+.footer {
+  display: flex;
+  justify-content: center;
+  margin-top: var(--space-4);
+}
+
+.adult {
+  color: var(--ink-soft);
+  font-size: 0.9rem;
+  padding: 0.75rem 1rem;
+}
+
+.setup {
+  max-width: 34rem;
+  margin: 0 auto;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: var(--space-3);
+  display: grid;
+  gap: var(--space-2);
+}
+
+.setup section {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.step {
+  color: var(--ink-soft);
+  font-size: 0.9rem;
+}
+
+.muted {
+  color: var(--ink-soft);
+}
+
+.msg {
+  color: var(--hint);
+  font-weight: 700;
+  min-height: 1.4em;
+}
