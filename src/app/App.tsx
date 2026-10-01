@@ -1,24 +1,17 @@
 import { useEffect } from 'react'
 import { createHashRouter, RouterProvider } from 'react-router'
-import { CollectionPage } from '../features/collection/CollectionPage'
-import { VehicleDetailPage } from '../features/collection/VehicleDetailPage'
-import { FreePlayPage } from '../features/freeplay/FreePlayPage'
-import { HomePage } from '../features/home/HomePage'
-import { ParentPage } from '../features/parent/ParentPage'
-import { AreaPage } from '../features/session/AreaPage'
-import { SessionPage } from '../features/session/SessionPage'
+import { AdultArea } from '../features/adult'
+import { LearnerArea } from '../features/learner'
+import { StartPage } from '../features/start'
 import { useAppState } from '../store/store'
 
 // Hash routing: works from any static host or file server without rewrite rules.
+// `/` start (setup or learner picker), `/vuxen/*` adult area (PIN gate), `/l/:learnerId/*` learner area.
 const routes = [
-  { path: '/', element: <HomePage /> },
-  { path: '/omrade/:area', element: <AreaPage /> },
-  { path: '/omrade/:area/uppdrag', element: <SessionPage /> },
-  { path: '/samling', element: <CollectionPage /> },
-  { path: '/samling/:id', element: <VehicleDetailPage /> },
-  { path: '/vuxen', element: <ParentPage /> },
-  { path: '/bygg', element: <FreePlayPage /> },
-  { path: '*', element: <HomePage /> },
+  { path: '/', element: <StartPage /> },
+  { path: '/vuxen/*', element: <AdultArea /> },
+  { path: '/l/:learnerId/*', element: <LearnerArea /> },
+  { path: '*', element: <StartPage /> },
 ]
 
 const router = createHashRouter(routes)

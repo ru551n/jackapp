@@ -27,6 +27,10 @@ const learnerView = (l: Row) => ({
   language: l.profile.language,
   presentation: presentationFor(l.profile),
   learnerRequestsAllowed: l.profile.generation.learnerRequestsAllowed,
+  // Themes for guided requests and the early-years free-play switch (not sensitive).
+  interests: l.profile.interests,
+  themes: l.profile.themes,
+  freePlayEnabled: l.profile.freePlayEnabled,
 })
 
 function validProfile(input: unknown): LearnerProfileInput {
