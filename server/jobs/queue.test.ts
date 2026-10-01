@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { createTestDb, type Db } from '../db/client'
 import { jobs } from '../db/schema'
 import { seedLearner } from '../test/helpers'
+import '../worker/handlers' // every domain's registerJobPayload
 import { checkWorkerHealth, jobsReadiness } from './health'
 import {
   backoffMs,
@@ -52,7 +53,9 @@ afterEach(async () => {
 
 const state = async (id: string) => (await getJob(db, id))!.state
 const startWorker = async (handlers: JobHandler[], extra: Partial<Parameters<typeof createWorker>[0]> = {}) => {
-  worker = createWorker({ db, log: testLog, handlers, workerId: 'test-1', pollMs: 20, heartbeatMs: 50, ...extra })
+  // No maintenance schedules unless a test asks: they would add uploads.cleanup jobs.
+  const opts = { db, log: testLog, handlers, workerId: 'test-1', pollMs: 20, heartbeatMs: 50, schedules: [], ...extra }
+  worker = createWorker(opts)
   await worker.start()
   return worker
 }
@@ -60,11 +63,11 @@ const startWorker = async (handlers: JobHandler[], extra: Partial<Parameters<typ
 describe('queue', () => {
   it('enqueues, claims and completes', async () => {
     const l = await seedLearner(db)
-    const { id } = await enqueue(db, { type: 'artifact.generate', payload: { a: 1 }, learnerId: l.id })
-    expect(await claim(db, 'w', ['image.generate'])).toBeUndefined()
-    const job = await claim(db, 'w', ['artifact.generate'])
+    const { id } = await enqueue(db, { type: 'curriculum.sync', payload: { a: 1 }, learnerId: l.id })
+    expect(await claim(db, 'w', ['uploads.cleanup'])).toBeUndefined()
+    const job = await claim(db, 'w', ['curriculum.sync'])
     expect(job).toMatchObject({ id, state: 'processing', attempts: 1, lockedBy: 'w', payload: { a: 1 } })
-    expect(await claim(db, 'w', ['artifact.generate'])).toBeUndefined()
+    expect(await claim(db, 'w', ['curriculum.sync'])).toBeUndefined()
     await complete(db, id, 'w', 'res-1')
     expect(await getStatus(db, id)).toMatchObject({ state: 'completed', progress: 1, resultId: 'res-1', attempts: 1 })
     expect(await listForLearner(db, l.id)).toHaveLength(1)
@@ -73,11 +76,22 @@ describe('queue', () => {
   it('validates payloads against the registry', async () => {
     await expect(enqueue(db, { type: 'uploads.cleanup', payload: { x: 1 } as never })).resolves.toBeTruthy()
     await expect(enqueue(db, { type: 'nope' as never, payload: {} })).rejects.toThrow()
+    // Domain modules register real schemas (loaded via the app's route registry).
+    for (const type of [
+      'artifact.generate',
+      'artifact.regenerateItem',
+      'image.generate',
+      'research.run',
+      'asset.fetch',
+      'path.plan',
+      'study.process',
+    ] as const)
+      await expect(enqueue(db, { type, payload: {} }), type).rejects.toThrow()
   })
 
   it('never double-claims under parallel claimers', async () => {
-    for (let i = 0; i < 10; i++) await enqueue(db, { type: 'research.run', payload: { i } })
-    const got = await Promise.all(Array.from({ length: 25 }, (_, i) => claim(db, `w${i}`, ['research.run'])))
+    for (let i = 0; i < 10; i++) await enqueue(db, { type: 'curriculum.sync', payload: { i } })
+    const got = await Promise.all(Array.from({ length: 25 }, (_, i) => claim(db, `w${i}`, ['curriculum.sync'])))
     const ids = got.filter(Boolean).map((j) => j!.id)
     expect(ids).toHaveLength(10)
     expect(new Set(ids).size).toBe(10)
@@ -88,30 +102,30 @@ describe('queue', () => {
     expect(backoffMs(3, () => 0.999)).toBeLessThanOrEqual(40_000)
     expect(backoffMs(30, () => 0)).toBe(300_000)
 
-    const { id } = await enqueue(db, { type: 'asset.fetch', payload: {}, maxAttempts: 2 })
+    const { id } = await enqueue(db, { type: 'uploads.cleanup', payload: {}, maxAttempts: 2 })
     const err = { code: 'ai_unavailable', learnerMessage: 'x', adultMessage: 'y', retryable: true }
-    expect(await failAttempt(db, (await claim(db, 'w', ['asset.fetch']))!, 'w', err, 60_000)).toBe(true)
+    expect(await failAttempt(db, (await claim(db, 'w', ['uploads.cleanup']))!, 'w', err, 60_000)).toBe(true)
     expect(await state(id)).toBe('queued')
-    expect(await claim(db, 'w', ['asset.fetch'])).toBeUndefined() // backoff not elapsed
+    expect(await claim(db, 'w', ['uploads.cleanup'])).toBeUndefined() // backoff not elapsed
     await db
       .update(jobs)
       .set({ runAfter: sql`now()` })
       .where(eq(jobs.id, id))
-    expect(await failAttempt(db, (await claim(db, 'w', ['asset.fetch']))!, 'w', err, 0)).toBe(false)
+    expect(await failAttempt(db, (await claim(db, 'w', ['uploads.cleanup']))!, 'w', err, 0)).toBe(false)
     expect(await getStatus(db, id)).toMatchObject({ state: 'failed', attempts: 2, error: { code: 'ai_unavailable' } })
 
-    const b = await enqueue(db, { type: 'asset.fetch', payload: {} })
-    await failAttempt(db, (await claim(db, 'w', ['asset.fetch']))!, 'w', { ...err, retryable: false })
+    const b = await enqueue(db, { type: 'uploads.cleanup', payload: {} })
+    await failAttempt(db, (await claim(db, 'w', ['uploads.cleanup']))!, 'w', { ...err, retryable: false })
     expect(await state(b.id)).toBe('failed')
     expect(await retryFailed(db, b.id)).toBe(true)
     expect(await getStatus(db, b.id)).toMatchObject({ state: 'queued', attempts: 0, error: undefined })
   })
 
   it('recovers stale locks: requeue, or fail after maxAttempts', async () => {
-    const a = await enqueue(db, { type: 'path.plan', payload: {}, maxAttempts: 2 })
-    const b = await enqueue(db, { type: 'path.plan', payload: {}, maxAttempts: 1 })
-    await claim(db, 'dead', ['path.plan'])
-    await claim(db, 'dead', ['path.plan'])
+    const a = await enqueue(db, { type: 'uploads.cleanup', payload: {}, maxAttempts: 2 })
+    const b = await enqueue(db, { type: 'uploads.cleanup', payload: {}, maxAttempts: 1 })
+    await claim(db, 'dead', ['uploads.cleanup'])
+    await claim(db, 'dead', ['uploads.cleanup'])
     expect(await recoverStale(db, 60)).toBe(0)
     await db.update(jobs).set({ heartbeatAt: sql`now() - interval '5 minutes'` })
     expect(await recoverStale(db, 60)).toBe(2)
@@ -124,11 +138,11 @@ describe('queue', () => {
   })
 
   it('cancels queued and processing jobs; completion after cancel is a no-op', async () => {
-    const a = await enqueue(db, { type: 'research.run', payload: {} })
+    const a = await enqueue(db, { type: 'curriculum.sync', payload: {} })
     expect(await cancel(db, a.id)).toBe(true)
-    expect(await claim(db, 'w', ['research.run'])).toBeUndefined()
-    const b = await enqueue(db, { type: 'research.run', payload: {} })
-    await claim(db, 'w', ['research.run'])
+    expect(await claim(db, 'w', ['curriculum.sync'])).toBeUndefined()
+    const b = await enqueue(db, { type: 'curriculum.sync', payload: {} })
+    await claim(db, 'w', ['curriculum.sync'])
     expect(await cancel(db, b.id)).toBe(true)
     await complete(db, b.id, 'w', 'r')
     expect(await state(b.id)).toBe('cancelled')
@@ -137,9 +151,9 @@ describe('queue', () => {
 
   it('enforces the queued-jobs limit', async () => {
     const lim = { LIMIT_QUEUED_JOBS: 2 }
-    await enqueue(db, { type: 'research.run', payload: {} }, lim)
-    await enqueue(db, { type: 'research.run', payload: {} }, lim)
-    await expect(enqueue(db, { type: 'research.run', payload: {} }, lim)).rejects.toMatchObject({
+    await enqueue(db, { type: 'curriculum.sync', payload: {} }, lim)
+    await enqueue(db, { type: 'curriculum.sync', payload: {} }, lim)
+    await expect(enqueue(db, { type: 'curriculum.sync', payload: {} }, lim)).rejects.toMatchObject({
       status: 429,
       code: 'limit_exceeded',
     })
@@ -161,7 +175,7 @@ describe('queue', () => {
   })
 
   it('prunes finished jobs past retention', async () => {
-    const a = await enqueue(db, { type: 'research.run', payload: {} })
+    const a = await enqueue(db, { type: 'curriculum.sync', payload: {} })
     await cancel(db, a.id)
     expect(await pruneFinished(db, 14)).toBe(0)
     await db.update(jobs).set({ finishedAt: sql`now() - interval '30 days'` })
@@ -173,7 +187,7 @@ describe('worker runtime', () => {
   it('runs handlers with progress and completes', async () => {
     const seen: number[] = []
     await startWorker([
-      defineJobHandler('artifact.generate', async (job, t) => {
+      defineJobHandler('curriculum.sync', async (job, t) => {
         await t.progress(0.5, 'Skriver uppgifter')
         seen.push((await getJob(t.db, job.id))!.progress)
         await t.progress(0.6, 'Skriver uppgifter') // throttled
@@ -181,7 +195,7 @@ describe('worker runtime', () => {
         return 'artifact-9'
       }),
     ])
-    const { id } = await enqueue(db, { type: 'artifact.generate', payload: {} })
+    const { id } = await enqueue(db, { type: 'curriculum.sync', payload: {} })
     await until(async () => (await state(id)) === 'completed')
     expect(seen).toEqual([0.5, 0.5])
     expect((await getStatus(db, id))!.resultId).toBe('artifact-9')
@@ -192,7 +206,7 @@ describe('worker runtime', () => {
     let now = 0
     await startWorker(
       [
-        defineJobHandler('image.generate', async () => {
+        defineJobHandler('uploads.cleanup', async () => {
           peak = Math.max(peak, ++now)
           await new Promise((r) => setTimeout(r, 100))
           now--
@@ -200,7 +214,9 @@ describe('worker runtime', () => {
       ],
       { concurrency: 3 },
     )
-    const ids = await Promise.all(Array.from({ length: 6 }, () => enqueue(db, { type: 'image.generate', payload: {} })))
+    const ids = await Promise.all(
+      Array.from({ length: 6 }, () => enqueue(db, { type: 'uploads.cleanup', payload: {} })),
+    )
     await until(async () => (await Promise.all(ids.map((j) => state(j.id)))).every((s) => s === 'completed'))
     expect(peak).toBe(3)
   })
@@ -209,7 +225,7 @@ describe('worker runtime', () => {
     let aborted: unknown
     await startWorker(
       [
-        defineJobHandler('research.run', (_j, t) => {
+        defineJobHandler('curriculum.sync', (_j, t) => {
           return new Promise((_, rej) =>
             t.signal.addEventListener('abort', () => ((aborted = t.signal.reason), rej(new Error('x')))),
           )
@@ -217,7 +233,7 @@ describe('worker runtime', () => {
       ],
       { timeoutSeconds: 0.1 },
     )
-    const { id } = await enqueue(db, { type: 'research.run', payload: {} })
+    const { id } = await enqueue(db, { type: 'curriculum.sync', payload: {} })
     await until(async () => (await state(id)) === 'failed')
     expect(aborted).toBe('timeout')
     expect((await getStatus(db, id))!.error).toMatchObject({ code: 'timeout', retryable: false })
@@ -227,14 +243,14 @@ describe('worker runtime', () => {
     let reason: unknown
     await startWorker([
       defineJobHandler(
-        'research.run',
+        'curriculum.sync',
         (_j, t) =>
           new Promise((_, rej) =>
             t.signal.addEventListener('abort', () => ((reason = t.signal.reason), rej(new Error()))),
           ),
       ),
     ])
-    const { id } = await enqueue(db, { type: 'research.run', payload: {} })
+    const { id } = await enqueue(db, { type: 'curriculum.sync', payload: {} })
     await until(async () => (await state(id)) === 'processing')
     await cancel(db, id)
     await until(() => reason !== undefined)
@@ -246,13 +262,15 @@ describe('worker runtime', () => {
   it('maps tools.fail and unknown errors to safe JobErrors (no stacks, no secrets)', async () => {
     const secret = 'sk-live-SECRET123 at https://user:pw@host/v1'
     await startWorker([
-      defineJobHandler('asset.fetch', async (_j, t) => t.fail('upload_unreadable', 'Filen kunde inte läsas.', false)),
-      defineJobHandler('image.generate', async () => {
+      defineJobHandler('curriculum.sync', async (_j, t) =>
+        t.fail('upload_unreadable', 'Filen kunde inte läsas.', false),
+      ),
+      defineJobHandler('uploads.cleanup', async () => {
         throw new Error(secret)
       }),
     ])
-    const a = await enqueue(db, { type: 'asset.fetch', payload: {} })
-    const b = await enqueue(db, { type: 'image.generate', payload: {} })
+    const a = await enqueue(db, { type: 'curriculum.sync', payload: {} })
+    const b = await enqueue(db, { type: 'uploads.cleanup', payload: {} })
     await until(async () => (await state(a.id)) === 'failed' && (await state(b.id)) === 'failed')
     expect((await getStatus(db, a.id))!.error).toEqual({
       code: 'upload_unreadable',
@@ -268,8 +286,8 @@ describe('worker runtime', () => {
   })
 
   it('releases in-flight jobs on shutdown after the grace period, without counting the attempt', async () => {
-    const w = await startWorker([defineJobHandler('research.run', () => new Promise(() => {}))])
-    const { id } = await enqueue(db, { type: 'research.run', payload: {} })
+    const w = await startWorker([defineJobHandler('curriculum.sync', () => new Promise(() => {}))])
+    const { id } = await enqueue(db, { type: 'curriculum.sync', payload: {} })
     await until(async () => (await state(id)) === 'processing')
     await w.stop(50)
     worker = undefined

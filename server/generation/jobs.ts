@@ -12,7 +12,7 @@ import { AiError, type AiServices } from '../ai'
 import { subjectsFor } from '../curriculum/service'
 import type { Db } from '../db/client'
 import { learners } from '../db/schema'
-import { defineJobHandler, type JobHandler, type JobTools } from '../jobs'
+import { defineJobHandler, registerJobPayload, type JobHandler, type JobTools } from '../jobs'
 import {
   defaultMaterialLoader,
   generateArtifact,
@@ -49,8 +49,9 @@ export const GeneratePayload = z.union([
 export type GeneratePayload = z.infer<typeof GeneratePayload>
 export const RegenerateItemPayload = z.object({ artifactId: z.string().uuid(), itemId: z.string().max(60) })
 
-// Not registered with registerJobPayload: queue/route tests enqueue these types with `{}` payloads.
-// Handlers parse their payload instead.
+registerJobPayload('artifact.generate', GeneratePayload)
+registerJobPayload('artifact.regenerateItem', RegenerateItemPayload)
+// Handlers parse again (defence in depth: rows may predate a schema change).
 
 export interface GenerationDeps {
   ai: Pick<AiServices, 'text'>

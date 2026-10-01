@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { SchoolPosition } from '../../shared/contracts'
 import { AiError } from '../ai'
+import { registerJobPayload } from '../jobs/queue'
 import { defineJobHandler, type JobHandler, type JobTools } from '../jobs/runtime'
 import type { HandlerDeps } from '../worker/handlers'
 import { findLicensedImages } from './assets'
@@ -17,8 +18,10 @@ export const AssetFetchPayload = z.object({
   preferFactual: z.boolean().default(true),
 })
 
-// Not registered with registerJobPayload: other domains' queue tests enqueue these types with
-// placeholder payloads. Validated here instead.
+registerJobPayload('research.run', ResearchRunPayload)
+registerJobPayload('asset.fetch', AssetFetchPayload)
+
+// Handlers parse again (defence in depth: rows may predate a schema change).
 function parsePayload<T>(schema: z.ZodType<T>, payload: unknown, tools: JobTools): T {
   const r = schema.safeParse(payload)
   return r.success ? r.data : tools.fail('bad_payload', 'Ogiltiga jobbparametrar.', false)
