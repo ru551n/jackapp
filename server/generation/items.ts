@@ -28,6 +28,8 @@ const Common = {
   curriculumIds: z.array(z.string()).max(6).optional(),
   /** Segment ids from the study material. */
   sourceSegmentIds: z.array(z.string()).max(6).optional(),
+  /** Web research source ids ("W1", ...) the item's facts come from. */
+  webSourceIds: z.array(z.string()).max(5).optional(),
   /** Short description of a helpful illustration (hook for the image domain). */
   illustration: z.string().max(300).optional(),
 }
@@ -108,6 +110,8 @@ export interface ItemContext {
   material?: ProcessedStudyMaterial
   maxChoices: number
   includeHints: boolean
+  /** Web research sources by local id ("W1" → web SourceRef). */
+  web?: Map<string, SourceRef>
   /** GenerationRequest.skills: every item carries these tags or finer ones. */
   skills?: string[]
 }
@@ -151,6 +155,10 @@ export function toItem(g: GenItem, id: string, ctx: ItemContext): { item: Item; 
         ]
       : []
   })
+  for (const w of new Set(g.webSourceIds)) {
+    const ref = ctx.web?.get(w)
+    if (ref) sources.push(ref)
+  }
   for (const ref of curriculumRefs) sources.push({ kind: 'curriculum', ref })
   if (!sources.length) sources.push({ kind: 'model', capability: 'text' })
 

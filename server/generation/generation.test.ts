@@ -8,6 +8,7 @@ import {
   type ProcessedStudyMaterial,
 } from '../../shared/contracts'
 import { createAi } from '../ai'
+import { FetchError, type Fetcher } from '../research/fetch'
 import type { ChatRequest } from '../ai/types'
 import { syncBundledCurriculum } from '../curriculum/service'
 import type { Db } from '../db/client'
@@ -89,6 +90,11 @@ function scriptedAi(db: Db, s: Script = {}) {
           switch (req.json!.name) {
             case 'request_fields':
               return s.interpret ?? {}
+            case 'research_brief':
+              return {
+                summary: 'Vulkaner bildas där magma tränger upp genom jordskorpan.',
+                keyPoints: [{ text: 'Island har många aktiva vulkaner.', sources: [1] }],
+              }
             case 'artifact_texts':
               return {
                 title: 'Vulkaner',
@@ -648,5 +654,99 @@ describe('editing, regeneration and transforms', () => {
     ])
     const adult = await t.app.inject({ url: `/api/v1/artifacts/${id}`, headers: asAdult })
     expect(adult.json().requestedIllustrations).toHaveLength(3)
+  })
+})
+
+describe('web research (useWebResearch)', () => {
+  const ARTICLE = 'Vulkaner finns på många platser. Island ligger på en gräns mellan två plattor. '.repeat(6)
+  const fetcher: Fetcher = async (url) => {
+    if (!url.startsWith('https://vulkan.example/artikel')) throw new FetchError('http_status', 'HTTP 404')
+    const body = `<html><head><title>Om vulkaner</title></head><body><p>${ARTICLE}</p></body></html>`
+    return { url, status: 200, contentType: 'text/html', body: Buffer.from(body) }
+  }
+  const withResearch = (ai: ReturnType<typeof scriptedAi>['ai'], search = vi.fn()) => {
+    search.mockResolvedValue([{ title: 'Vulkaner', url: 'https://vulkan.example/artikel', snippet: 'Om vulkaner.' }])
+    return { ai: { ...ai, research: { search } }, search }
+  }
+
+  it('feeds a cited brief to the prompt, stores web SourceRefs and the brief id; transforms reuse it', async () => {
+    const t = await setup()
+    const { ai: base, calls } = scriptedAi(t.db, { item: (k, n) => fakeItem(k, n, { webSourceIds: ['W1', 'W7'] }) })
+    const { ai, search } = withResearch(base)
+    const handlers = generationJobHandlers({ ai, research: { fetcher, env: {} } })
+    await post(t, `/learners/${t.learnerId}/generate`, {
+      type: 'exercises',
+      topic: 'Vulkaner',
+      sourceMode: 'extended',
+      useWebResearch: true,
+      questionCount: 2,
+      itemKinds: ['trueFalse'],
+    })
+    const { resultId, error } = await runNext(t.db, handlers, 'artifact.generate')
+    expect(error).toBeUndefined()
+    const itemCall = calls.find((c) => c.json!.name === 'artifact_items')!
+    expect(itemCall.system).toContain('Webbresearch')
+    expect(itemCall.system).toContain('Island har många aktiva vulkaner. (W1)')
+    expect(itemCall.system).toContain('- W1: Om vulkaner')
+
+    const stored = (await loadArtifact(t.db, resultId!))!
+    const item = stored.artifact.sections[0]!.items[0]!
+    expect(item.sources).toEqual([
+      {
+        kind: 'web',
+        url: 'https://vulkan.example/artikel',
+        title: 'Om vulkaner',
+        publisher: 'vulkan.example',
+        retrievedAt: expect.any(String),
+      },
+    ]) // W7 does not exist: dropped
+    const briefId = (stored.row.request as { researchBriefId?: string }).researchBriefId
+    expect(briefId).toBeTruthy()
+
+    // Adult view → provenance view.
+    const view = (await t.app.inject({ url: `/api/v1/artifacts/${resultId}`, headers: asAdult })).json()
+    expect(view.researchBriefIds).toEqual([briefId])
+    const prov = await t.app.inject({ url: `/api/v1/research/provenance?briefIds=${briefId}`, headers: asAdult })
+    expect(prov.json().briefs[0].sources[0]).toMatchObject({ index: 1, url: 'https://vulkan.example/artikel' })
+
+    // A transform builds on the stored brief: no new web search.
+    await post(t, `/artifacts/${resultId}/transform`, { kind: 'harder' })
+    expect((await runNext(t.db, handlers, 'artifact.generate')).error).toBeUndefined()
+    expect(search).toHaveBeenCalledTimes(1)
+    expect(calls.at(-1)!.system).toContain('- W1: Om vulkaner')
+    const v2 = (await loadArtifact(t.db, resultId!))!
+    expect(v2.artifact.version).toBe(2)
+    expect(v2.artifact.sections[0]!.items[0]!.sources[0]!.kind).toBe('web')
+  })
+
+  it('generates without research when it is off, fails, or the mode is strict', async () => {
+    const t = await setup()
+    const { ai: base, calls } = scriptedAi(t.db)
+    const body = { type: 'exercises', topic: 'Vulkaner', useWebResearch: true, questionCount: 1 }
+    const run = async (h: JobHandler[], extra = {}) => {
+      await post(t, `/learners/${t.learnerId}/generate`, { ...body, ...extra })
+      const r = await runNext(t.db, h, 'artifact.generate')
+      expect(r.error).toBeUndefined()
+      return (await loadArtifact(t.db, r.resultId!))!
+    }
+    const off = withResearch(base)
+    const a = await run(
+      generationJobHandlers({ ai: off.ai, research: { fetcher, env: { FEATURE_WEB_RESEARCH: 'false' } } }),
+    )
+    expect(off.search).not.toHaveBeenCalled()
+    expect((a.row.request as { researchBriefId?: string }).researchBriefId).toBeUndefined()
+    expect(calls.at(-1)!.system).not.toContain('Webbresearch')
+
+    const broken = withResearch(base, vi.fn())
+    broken.search.mockRejectedValue(new Error('search down'))
+    await run(generationJobHandlers({ ai: broken.ai, research: { fetcher, env: {} } }))
+    expect(broken.search).toHaveBeenCalledTimes(1)
+
+    const strict = withResearch(base)
+    const loadMaterial = vi.fn(async () => material)
+    const h = generationJobHandlers({ ai: strict.ai, loadMaterial, research: { fetcher, env: {} } })
+    await post(t, `/learners/${t.learnerId}/generate`, { ...body, sourceMode: 'strict', studySetId: SET_ID })
+    await runNext(t.db, h, 'artifact.generate')
+    expect(strict.search).not.toHaveBeenCalled()
   })
 })

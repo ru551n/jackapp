@@ -104,6 +104,8 @@ export type ResolvedRequest = GenerationRequest & {
   itemKinds: ItemKind[]
   difficulty: number
   durationMinutes: number
+  /** Set by the job when web research ran; transforms reuse the brief (provenance view). */
+  researchBriefId?: string
 }
 
 const PER_ITEM_MINUTES: Record<AgeBand, number> = { early: 1.5, middle: 2, upper: 2.5 }

@@ -102,6 +102,13 @@ Body length depends on the age band (early 40, middle 90, upper 160 words per ba
 
 The processed material comes from `ProcessedStudyMaterial`, loaded through a `MaterialLoader`. Vision is never re-run, not even for transforms. If a `studySetId` is given but no processed material exists yet, the job fails with `material_unavailable`, which is retryable.
 
+## Web research (`useWebResearch`)
+
+In `extended` and `sourceAndCurriculum` mode, a request with `useWebResearch: true` first calls `researchBrief` (`server/research`) on the topic (else the material's topic, else the instructions). It returns `null` when `FEATURE_WEB_RESEARCH` is off or `AI_RESEARCH_PROVIDER`/`AI_TEXT_PROVIDER` is missing; then, and when research fails for any other reason, the artifact is generated without it (logged, never a job failure). Strict mode never researches.
+
+- The checked brief goes into the system prompt (`researchBlock`) with its sources numbered `W1…Wn`. Items cite them in `webSourceIds`; `toItem` turns valid ids into `web` SourceRefs and drops unknown ones.
+- The brief id is stored in the artifact's resolved request (`artifacts.request.researchBriefId`), so every version made from it (transforms, item regeneration) reuses the same brief via `loadBrief` and never searches again. The adult view of `GET /artifacts/:id` returns `researchBriefIds` for `GET /research/provenance?briefIds=…`.
+
 ## Validation, repair and approval
 
 1. `validateArtifact(artifact, { request, material })` from `server/validation` is authoritative. The engine merges in its own `localIssues` (`strict_source`, and `answer_missing` when an answer id is not among the choices).

@@ -119,7 +119,15 @@ export const generationRoutes: RouteModule = (app, ctx) => {
 
   app.get('/artifacts/:artifactId', async (req) => {
     const s = await load(Params.parse(req.params).artifactId)
-    if (req.gate?.adult) return { artifact: s.artifact, requestedIllustrations: requestedIllustrations(s) }
+    if (req.gate?.adult) {
+      // For GET /research/provenance?briefIds=… (asset ids are on the items' media).
+      const briefId = (s.row.request as ResolvedRequest).researchBriefId
+      return {
+        artifact: s.artifact,
+        requestedIllustrations: requestedIllustrations(s),
+        researchBriefIds: briefId ? [briefId] : [],
+      }
+    }
     if (s.artifact.approval !== 'approved') throw notFound()
     if (s.artifact.feedback === 'end') return { artifact: forLearner(s.artifact) }
     const { validation: _v, ...artifact } = s.artifact

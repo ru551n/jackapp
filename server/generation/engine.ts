@@ -13,6 +13,7 @@ import {
   type ValidationReport,
 } from '../../shared/contracts'
 import type { TextGeneration } from '../ai'
+import type { BriefResult } from '../research/brief'
 import { isValidRef, subject, suggestRefs } from '../curriculum/service'
 import type { Db } from '../db/client'
 import type { IllustrationRequest } from '../db/schema'
@@ -122,6 +123,20 @@ export interface Prepared {
   /** Extra context for transforms (previous version) and things to avoid repeating. */
   extraContext?: string
   avoid?: string[]
+  /** Web research (useWebResearch); items cite its sources as W1..Wn. */
+  research?: BriefResult
+}
+
+function itemContext(p: Prepared, curriculum: Map<string, CurriculumRef>): ItemContext {
+  const r = p.request
+  return {
+    curriculum,
+    material: p.material,
+    maxChoices: r.support.maxChoices,
+    includeHints: r.hints,
+    skills: r.skills,
+    web: r.sourceMode === 'strict' ? undefined : new Map(p.research?.sources.map((s, i) => [`W${i + 1}`, s])),
+  }
 }
 
 export interface Generated {
@@ -201,6 +216,12 @@ export function promptInputFor(p: Prepared, offered: OfferedRef[]): PromptInput 
     durationMinutes: r.durationMinutes,
     includeImages: r.includeImages,
     skills: r.skills,
+    research: p.research && {
+      ...p.research.brief,
+      sources: p.research.sources.map((s) =>
+        s.kind === 'web' ? { title: s.title, publisher: s.publisher } : { title: '' },
+      ),
+    },
   }
 }
 
@@ -254,13 +275,7 @@ export async function generateArtifact(
     ? { offered: [], refs: new Map<string, CurriculumRef>() }
     : await offerCurriculum(deps.db, r, p.material)
   const system = buildSystemPrompt(promptInputFor(p, cur.offered))
-  const itemCtx: ItemContext = {
-    curriculum: cur.refs,
-    material: p.material,
-    maxChoices: r.support.maxChoices,
-    includeHints: r.hints,
-    skills: r.skills,
-  }
+  const itemCtx = itemContext(p, cur.refs)
   let model: string | undefined
   const call = async <T>(schema: z.ZodType<T>, schemaName: string, task: string): Promise<T> => {
     const res = await deps.text.generate({
@@ -417,13 +432,7 @@ export async function regenerateItem(
     schemaName: 'artifact_items',
     signal: deps.signal,
   })
-  const { item, illustration } = toItem(res.output.items[0]!, itemId, {
-    curriculum: cur.refs,
-    material: p.material,
-    maxChoices: r.support.maxChoices,
-    includeHints: r.hints,
-    skills: r.skills,
-  })
+  const { item, illustration } = toItem(res.output.items[0]!, itemId, itemContext(p, cur.refs))
   const next: Artifact = {
     ...artifact,
     sections: artifact.sections.map((s) => ({ ...s, items: s.items.map((i) => (i.id === itemId ? item : i)) })),
