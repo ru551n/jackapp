@@ -1,8 +1,9 @@
 import type { Generator } from '../../core/types'
+import { capitalize } from '../../core/swedish'
 import { wrongIds } from '../helpers'
-import { ask, picChoice, wordSign } from './vocab'
+import { NOUNS, ask, gloss, picChoice, showSign, sizeChoice, wordSign } from './vocab'
 
-/** Gripen drawn at different scales: big = largest, small = smallest. */
+/** An airliner at different scales, each with a passenger as a size reference. */
 export const bigSmall: Generator = {
   id: 'en.adjectives.bigSmall',
   skill: 'en.adjectives',
@@ -10,46 +11,39 @@ export const bigSmall: Generator = {
   generate({ rng, level, support }) {
     const big = rng.next() < 0.5
     const scales = level <= 1 || support === 'extra' ? [1, 0.4] : [1, 0.7, 0.4]
-    const choices = rng.shuffle(scales).map((s) => ({
-      id: String(s),
-      visual: { kind: 'vehicle' as const, vehicle: 'gripen', scale: s },
-      ariaLabel: s === 1 ? 'stort' : s === 0.4 ? 'litet' : 'mellan',
-    }))
+    const choices = rng
+      .shuffle(scales)
+      .map((s) => sizeChoice(s, s === 1 ? 'stort flygplan' : s === 0.4 ? 'litet flygplan' : 'mellanstort flygplan'))
     const adj = big ? 'big' : 'small'
-    const sv = big ? 'stor' : 'liten'
     const answer = String(big ? 1 : 0.4)
     const q4 = level >= 4
     return {
       id: `en.adjectives.bigSmall:${adj}:${scales.length}:${q4 ? 'q' : 't'}`,
       skill: 'en.adjectives',
       level,
-      theme: 'fighter',
+      theme: 'airport',
       ...ask(level, support, {
         sv: `Tryck på ${adj}.`,
         en: q4 ? `Which plane is ${adj}?` : `Tap the ${adj} plane.`,
         say: adj,
       }),
-      scene: level <= 2 || support === 'extra' ? wordSign(adj) : undefined,
+      scene: showSign(level, support) ? wordSign(adj) : undefined,
       task: { kind: 'choice', choices, answer },
       hints: [
-        { text: `${adj} betyder ${sv}.`, scene: wordSign(adj) },
-        { text: `Hitta det ${big ? 'största' : 'minsta'} planet.`, eliminate: wrongIds(choices, answer) },
+        gloss(adj, big ? 'stor' : 'liten', wordSign(adj)),
+        { text: `Hitta det ${big ? 'största' : 'minsta'} flygplanet.`, eliminate: wrongIds(choices, answer) },
       ],
-      success: `Ja! ${adj} = ${sv}.`,
+      success: `Ja! ${capitalize(adj)}.`,
     }
   },
 }
 
-const FAST = [
-  { en: 'plane', sprite: 'airliner', sv: 'flygplan' },
-  { en: 'jet', sprite: 'jet', sv: 'jetplan' },
-] as const
-const SLOW = [
-  { en: 'bus', sprite: 'bus', sv: 'buss' },
-  { en: 'car', sprite: 'car', sv: 'bil' },
-] as const
+const noun = (en: string) => NOUNS.find((n) => n.en === en)!
+// Unambiguous pairs only: a jet or train is clearly faster than a bus or car.
+const FAST = [noun('jet'), noun('train')]
+const SLOW = [noun('bus'), noun('car')]
 
-/** fast = a plane, slow = a bus or car (compared with each other). */
+/** fast = jet or train, slow = bus or car (compared with each other). */
 export const fastSlow: Generator = {
   id: 'en.adjectives.fastSlow',
   skill: 'en.adjectives',
@@ -59,7 +53,6 @@ export const fastSlow: Generator = {
     const f = rng.pick(FAST)
     const s = rng.pick(SLOW)
     const adj = fast ? 'fast' : 'slow'
-    const sv = fast ? 'snabb' : 'långsam'
     const t = fast ? f : s
     const choices = rng.shuffle([f, s]).map((x) => picChoice(x.en, x.sv, { sprite: x.sprite }))
     return {
@@ -69,16 +62,16 @@ export const fastSlow: Generator = {
       theme: 'airport',
       ...ask(level, support, {
         sv: `Tryck på ${adj}.`,
-        en: level >= 4 ? `Which is ${adj}?` : `Tap the ${adj} one.`,
+        en: level >= 4 ? `Which vehicle is ${adj}?` : `Tap the ${adj} vehicle.`,
         say: adj,
       }),
-      scene: level <= 2 || support === 'extra' ? wordSign(adj) : undefined,
+      scene: showSign(level, support) ? wordSign(adj) : undefined,
       task: { kind: 'choice', choices, answer: t.en },
       hints: [
-        { text: `${adj} betyder ${sv}.`, scene: wordSign(adj) },
-        { text: `Vilket går ${fast ? 'snabbast' : 'långsammast'}?`, eliminate: [] },
+        { text: fast ? 'Vilken kommer fram först?' : 'Vilken kommer fram sist?' },
+        gloss(adj, fast ? 'snabb' : 'långsam', wordSign(adj)),
       ],
-      success: `Ja! ${adj} = ${sv}.`,
+      success: `Ja! ${capitalize(adj)}.`,
     }
   },
 }
