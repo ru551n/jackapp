@@ -11,8 +11,20 @@ export interface DbHandle {
   close(): Promise<void>
 }
 
-export function createDb(url: string, max = 10): DbHandle {
+/** Log-safe error summary: name + Postgres SQLSTATE (from `.cause` too). Messages may carry SQL params. */
+export function safeErr(e: unknown): { name: string; code?: string } {
+  const name = e instanceof Error && /^[A-Za-z]{1,40}$/.test(e.name) ? e.name : 'Error'
+  for (let c = e as { code?: unknown; cause?: unknown } | undefined, i = 0; c && i < 5; c = c.cause as typeof c, i++)
+    if (typeof c.code === 'string' && /^[0-9A-Z]{5}$/.test(c.code)) return { name, code: c.code }
+  return { name }
+}
+
+type WarnLog = { warn(o: object, msg: string): void }
+
+export function createDb(url: string, max = 10, log: WarnLog = { warn: (o, m) => console.warn(m, o) }): DbHandle {
   const pool = new pg.Pool({ connectionString: url, max })
+  // An idle client's connection dropped (e.g. Postgres restarted): log it; the pool reconnects.
+  pool.on('error', (e) => log.warn({ err: safeErr(e) }, 'database connection lost'))
   return { db: drizzlePg(pool, { schema }) as unknown as Db, close: () => pool.end() }
 }
 

@@ -4,6 +4,7 @@ import { existsSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { ZodError } from 'zod'
 import { API_PREFIX } from '../../shared/contracts'
+import { safeErr } from '../db/client'
 import { HttpError, sendError } from '../gate/guards'
 import { registerGate } from '../gate/plugin'
 import type { AppContext, ReadinessCheck } from './context'
@@ -46,8 +47,8 @@ export async function buildApp(opts: BuildOptions) {
     const status = (err as { statusCode?: number }).statusCode
     if (status && status < 500)
       return reply.status(status).send({ error: { code: 'invalid_request', message: 'Ogiltig förfrågan.' } })
-    const e = err as Error
-    req.log.error({ err: { name: e.name, message: e.message } }, 'unhandled error')
+    // Name + SQLSTATE only: driver messages can carry SQL params (learner content).
+    req.log.error({ err: safeErr(err) }, 'unhandled error')
     return reply.status(500).send({ error: { code: 'internal', message: 'Något gick fel. Försök igen senare.' } })
   })
 

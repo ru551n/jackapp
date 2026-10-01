@@ -20,7 +20,17 @@ import {
   recoverStale,
   retryFailed,
 } from './queue'
-import { createWorker, defineJobHandler, toJobError, type JobHandler, type Worker } from './runtime'
+import {
+  createWorker,
+  defineJobHandler,
+  JobFailure,
+  pgListener,
+  retryAfterOf,
+  toJobError,
+  type JobHandler,
+  type Worker,
+} from './runtime'
+import { JOBS_CHANNEL } from './queue'
 
 const noop = () => {}
 const testLog = {
@@ -201,25 +211,174 @@ describe('worker runtime', () => {
     expect((await getStatus(db, id))!.resultId).toBe('artifact-9')
   })
 
-  it('runs onCompleted once after completion only; hook errors never change the job', async () => {
-    const seen: [string, string | undefined][] = []
+  it('runs onCompleted as part of the job (before completion); a hook failure is retried', async () => {
+    const seen: [string, string | undefined, string][] = []
+    let breakHook = true
     await startWorker([
       {
         ...defineJobHandler('curriculum.sync', async (job) =>
           (job.payload as { fail?: boolean }).fail ? Promise.reject(new Error('x')) : 'r-1',
         ),
-        onCompleted: async (job, resultId) => {
-          seen.push([job.id, resultId])
-          throw new Error('hook broke')
+        onCompleted: async (job, resultId, t) => {
+          seen.push([job.id, resultId, (await getJob(t.db, job.id))!.state])
+          if (breakHook) throw new Error('hook broke')
         },
       },
     ])
     const ok = await enqueue(db, { type: 'curriculum.sync', payload: {} })
     const bad = await enqueue(db, { type: 'curriculum.sync', payload: { fail: true } })
-    await until(async () => (await state(ok.id)) === 'completed' && (await state(bad.id)) === 'failed')
-    await until(() => seen.length === 1)
-    expect(seen).toEqual([[ok.id, 'r-1']])
+    await until(async () => (await state(bad.id)) === 'failed' && seen.length === 1)
+    await until(async () => (await state(ok.id)) === 'queued')
+    expect(await getJob(db, ok.id)).toMatchObject({ lastError: { code: 'completion_failed', retryable: true } })
+    breakHook = false
+    await db
+      .update(jobs)
+      .set({ runAfter: sql`now()` })
+      .where(eq(jobs.id, ok.id))
+    await until(async () => (await state(ok.id)) === 'completed')
+    expect(seen).toEqual([
+      [ok.id, 'r-1', 'processing'],
+      [ok.id, 'r-1', 'processing'],
+    ])
     expect(await getStatus(db, ok.id)).toMatchObject({ state: 'completed', resultId: 'r-1' })
+  })
+
+  it("requeues a retryable error no sooner than the error's retryAfterMs", async () => {
+    const aiLike = Object.assign(new Error('rate limited'), { name: 'AiError', retryAfterMs: 3_600_000 })
+    await startWorker([
+      defineJobHandler('curriculum.sync', async () => {
+        throw Object.assign(new JobFailure('ai_rate_limited', 'Överbelastad.', true), { cause: aiLike })
+      }),
+      defineJobHandler('uploads.cleanup', async () => {
+        throw new JobFailure('ai_rate_limited', 'Överbelastad.', true, 7_200_000)
+      }),
+    ])
+    const a = await enqueue(db, { type: 'curriculum.sync', payload: {} })
+    const b = await enqueue(db, { type: 'uploads.cleanup', payload: {} })
+    await until(async () => (await state(a.id)) === 'queued' && (await getJob(db, a.id))!.attempts === 1)
+    await until(async () => (await state(b.id)) === 'queued' && (await getJob(db, b.id))!.attempts === 1)
+    const after = async (id: string) => (await getJob(db, id))!.runAfter.getTime() - Date.now()
+    expect(await after(a.id)).toBeGreaterThan(3_590_000)
+    expect(await after(b.id)).toBeGreaterThan(7_190_000)
+    expect(retryAfterOf(aiLike)).toBe(3_600_000)
+  })
+
+  it('aborts a running job whose row was deleted (e.g. learner cascade)', async () => {
+    let reason: unknown
+    await startWorker([
+      defineJobHandler(
+        'curriculum.sync',
+        (_j, t) =>
+          new Promise((_, rej) =>
+            t.signal.addEventListener('abort', () => ((reason = t.signal.reason), rej(new Error()))),
+          ),
+      ),
+    ])
+    const { id } = await enqueue(db, { type: 'curriculum.sync', payload: {} })
+    await until(async () => (await state(id)) === 'processing')
+    await db.delete(jobs).where(eq(jobs.id, id))
+    await until(() => reason !== undefined)
+    expect(reason).toBe('cancelled')
+  })
+
+  it('assertActive throws once the job is cancelled, so final writes are skipped', async () => {
+    let wrote = false
+    let release!: () => void
+    const gate = new Promise<void>((r) => (release = r))
+    await startWorker(
+      [
+        defineJobHandler('curriculum.sync', async (_j, t) => {
+          await gate
+          await t.db.transaction(async (tx) => {
+            await t.assertActive!(tx as unknown as Db)
+            wrote = true
+          })
+        }),
+      ],
+      { heartbeatMs: 60_000 },
+    )
+    const { id } = await enqueue(db, { type: 'curriculum.sync', payload: {} })
+    await until(async () => (await state(id)) === 'processing')
+    await cancel(db, id)
+    release()
+    await until(() => worker!.active === 0)
+    expect(wrote).toBe(false)
+    expect(await state(id)).toBe('cancelled')
+  })
+
+  it('per-type timeout; a retryOnTimeout handler is requeued after a timeout', async () => {
+    await startWorker(
+      [
+        {
+          ...defineJobHandler(
+            'curriculum.sync',
+            (_j, t) => new Promise((_, rej) => t.signal.addEventListener('abort', () => rej(new Error()))),
+          ),
+          timeoutMs: async () => 50,
+          retryOnTimeout: true,
+        },
+      ],
+      { timeoutSeconds: 3600 },
+    )
+    const { id } = await enqueue(db, { type: 'curriculum.sync', payload: {} })
+    await until(async () => (await getJob(db, id))!.lastError !== null)
+    expect(await getJob(db, id)).toMatchObject({ state: 'queued', lastError: { code: 'timeout', retryable: true } })
+  })
+
+  it('never logs messages of failing queries (they carry SQL params)', async () => {
+    const lines: unknown[] = []
+    const log = { ...testLog, error: (o: unknown) => lines.push(o), warn: (o: unknown) => lines.push(o) }
+    log.child = () => log as unknown as FastifyBaseLogger
+    await startWorker(
+      [
+        {
+          ...defineJobHandler('curriculum.sync', async () => 'r'),
+          onCompleted: async (_j, _r, t) => void (await t.db.execute(sql`select ${'Jacks hemliga svar'}::int`)),
+        },
+      ],
+      { log: log as unknown as FastifyBaseLogger },
+    )
+    const { id } = await enqueue(db, { type: 'curriculum.sync', payload: {} })
+    await until(async () => (await getJob(db, id))!.lastError !== null)
+    expect(JSON.stringify(lines)).toContain('22P02')
+    expect(JSON.stringify(lines)).not.toMatch(/hemliga|select/)
+  })
+
+  it('heartbeat reports to onHeartbeat only after a successful DB write', async () => {
+    let beats = 0
+    await startWorker([], { onHeartbeat: () => beats++ })
+    expect(beats).toBe(1)
+  })
+
+  it('pgListener reconnects with backoff and wakes on each (re)connect', async () => {
+    const { EventEmitter } = await import('node:events')
+    const clients: InstanceType<typeof EventEmitter>[] = []
+    let failNext = 0
+    const client = () => {
+      const c = Object.assign(new EventEmitter(), {
+        connect: async () => {
+          if (failNext > 0 && failNext--) throw new Error('down')
+        },
+        query: async () => ({}),
+        end: async () => {},
+      })
+      clients.push(c)
+      return c as never
+    }
+    let wakes = 0
+    const listen = pgListener('postgres://x', undefined, { minMs: 10, maxMs: 40, client })
+    const stop = await listen(JOBS_CHANNEL, () => wakes++)
+    expect(wakes).toBe(1)
+    failNext = 2
+    clients[0]!.emit('error', new Error('terminated'))
+    await until(() => wakes === 2) // two failed reconnects, then success
+    expect(clients).toHaveLength(4)
+    clients[3]!.emit('notification', { channel: JOBS_CHANNEL })
+    expect(wakes).toBe(3)
+    await stop()
+    clients[3]!.emit('end')
+    await new Promise((r) => setTimeout(r, 60))
+    expect(clients).toHaveLength(4) // no reconnect after unsubscribe
   })
 
   it('runs up to `concurrency` jobs in parallel', async () => {

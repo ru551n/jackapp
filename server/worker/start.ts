@@ -20,6 +20,8 @@ export interface WorkerDeps<H> {
   handlers: H
   /** Aborted on SIGTERM/SIGINT: finish or release the current job, then return. */
   signal: AbortSignal
+  /** Touch the healthcheck file; the runtime calls it after each successful DB heartbeat. */
+  beat: () => void
 }
 
 /** The job runtime (server/jobs) plugs in here. Default: idle until shutdown. */
@@ -28,15 +30,15 @@ export type WorkerRun<H> = (deps: WorkerDeps<H>) => Promise<void>
 const idle: WorkerRun<unknown> = ({ signal }) =>
   new Promise((done) => (signal.aborted ? done() : signal.addEventListener('abort', () => done(), { once: true })))
 
-export function startWorker<H>(opts: Omit<WorkerDeps<H>, 'signal'> & { run?: WorkerRun<H> }) {
+export function startWorker<H>(opts: Omit<WorkerDeps<H>, 'signal' | 'beat'> & { run?: WorkerRun<H> }) {
   const ctrl = new AbortController()
   const file = heartbeatPath(opts.env.DATA_DIR)
   mkdirSync(opts.env.DATA_DIR, { recursive: true })
-  // ponytail: proves the event loop is alive, not that jobs progress; the runtime may also call beat().
   const beat = () => writeFileSync(file, String(Date.now()))
-  beat()
-  const timer = setInterval(beat, HEARTBEAT_MS)
+  // A plugged-in runtime beats itself (after DB heartbeats); the idle default only proves liveness.
+  const timer = opts.run ? undefined : setInterval(beat, HEARTBEAT_MS)
+  if (!opts.run) beat()
   opts.log.info('worker ready')
-  const done = (opts.run ?? idle)({ ...opts, signal: ctrl.signal }).finally(() => clearInterval(timer))
+  const done = (opts.run ?? idle)({ ...opts, signal: ctrl.signal, beat }).finally(() => clearInterval(timer))
   return { done, beat, stop: () => (ctrl.abort(), done) }
 }

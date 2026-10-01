@@ -42,7 +42,8 @@ export async function registerGate(app: FastifyInstance, ctx: AppContext) {
   await app.register(cookie, { secret: ctx.env.APP_SECRET })
 
   /** Changes whenever the PIN changes, so a PIN change revokes every open cookie. */
-  const epochOf = (hash: string) => createHmac('sha256', ctx.env.APP_SECRET).update(hash).digest('base64url').slice(0, 16)
+  const epochOf = (hash: string) =>
+    createHmac('sha256', ctx.env.APP_SECRET).update(hash).digest('base64url').slice(0, 16)
 
   const setAdultCookie = (reply: FastifyReply, hash: string, issuedAt = Date.now()) =>
     reply.setCookie(

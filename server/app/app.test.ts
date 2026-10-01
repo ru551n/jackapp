@@ -42,3 +42,23 @@ describe('adult gate guards', () => {
     await expect(requireLearner(t.db, crypto.randomUUID())).rejects.toMatchObject({ status: 404 })
   })
 })
+
+describe('error logging', () => {
+  it("logs a failing query's name and SQLSTATE, never its SQL or params", async () => {
+    const { Writable } = await import('node:stream')
+    const { sql } = await import('drizzle-orm')
+    const { buildApp } = await import('./build')
+    const { createTestDb } = await import('../db/client')
+    const { TEST_ENV } = await import('../test/helpers')
+    let out = ''
+    const stream = new Writable({ write: (c, _e, cb) => ((out += String(c)), cb()) })
+    const handle = await createTestDb()
+    const app = await buildApp({ ctx: { env: TEST_ENV, db: handle.db, readiness: [] }, logger: { stream } })
+    app.get('/boom', async () => handle.db.execute(sql`select ${'Jacks hemliga svar'}::int`))
+    close = async () => (await app.close(), await handle.close())
+    const r = await app.inject('/boom')
+    expect(r.statusCode).toBe(500)
+    expect(out).toContain('"code":"22P02"')
+    expect(out).not.toMatch(/hemliga|select/)
+  })
+})
