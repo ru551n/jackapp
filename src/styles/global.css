@@ -105,3 +105,21 @@ button {
   animation: none !important;
   transition: none !important;
 }
+
+/* Learner age bands (set by usePresentation): denser type and controls for older learners,
+   touch targets stay at least 44 px. */
+:root[data-band='middle'] {
+  font-size: 18px;
+  --tap: 3.25rem;
+}
+:root[data-band='upper'] {
+  font-size: 16px;
+  --tap: 2.75rem;
+  --radius: 10px;
+  --radius-sm: 8px;
+}
+@media (max-width: 600px) {
+  :root[data-band='middle'] {
+    font-size: 16px;
+  }
+}

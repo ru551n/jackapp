@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react'
 import { Navigate } from 'react-router'
-import { paths } from '../../app/paths'
+import { usePaths } from '../../app/paths'
 import type { FreeLine } from '../../core/types'
 import { actions, useAppState } from '../../store/store'
 import { Button } from '../../ui/Button'
@@ -13,6 +13,7 @@ import { useReducedMotion, useRunner } from './useRunner'
 import styles from './FreePlay.module.css'
 
 export function FreePlayPage() {
+  const paths = usePaths()
   const enabled = useAppState((s) => s.settings.freePlayEnabled)
   if (!enabled) return <Navigate to={paths.home} replace />
   return <Builder />

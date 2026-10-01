@@ -1,9 +1,11 @@
 import { expect, test } from '@playwright/test'
-import { completeMission } from './helpers.ts'
+import { completeMission, HOME, LEARNER_ID, mockLearnerApi } from './helpers.ts'
+
+test.beforeEach(({ page }) => mockLearnerApi(page))
 
 test('corrupt localStorage still renders home', async ({ page }) => {
-  await page.addInitScript(() => localStorage.setItem('jackapp:v1', '{not json'))
-  await page.goto('./')
+  await page.addInitScript((id) => localStorage.setItem(`jackapp:v1:${id}`, '{not json'), LEARNER_ID)
+  await page.goto(HOME)
   await expect(page.getByRole('heading', { name: 'Mitt äventyr' })).toBeVisible()
 })
 
@@ -11,28 +13,27 @@ test('a finished mission unlocks Gripen in the collection', async ({ page }) => 
   await completeMission(page, 'Flygplatsen')
   await expect(page.getByText('Ny i din samling: Gripen')).toBeVisible()
   await expect(page.getByRole('link', { name: 'Titta på Gripen' })).toBeVisible()
-  await page.goto('./#/samling')
+  await page.goto(`${HOME}/samling`)
   await expect(page.getByRole('link', { name: /Gripen/ })).toBeVisible()
 })
 
 test('free play is not reachable by URL when disabled', async ({ page }) => {
-  await page.goto('./#/bygg')
+  await page.goto(`${HOME}/bygg`)
   await expect(page.getByRole('heading', { name: 'Mitt äventyr' })).toBeVisible()
   await expect(page.getByRole('heading', { name: 'Bygg din linje' })).toHaveCount(0)
 })
 
-test('parent flow: set PIN, enable free play, it persists', async ({ page }) => {
-  await page.goto('./#/vuxen')
-  const sum = (await page.getByTestId('sum').innerText()).match(/(\d+)\s*\+\s*(\d+)/)!
-  await page.getByLabel(/Skriv svaret/).fill(String(Number(sum[1]) + Number(sum[2])))
-  await page.getByRole('button', { name: 'Fortsätt' }).click()
-  for (const submit of ['Nästa', 'Spara koden']) {
-    await page.getByLabel(/kod/i).fill('2468')
-    await page.getByRole('button', { name: submit }).click()
-  }
-  await page.getByRole('checkbox', { name: /Fri lek/ }).check()
-  await page.goto('./')
+test('legacy progress is offered once, moved to the learner and kept', async ({ page }) => {
+  const legacy = JSON.stringify({ version: 1, missions: { flygplatsen: 1 }, settings: { freePlayEnabled: true } })
+  await page.addInitScript(
+    (raw) => localStorage.getItem('jackapp:v1') ?? localStorage.setItem('jackapp:v1', raw),
+    legacy,
+  )
+  await page.goto(HOME)
+  await page.getByRole('button', { name: 'Ja, flytta till Jack' }).click()
   await expect(page.getByRole('link', { name: /Bygg din linje/ })).toBeVisible()
   await page.reload()
+  await expect(page.getByRole('heading', { name: 'Mitt äventyr' })).toBeVisible()
   await expect(page.getByRole('link', { name: /Bygg din linje/ })).toBeVisible()
+  expect(await page.evaluate(() => localStorage.getItem('jackapp:v1'))).toBe(legacy)
 })
