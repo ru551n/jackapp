@@ -1,18 +1,23 @@
 import { AREAS, SKILL_NAMES } from '../../core/catalog'
-import { MAX_LEVEL, type Level, type SkillId, type SkillProgress } from '../../core/types'
+import { MAX_LEVEL, type Level, type SkillId } from '../../core/types'
 import { VEHICLES, isUnlocked } from '../../content/vehicles'
 import { trendOf, type Trend } from '../../engine/adaptation'
 import { actions, useAppState } from '../../store/store'
 import s from './parent.module.css'
 
 const TREND: Record<Trend, string> = {
-  new: 'ny, för lite data än',
+  new: 'ny – för lite data än',
   easy: 'går lätt',
   ok: 'på gång',
   hard: 'svårt just nu',
 }
-// Fewer than 3 attempts is too little data for a trend.
-const trendFor = (p: SkillProgress | undefined): Trend => ((p?.attempts ?? 0) < 3 ? 'new' : trendOf(p))
+// Parent-friendly English status, shown only when a skill is going well.
+const EN_SUMMARY: Partial<Record<SkillId, string>> = {
+  'en.words': 'Känner igen engelska transportord',
+  'en.colors': 'Förstår färger på engelska',
+  'en.numbers': 'Siffror 1–10 på engelska',
+  'en.sentences': 'Börjar förstå korta meningar',
+}
 const LEVELS: Level[] = [1, 2, 3, 4, 5]
 
 function Dots({ level }: { level: number }) {
@@ -29,11 +34,14 @@ export function Dashboard() {
   const st = useAppState((x) => x)
   const unlocked = VEHICLES.filter((v) => isUnlocked(v, st.missions)).length
   const skills = AREAS.flatMap((a) => a.skills)
-  const withTrend = (t: Trend) => skills.filter((k) => trendFor(st.progress[k]) === t)
+  const withTrend = (t: Trend) => skills.filter((k) => trendOf(st.progress[k]) === t)
   const list = (t: Trend) =>
     withTrend(t)
       .map((k) => SKILL_NAMES[k])
       .join(', ') || 'Inget just nu'
+  const enLines = Object.entries(EN_SUMMARY)
+    .filter(([k]) => ['easy', 'ok'].includes(trendOf(st.progress[k as SkillId])))
+    .map(([, v]) => v)
   const date = (at: number) => new Date(at).toLocaleString('sv-SE', { dateStyle: 'short', timeStyle: 'short' })
 
   return (
@@ -47,6 +55,12 @@ export function Dashboard() {
               <dd>{st.missions[a.id]}</dd>
             </div>
           ))}
+          {enLines.length > 0 && (
+            <div>
+              <dt>Engelska just nu</dt>
+              <dd>{enLines.join(', ')}</dd>
+            </div>
+          )}
           <div>
             <dt>Samling</dt>
             <dd>
@@ -127,7 +141,7 @@ function SkillRow({ skill }: { skill: SkillId }) {
         <Dots level={level} />
         Nivå {level} av {MAX_LEVEL}
       </td>
-      <td>{TREND[trendFor(p)]}</td>
+      <td>{TREND[trendOf(p)]}</td>
       <td>{p?.attempts ?? 0}</td>
       <td>{share}</td>
       <td>{p?.hintsUsed ?? 0}</td>
