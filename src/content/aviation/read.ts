@@ -1,7 +1,7 @@
 import type { Generator } from '../../core/types'
 import { AIRCRAFT } from '../vehicles/aircraft'
-import { textChoices, wrongIds } from '../helpers'
-import { pickAmong, pictureChoice, qid } from './common'
+import { choiceCount, textChoices } from '../helpers'
+import { AIRLINERS, FIGHTERS, hintPair, KNOWN, pickAmong, pictureChoice, qid } from './common'
 
 /** "Tryck på namnet" under a picture. */
 export const readName: Generator = {
@@ -9,11 +9,12 @@ export const readName: Generator = {
   skill: 'air.read',
   levels: [1, 4],
   generate({ rng, level, support }) {
-    const answer = rng.pick(AIRCRAFT)
-    const count = support === 'extra' || level <= 2 ? 2 : 3
-    // Level 1: names that start with different letters are easier to tell apart.
-    const pool = AIRCRAFT.filter((v) => level > 1 || v.shortName[0] !== answer.shortName[0] || v.id === answer.id)
-    const names = [answer.shortName, ...pool.map((v) => v.shortName)]
+    // Level 1: a well-known name against names of the other kind of aircraft, so the picture settles it.
+    const answer = rng.pick(level === 1 ? AIRCRAFT.filter((v) => KNOWN.includes(v.id)) : AIRCRAFT)
+    const count = support === 'extra' || level <= 2 ? 2 : choiceCount(level, support)
+    const other = answer.category === 'fighter' ? AIRLINERS : FIGHTERS
+    const pool = level === 1 ? other : AIRCRAFT.filter((v) => v.shortName[0] !== answer.shortName[0] || level > 2)
+    const names = pool.map((v) => v.shortName)
     const choices = textChoices(rng, answer.shortName, names, count)
     return {
       id: qid(
@@ -28,10 +29,12 @@ export const readName: Generator = {
       prompt: 'Vilket namn passar flygplanet? Tryck på namnet.',
       scene: { kind: 'vehicle', vehicle: answer.id },
       task: { kind: 'choice', choices, answer: answer.shortName },
-      hints: [
-        { text: `Namnet börjar på ${answer.shortName[0]}.` },
-        { text: `Det står ${answer.shortName}.`, eliminate: wrongIds(choices, answer.shortName) },
-      ],
+      hints: hintPair(
+        choices,
+        answer.shortName,
+        `Namnet börjar på ${answer.shortName[0]}.`,
+        `Det står ${answer.shortName}.`,
+      ),
       success: `Ja! Det är ${answer.shortName}.`,
     }
   },
@@ -59,10 +62,7 @@ export const readDestination: Generator = {
       prompt: 'Vart ska flyget? Tryck på rätt stad.',
       scene: { kind: 'sign', text: `Flyg till ${answer.toUpperCase()}`, style: 'departure' },
       task: { kind: 'choice', choices, answer },
-      hints: [
-        { text: `Staden börjar på ${answer[0]}.` },
-        { text: `På skylten står det ${answer}.`, eliminate: wrongIds(choices, answer) },
-      ],
+      hints: hintPair(choices, answer, `Staden börjar på ${answer[0]}.`, `På skylten står det ${answer}.`),
       success: `Ja! Flyget går till ${answer}.`,
     }
   },
@@ -94,10 +94,12 @@ export const readSentence: Generator = {
       prompt: 'Läs meningen. Tryck på rätt flygplan.',
       scene: { kind: 'text', text: fact, size: 'lg' },
       task: { kind: 'choice', choices, answer: answer.id },
-      hints: [
-        { text: 'Första ordet i meningen är namnet på flygplanet.' },
-        { text: `Meningen handlar om ${answer.shortName}.`, eliminate: wrongIds(choices, answer.id) },
-      ],
+      hints: hintPair(
+        choices,
+        answer.id,
+        'Första ordet i meningen är namnet på flygplanet. Titta på namnen under bilderna.',
+        `Meningen handlar om ${answer.shortName}.`,
+      ),
       success: `Ja! ${fact}`,
     }
   },

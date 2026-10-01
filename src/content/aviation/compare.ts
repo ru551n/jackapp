@@ -1,7 +1,7 @@
 import type { Generator, Vehicle } from '../../core/types'
-import { wrongIds } from '../helpers'
+import { choiceCount } from '../helpers'
 import { AIRCRAFT } from '../vehicles/aircraft'
-import { pictureChoice, qid } from './common'
+import { AIRLINERS, FIGHTERS, hintPair, pictureChoice, qid } from './common'
 
 type Num = (v: Vehicle) => number | undefined
 const engines: Num = (v) => v.specs.engines
@@ -12,17 +12,21 @@ const withSpec = (get: Num) => AIRCRAFT.filter((v) => get(v) !== undefined)
 
 const ENGINE_WORD: Record<number, string> = { 1: 'en motor', 2: 'två motorer', 4: 'fyra motorer' }
 
-/** "Vilket flygplan har två motorer?" */
+/**
+ * "Vilket flygplan har fyra motorer?" Only airliners: their engines hang visibly under (or props in front of)
+ * the wings, while fighter nozzles are too small to count in a top view.
+ */
 export const compareEngines: Generator = {
   id: 'air.compare.engines',
   skill: 'air.compare',
   levels: [2, 4],
   generate({ rng, level, support }) {
-    const n = rng.pick(level === 2 ? [1, 2] : [1, 2, 4])
-    const pool = withSpec(engines)
+    const pool = AIRLINERS.filter((v) => engines(v) !== undefined)
+    // Only the A380 has four, so "two" has just one wrong picture: limit it to two choices.
+    const wide = support !== 'extra' && level >= 3
+    const n = wide ? 4 : rng.pick([2, 4])
     const answer = rng.pick(pool.filter((v) => engines(v) === n))
-    const count = support === 'extra' || level === 2 ? 2 : 3
-    const wrong = rng.shuffle(pool.filter((v) => engines(v) !== n)).slice(0, count - 1)
+    const wrong = rng.shuffle(pool.filter((v) => engines(v) !== n)).slice(0, (wide ? 3 : 2) - 1)
     const options = rng.shuffle([answer, ...wrong])
     const choices = options.map((v, i) => pictureChoice(v, i))
     return {
@@ -34,13 +38,15 @@ export const compareEngines: Generator = {
       ),
       skill: 'air.compare',
       level,
-      theme: answer.category === 'fighter' ? 'fighter' : 'airport',
+      theme: 'airport',
       prompt: `Vilket flygplan har ${ENGINE_WORD[n]}?`,
       task: { kind: 'choice', choices, answer: answer.id },
-      hints: [
-        { text: `Räkna motorerna på varje flygplan. Leta efter ${ENGINE_WORD[n]}.` },
-        { text: `${answer.shortName} har ${ENGINE_WORD[n]}.`, eliminate: wrongIds(choices, answer.id) },
-      ],
+      hints: hintPair(
+        choices,
+        answer.id,
+        `Titta på vingarna. Räkna motorerna (eller propellrarna) på varje flygplan. Leta efter ${ENGINE_WORD[n]}.`,
+        `${answer.shortName} har ${ENGINE_WORD[n]}.`,
+      ),
       success: `Ja! ${answer.shortName} har ${ENGINE_WORD[n]}.`,
     }
   },
@@ -63,7 +69,7 @@ export const compareLength: Generator = {
   skill: 'air.compare',
   levels: [2, 5],
   generate({ rng, level, support }) {
-    const count = support === 'extra' || level === 2 ? 2 : 3
+    const count = Math.min(3, choiceCount(level, support))
     const options = distinctBy(rng, length, count, 1.1)
     const shortest = level >= 4 && rng.next() < 0.5
     const sorted = [...options].sort((a, b) => length(a)! - length(b)!)
@@ -86,10 +92,12 @@ export const compareLength: Generator = {
       theme: 'airport',
       prompt: `Vilket flygplan är ${word}?`,
       task: { kind: 'choice', choices, answer: answer.id },
-      hints: [
-        { text: `Titta på flygplanens storlek. Leta efter det ${shortest ? 'minsta' : 'största'}.` },
-        { text: `${answer.shortName} är ${word}.`, eliminate: wrongIds(choices, answer.id) },
-      ],
+      hints: hintPair(
+        choices,
+        answer.id,
+        `Titta på hur stora flygplanen är ritade. Leta efter det ${shortest ? 'minsta' : 'största'}.`,
+        `${answer.shortName} är ${word}.`,
+      ),
       success: `Ja! ${answer.shortName} är ${word}.`,
     }
   },
@@ -122,11 +130,52 @@ export const compareFirstFlight: Generator = {
       theme: 'airport',
       prompt: 'Vilket flygplan flög först? Titta på årtalen.',
       task: { kind: 'choice', choices, answer: oldest.id },
-      hints: [
-        { text: 'Det minsta årtalet är det äldsta flygplanet.' },
-        { text: `${oldest.shortName} flög första gången ${year(oldest)}.`, eliminate: wrongIds(choices, oldest.id) },
-      ],
+      hints: hintPair(
+        choices,
+        oldest.id,
+        'Det minsta årtalet är det äldsta flygplanet. Jämför årtalen.',
+        `${oldest.shortName} flög första gången ${year(oldest)}.`,
+      ),
       success: `Ja! ${oldest.shortName} flög först, år ${year(oldest)}.`,
+    }
+  },
+}
+
+/** Level 1: a big airliner next to a small fighter, drawn to scale. */
+export const compareSize: Generator = {
+  id: 'air.compare.size',
+  skill: 'air.compare',
+  levels: [1, 1],
+  generate({ rng }) {
+    const big = rng.pick(AIRLINERS.filter((v) => v.id !== 'saab340'))
+    const small = rng.pick(FIGHTERS)
+    const smallest = rng.next() < 0.5
+    const answer = smallest ? small : big
+    const options = rng.shuffle([big, small])
+    const choices = options.map((v, i) => ({
+      ...pictureChoice(v, i),
+      visual: { kind: 'vehicle' as const, vehicle: v.id, scale: Math.max(0.2, length(v)! / length(big)!) },
+    }))
+    const word = smallest ? 'minst' : 'störst'
+    return {
+      id: qid(
+        'air.compare.size',
+        word,
+        answer.id,
+        options.map((v) => v.id),
+      ),
+      skill: 'air.compare',
+      level: 1,
+      theme: 'airport',
+      prompt: `Vilket flygplan är ${word}?`,
+      task: { kind: 'choice', choices, answer: answer.id },
+      hints: hintPair(
+        choices,
+        answer.id,
+        `Titta på hur stor bilden är. Leta efter det ${smallest ? 'minsta' : 'största'} flygplanet.`,
+        `${answer.shortName} är ${word}.`,
+      ),
+      success: `Ja! ${answer.shortName} är ${word}.`,
     }
   },
 }

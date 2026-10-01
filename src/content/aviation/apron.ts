@@ -14,7 +14,7 @@ export const countApron: Generator = {
     const max = level === 1 ? 5 : level === 2 ? 6 : level === 3 ? 10 : level === 4 ? 12 : 15
     const n = rng.int(2, max)
     const sprite = rng.pick(['airliner', 'jet'] as const)
-    const name = sprite === 'jet' ? 'jetplan' : 'passagerarflygplan'
+    const name = sprite === 'jet' ? 'stridsflygplan' : 'passagerarflygplan'
     const grouped = support === 'extra' || level >= 3
     const choices = numberChoices(rng, n, support === 'extra' ? 2 : 3, 1, max + 1)
     return {
