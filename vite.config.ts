@@ -21,6 +21,8 @@ export default defineConfig({
   optimizeDeps: { exclude: ['onnxruntime-web', '@diffusionstudio/piper-wasm'] },
   // Relative asset paths: the build works from any folder or static host.
   base: './',
+  // Dev: the API runs in `npm run dev:all` (app + worker + PGlite + mock AI).
+  server: { proxy: { '/api': 'http://127.0.0.1:3000' } },
   test: {
     projects: [
       {

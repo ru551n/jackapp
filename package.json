@@ -24,7 +24,8 @@
     "dev:server": "tsx watch --env-file-if-exists=.env server/main.ts",
     "dev:worker": "tsx watch --env-file-if-exists=.env server/worker/main.ts",
     "db:generate": "drizzle-kit generate",
-    "db:migrate": "tsx --env-file-if-exists=.env server/db/migrate.ts"
+    "db:migrate": "tsx --env-file-if-exists=.env server/db/migrate.ts",
+    "dev:all": "tsx --env-file-if-exists=.env server/dev.ts"
   },
   "dependencies": {
     "@diffusionstudio/piper-wasm": "^1.0.0",

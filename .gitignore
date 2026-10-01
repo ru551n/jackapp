@@ -37,3 +37,4 @@ dist-server
 .env
 .env.*
 !.env.example
+.dev-data/

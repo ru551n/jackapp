@@ -52,6 +52,8 @@ export const LearnerProfileInput = z.object({
   /** Preferred language for UI and instructions. */
   language: z.enum(['sv']).default('sv'),
   support: SupportPreferences.default(SupportPreferences.parse({})),
+  /** Early-years free play ("Bygg din linje"); off by default, enabled by an adult. */
+  freePlayEnabled: z.boolean().default(false),
   generation: GenerationPolicy.default(GenerationPolicy.parse({})),
 })
 export type LearnerProfileInput = z.infer<typeof LearnerProfileInput>
